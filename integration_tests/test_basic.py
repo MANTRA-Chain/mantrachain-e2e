@@ -58,7 +58,16 @@ def test_transfer(mantra):
     assert cli.balance(addr_b) == balance_b + amt
 
 
+@pytest.mark.connect
+def test_connect_send_transaction(connect_mantra):
+    send_tx(connect_mantra)
+
+
 def test_send_transaction(mantra):
+    send_tx(mantra)
+
+
+def send_tx(mantra):
     w3 = mantra.w3
     txhash = w3.eth.send_transaction(
         {
@@ -72,7 +81,16 @@ def test_send_transaction(mantra):
     assert receipt.gasUsed == 21000
 
 
+@pytest.mark.connect
+def test_connect_events(connect_mantra):
+    events(connect_mantra)
+
+
 def test_events(mantra):
+    events(mantra)
+
+
+def events(mantra):
     w3 = mantra.w3
     erc20 = deploy_contract(
         w3,
@@ -111,7 +129,16 @@ def test_events(mantra):
         assert topic in bloom
 
 
+@pytest.mark.connect
+def test_connect_minimal_gas_price(connect_mantra):
+    minimal_gas_price(connect_mantra)
+
+
 def test_minimal_gas_price(mantra):
+    minimal_gas_price(mantra)
+
+
+def minimal_gas_price(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price
     tx = {
@@ -132,7 +159,16 @@ def test_minimal_gas_price(mantra):
     assert receipt.status == 1
 
 
+@pytest.mark.connect
+def test_connect_transaction(connect_mantra):
+    transaction(connect_mantra)
+
+
 def test_transaction(mantra):
+    transaction(mantra)
+
+
+def transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price
 
@@ -286,7 +322,16 @@ def assert_receipt_transaction_and_block(w3, futures):
         assert transaction["blockNumber"] == block["number"]
 
 
+@pytest.mark.connect
+def test_connect_exception(connect_mantra):
+    exception(connect_mantra)
+
+
 def test_exception(mantra):
+    exception(mantra)
+
+
+def exception(mantra):
     w3 = mantra.w3
     contract = deploy_contract(
         w3,
@@ -305,7 +350,16 @@ def test_exception(mantra):
     assert 5 * (10**18) == contract.caller.query()
 
 
+@pytest.mark.connect
+def test_connect_message_call(connect_mantra):
+    message_call(connect_mantra)
+
+
 def test_message_call(mantra):
+    message_call(mantra)
+
+
+def message_call(mantra):
     "stress test the evm by doing message calls as much as possible"
     w3 = mantra.w3
     contract = deploy_contract(
@@ -333,7 +387,16 @@ def test_message_call(mantra):
     assert len(receipt.logs) == iterations
 
 
+@pytest.mark.connect
+def test_connect_log0(connect_mantra):
+    log0(connect_mantra)
+
+
 def test_log0(mantra):
+    log0(mantra)
+
+
+def log0(mantra):
     """
     test compliance of empty topics behavior
     """

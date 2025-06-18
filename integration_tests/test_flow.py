@@ -154,7 +154,7 @@ def run_flow(m: ConnectMantra, tmp_path):
 
 
 @pytest.mark.connect
-def test_connect_flow(connect_mantra, tmp_path):
+def test_connect_connect_flow(connect_mantra, tmp_path):
     run_flow(connect_mantra, tmp_path)
 
 
