@@ -92,6 +92,12 @@
                 amount: '1',
               },
             ],
+            expedited_min_deposit: [
+              {
+                denom: 'uom',
+                amount: '2',
+              },
+            ],
           },
         },
       },

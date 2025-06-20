@@ -1,7 +1,6 @@
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import takewhile
 
 import pytest
 import web3
@@ -17,10 +16,10 @@ from .utils import (
     Greeter,
     RevertTestContract,
     assert_contract,
+    assert_transfer,
     build_batch_tx,
     contract_address,
     deploy_contract,
-    find_log_event_attrs,
     send_transaction,
     w3_wait_for_new_blocks,
 )
@@ -48,15 +47,7 @@ def test_transfer(mantra):
     cli = mantra.cosmos_cli()
     addr_a = cli.address("community")
     addr_b = cli.address("reserve")
-    balance_a = cli.balance(addr_a)
-    balance_b = cli.balance(addr_b)
-    amt = 1
-    rsp = cli.transfer(addr_a, addr_b, f"{amt}{DEFAULT_DENOM}")
-    assert rsp["code"] == 0, rsp["raw_log"]
-    res = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
-    fee = int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
-    assert cli.balance(addr_a) == balance_a - amt - fee
-    assert cli.balance(addr_b) == balance_b + amt
+    assert_transfer(cli, addr_a, addr_b)
 
 
 def test_send_transaction(mantra):
@@ -490,9 +481,9 @@ def test_textual(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
 
-# @pytest.mark.skip(reason="skipping opBlockhash test")
-def test_op_blk_hash(geth):
-    w3 = geth.w3
+@pytest.mark.skip(reason="skipping opBlockhash test")
+def test_op_blk_hash(mantra):
+    w3 = mantra.w3
     contract = deploy_contract(w3, CONTRACTS["TestBlockTxProperties"])
     height = w3.eth.get_block_number()
     w3_wait_for_new_blocks(w3, 1)

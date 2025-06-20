@@ -9,6 +9,7 @@ pkgs.mkShell {
     pkgs.test-env
     pkgs.poetry
     pkgs.go-ethereum
+    pkgs.cosmovisor
     pkgs.start-scripts
   ] ++ pkgs.lib.optionals includeMantrachaind [
     pkgs.mantrachaind

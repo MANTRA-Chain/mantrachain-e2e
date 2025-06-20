@@ -1,11 +1,14 @@
+import configparser
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import takewhile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -389,6 +392,18 @@ def assert_contract(cli, w3):
     assert_balance(cli, w3, eth_to_bech32(ADDRS[name]))
 
 
+def assert_transfer(cli, addr_a, addr_b):
+    balance_a = cli.balance(addr_a)
+    balance_b = cli.balance(addr_b)
+    amt = 1
+    rsp = cli.transfer(addr_a, addr_b, f"{amt}{DEFAULT_DENOM}")
+    assert rsp["code"] == 0, rsp["raw_log"]
+    res = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
+    fee = int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
+    assert cli.balance(addr_a) == balance_a - amt - fee
+    assert cli.balance(addr_b) == balance_b + amt
+
+
 class ContractAddress(rlp.Serializable):
     fields = [
         ("from", rlp.sedes.Binary()),
@@ -450,7 +465,9 @@ def approve_proposal(n, events, event_query_tx=False):
     )
     proposal_id = ev["proposal_id"]
     for i in range(len(n.config["validators"])):
-        rsp = n.cosmos_cli(i).gov_vote("validator", proposal_id, "yes", event_query_tx)
+        rsp = n.cosmos_cli(i).gov_vote(
+            "validator", proposal_id, "yes", event_query_tx, gas_prices="0.8uom"
+        )
         assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 1)
     res = cli.query_tally(proposal_id)
@@ -519,3 +536,17 @@ def derive_new_account(n=1):
     account_path = f"m/44'/60'/0'/0/{n}"
     mnemonic = os.getenv("SIGNER1_MNEMONIC")
     return Account.from_mnemonic(mnemonic, account_path=account_path)
+
+
+def edit_ini_sections(chain_id, ini_path, callback):
+    ini = configparser.RawConfigParser()
+    ini.read(ini_path)
+    reg = re.compile(rf"^program:{chain_id}-node(\d+)")
+    for section in ini.sections():
+        m = reg.match(section)
+        if m:
+            i = m.group(1)
+            old = ini[section]
+            ini[section].update(callback(i, old))
+    with ini_path.open("w") as fp:
+        ini.write(fp)

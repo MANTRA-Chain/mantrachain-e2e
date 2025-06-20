@@ -4,7 +4,7 @@ import tempfile
 
 from pystarport.utils import build_cli_args_safe, interact
 
-from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE
+from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, get_sync_info
 
 
 class ChainCommand:
@@ -60,6 +60,9 @@ class CosmosCLI:
 
     def status(self):
         return json.loads(self.raw("status", node=self.node_rpc))
+
+    def block_height(self):
+        return int(get_sync_info(self.status())["latest_block_height"])
 
     def balances(self, addr, height=0):
         return json.loads(
@@ -134,8 +137,8 @@ class CosmosCLI:
 
     def event_query_tx_for(self, hash, **kwargs):
         default_kwargs = {
-            "home": self.data_dir,
             "node": self.node_rpc,
+            "output": "json",
         }
         return json.loads(
             self.raw(
@@ -179,6 +182,7 @@ class CosmosCLI:
             "keyring_backend": "test",
             "chain_id": self.chain_id,
             "node": self.node_rpc,
+            "output": "json",
         }
         return json.loads(
             self.raw(
@@ -319,7 +323,7 @@ class CosmosCLI:
         return res.get("tally") or res
 
     def gov_vote(self, voter, proposal_id, option, event_query_tx=True, **kwargs):
-        kwargs.setdefault("gas_prices", DEFAULT_GAS_PRICE)
+        default_kwargs = self.get_kwargs()
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -329,8 +333,7 @@ class CosmosCLI:
                 option,
                 "-y",
                 from_=voter,
-                home=self.data_dir,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         )
         if rsp["code"] == 0 and event_query_tx:
@@ -371,3 +374,40 @@ class CosmosCLI:
                 node=self.node_rpc,
             )
         )
+
+    # TODO: remove after fix client ctx in v4
+    def get_kwargs(self):
+        return {
+            "home": self.data_dir,
+            "keyring_backend": "test",
+            "chain_id": self.chain_id,
+            "node": self.node_rpc,
+            "output": "json",
+        }
+
+    def software_upgrade(self, proposer, proposal, **kwargs):
+        default_kwargs = self.get_kwargs()
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "upgrade",
+                "software-upgrade",
+                proposal["name"],
+                "-y",
+                "--no-validate",
+                from_=proposer,
+                # content
+                title=proposal.get("title"),
+                note=proposal.get("note"),
+                upgrade_height=proposal.get("upgrade-height"),
+                upgrade_time=proposal.get("upgrade-time"),
+                upgrade_info=proposal.get("upgrade-info"),
+                summary=proposal.get("summary"),
+                deposit=proposal.get("deposit"),
+                # basic
+                **(default_kwargs | kwargs),
+            )
+        )
+        if rsp["code"] == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
