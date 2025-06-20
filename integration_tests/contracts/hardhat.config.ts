@@ -4,27 +4,17 @@ module.exports = {
   solidity: {
     compilers: [
       {
-        version: "0.8.21",
+        version: "0.8.24",
         settings: {
-          optimizer: {
-            enabled: true
+          "viaIR": true,
+          "optimizer": {
+            "enabled": true,
+            "runs": 100000
           },
-          evmVersion: "paris"
-        }
-      },
-      {
-        version: "0.8.10",
-        settings: {
-          optimizer: {
-            enabled: true
-          }
-        }
-      },
-      {
-        version: "0.6.6",
-        settings: {
-          optimizer: {
-            enabled: true
+          "evmVersion": "cancun",
+          "metadata": {
+            "bytecodeHash": "none",
+            "appendCBOR": false
           }
         }
       },

@@ -44,7 +44,7 @@ def test_pruned_node(mantra):
     )
     signed = sign_transaction(w3, tx, KEYS["validator"])
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    exp_gas_used = 51410
+    exp_gas_used = 51382
 
     print("wait for prunning happens")
     wait_for_new_blocks(mantra.cosmos_cli(0), 10)

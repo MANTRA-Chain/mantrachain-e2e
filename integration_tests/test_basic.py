@@ -79,7 +79,7 @@ def test_events(mantra):
         w3,
         CONTRACTS["TestERC20A"],
         key=KEYS["validator"],
-        exp_gas_used=626988,
+        exp_gas_used=914023,
     )
     tx = erc20.functions.transfer(ADDRS["community"], 10).build_transaction(
         {"from": ADDRS["validator"]}
@@ -329,7 +329,7 @@ def test_message_call(mantra):
     assert elapsed < 5  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx)
-    assert 25446341 == receipt.cumulativeGasUsed
+    assert 22326250 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
