@@ -29,6 +29,9 @@
         'logs-cap': 10000,
         'gas-cap': 30000000,
       },
+      mempool: {
+        'max-txs': 5000,
+      },
     },
     validators: [{
       'coin-type': 60,
