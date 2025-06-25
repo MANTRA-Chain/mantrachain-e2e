@@ -3,10 +3,7 @@
   stdenv,
   buildGo123Module,
   fetchFromGitHub,
-  nix-gitignore,
-  darwin,
   rev ? "dirty",
-  static ? stdenv.hostPlatform.isStatic,
   nativeByteOrder ? true, # nativeByteOrder mode will panic on big endian machines
   fetchurl,
   pkgsStatic,
@@ -37,34 +34,43 @@ let
     };
   };
 
-  wasmvmLib = 
-    if buildStdenv.isDarwin then wasmvmLibs.darwin
-    else if buildStdenv.isLinux && buildStdenv.hostPlatform.isAarch64 then wasmvmLibs.linux-aarch64
-    else if buildStdenv.isLinux then wasmvmLibs.linux-x86_64
-    else throw "Unsupported platform for wasmvm";
+  wasmvmLib =
+    if buildStdenv.isDarwin then
+      wasmvmLibs.darwin
+    else if buildStdenv.isLinux && buildStdenv.hostPlatform.isAarch64 then
+      wasmvmLibs.linux-aarch64
+    else if buildStdenv.isLinux then
+      wasmvmLibs.linux-x86_64
+    else
+      throw "Unsupported platform for wasmvm";
 
-  tags = [
-    "ledger"
-    "netgo"
-    "osusergo"
-    "pebbledb"
-  ] ++ lib.optionals nativeByteOrder [ "nativebyteorder" ]
+  tags =
+    [
+      "ledger"
+      "netgo"
+      "osusergo"
+      "pebbledb"
+    ]
+    ++ lib.optionals nativeByteOrder [ "nativebyteorder" ]
     ++ lib.optionals buildStdenv.isDarwin [ "static_wasm" ]
     ++ lib.optionals buildStdenv.isLinux [ "muslc" ];
 
-  ldflags = [
-    "-X github.com/cosmos/cosmos-sdk/version.Name=mantrachain"
-    "-X github.com/cosmos/cosmos-sdk/version.AppName=${pname}"
-    "-X github.com/cosmos/cosmos-sdk/version.Version=${version}"
-    "-X github.com/cosmos/cosmos-sdk/version.BuildTags=${lib.concatStringsSep "," tags}"
-    "-X github.com/cosmos/cosmos-sdk/version.Commit=${rev}"
-  ] ++ [
-    "-w"
-    "-s"
-    "-linkmode=external"
-  ] ++ lib.optionals buildStdenv.isLinux [
-    "-extldflags '-static -lm'"
-  ];
+  ldflags =
+    [
+      "-X github.com/cosmos/cosmos-sdk/version.Name=mantrachain"
+      "-X github.com/cosmos/cosmos-sdk/version.AppName=${pname}"
+      "-X github.com/cosmos/cosmos-sdk/version.Version=${version}"
+      "-X github.com/cosmos/cosmos-sdk/version.BuildTags=${lib.concatStringsSep "," tags}"
+      "-X github.com/cosmos/cosmos-sdk/version.Commit=${rev}"
+    ]
+    ++ [
+      "-w"
+      "-s"
+      "-linkmode=external"
+    ]
+    ++ lib.optionals buildStdenv.isLinux [
+      "-extldflags '-static -lm'"
+    ];
 
 in
 buildGo123Module' rec {

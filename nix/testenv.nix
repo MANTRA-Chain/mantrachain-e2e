@@ -1,11 +1,11 @@
 {
   poetry2nix,
   lib,
-  python311,
+  python3,
 }:
 poetry2nix.mkPoetryEnv {
   projectDir = ../integration_tests;
-  python = python311;
+  python = python3;
   overrides = poetry2nix.overrides.withDefaults (
     self: super:
     let
