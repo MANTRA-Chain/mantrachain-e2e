@@ -83,7 +83,7 @@
       consensus: {
         params: {
           block: {
-            max_bytes: '3000000',
+            max_bytes: '1048576',
             max_gas: '81500000',
           },
           abci: {
