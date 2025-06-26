@@ -59,7 +59,7 @@ def test_mempool(mantra_mempool):
     print(f"all send tx hash: {sended_hash_set} at {block_num_0}")
 
     all_pending = w3.eth.get_filter_changes(filter.filter_id)
-    # TODO: revert after implement pending txs 
+    # TODO: revert after implement pending txs
     # assert len(all_pending) == len(KEYS.items()) - 1
     assert len(all_pending) == 0
 
