@@ -14,8 +14,6 @@ from .utils import (
     wait_for_new_blocks,
 )
 
-pytest.skip("skipping mempool test", allow_module_level=True)
-
 
 @pytest.fixture(scope="module")
 def mantra_mempool(tmp_path_factory):
@@ -69,6 +67,7 @@ def test_mempool(mantra_mempool):
     # check after max 10 blocks
     for i in range(10):
         all_pending = w3.eth.get_filter_changes(filter.filter_id)
+        print(f"all pending tx hash at block {i+block_num_1}: {all_pending}")
         if len(all_pending) == 0:
             break
         wait_for_new_blocks(cli, 1, sleep=0.1)

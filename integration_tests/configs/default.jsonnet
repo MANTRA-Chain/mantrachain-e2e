@@ -26,6 +26,9 @@
         'logs-cap': 10000,
         'gas-cap': 30000000,
       },
+      mempool: {
+        'max-txs': 5000,
+      },
     },
     validators: [{
       coins: '1000000000000000000stake,100000000000uom',
@@ -63,7 +66,7 @@
       consensus: {
         params: {
           block: {
-            max_bytes: '3000000',
+            max_bytes: '1048576',
             max_gas: '300000000',
           },
         },
@@ -77,7 +80,7 @@
         feemarket: {
           params: {
             base_fee: '0.010000000000000000',
-            min_gas_price: '0.010000000000000000',
+            min_gas_price: '0.000000000000000000',
             min_gas_multiplier: '0',
           },
         },

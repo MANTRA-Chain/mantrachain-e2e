@@ -2,6 +2,13 @@ local config = import 'default.jsonnet';
 
 config {
   'mantra-canary-net-1'+: {
+    validators: [validator {
+      'app-config'+: {
+        mempool: {
+          'max-txs': -1,  // TODO: wait fix sender release
+        },
+      },
+    } for validator in super.validators],
     genesis+: {
       consensus_params: {
         block: {
