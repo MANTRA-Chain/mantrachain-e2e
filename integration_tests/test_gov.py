@@ -1,5 +1,6 @@
 import hashlib
 
+import pytest
 from eth_utils import to_checksum_address
 
 from .utils import (
@@ -9,6 +10,8 @@ from .utils import (
     submit_any_proposal,
     submit_gov_proposal,
 )
+
+pytestmark = pytest.mark.slow
 
 
 def test_submit_any_proposal(mantra, tmp_path):

@@ -19,6 +19,8 @@ from .utils import (
 
 NEW_BASE_FEE = 10000000000
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
