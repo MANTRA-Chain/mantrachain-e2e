@@ -28,8 +28,6 @@ def custom_mantra(tmp_path_factory):
     )
 
 
-
-
 @pytest.mark.skip(reason="skipping basic")
 def test_basic(custom_mantra):
     w3: Web3 = custom_mantra.w3
