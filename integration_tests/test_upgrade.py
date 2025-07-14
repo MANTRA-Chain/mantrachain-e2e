@@ -27,6 +27,8 @@ from .utils import (
     wait_for_port,
 )
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
