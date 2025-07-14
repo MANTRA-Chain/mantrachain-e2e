@@ -4,6 +4,7 @@ import pytest
 from eth_contract.create2 import CREATE2_FACTORY
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from web3.exceptions import Web3RPCError
 
 from .network import setup_custom_mantra
 from .utils import send_transaction
@@ -36,3 +37,12 @@ def test_replay_tx(mantra_replay):
     receipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt["status"] == 1
     assert to_checksum_address(receipt["contractAddress"]) == CREATE2_FACTORY
+
+
+def test_wrong_chain_id(mantra_replay):
+    w3 = mantra_replay.w3
+    recipient = to_checksum_address("0x3fab184622dc19b6109349b94811493bf2a45362")
+    with pytest.raises(Web3RPCError, match="invalid chain id"):
+        send_transaction(
+            w3, {"to": recipient, "value": 1000, "chainId": 0, "gas": 21000}
+        )
