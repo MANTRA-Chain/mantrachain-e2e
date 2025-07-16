@@ -2,10 +2,12 @@ import json
 import shutil
 import stat
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
 
@@ -26,6 +28,8 @@ from .utils import (
     wait_for_new_blocks,
     wait_for_port,
 )
+
+pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
@@ -101,6 +105,35 @@ def setup_mantra_test(tmp_path_factory):
         yield mantra
 
 
+def patch_app_mempool(path, max_txs):
+    cfg = tomlkit.parse(path.read_text())
+    cfg["mempool"] = {
+        "max-txs": max_txs,
+    }
+    path.write_text(tomlkit.dumps(cfg))
+
+
+def check_basic_eth_tx(w3, contract, from_acc, to, msg):
+    tx = contract.functions.setGreeting(msg).build_transaction()
+    receipt = send_transaction(w3, tx, key=from_acc.key)
+    assert receipt.status == 1
+    assert contract.caller.greet() == msg
+    # check basic tx works
+    receipt = send_transaction(
+        w3,
+        {
+            "from": from_acc.address,
+            "to": bech32_to_eth(to),
+            "value": 1000,
+            "gas": 21000,
+            "maxFeePerGas": 10000000000000,
+            "maxPriorityFeePerGas": 10000,
+        },
+        key=from_acc.key,
+    )
+    assert receipt.status == 1
+
+
 def exec(c):
     """
     - propose an upgrade and pass it
@@ -156,27 +189,34 @@ def exec(c):
 
     wait_for_port(ports.evmrpc_port(c.base_port(0)))
     balance = get_balance(cli, community)
-    assert_transfer(cli, addr_a, addr_b, amt=balance - DEFAULT_FEE)
+    amt = int(balance - DEFAULT_FEE - 1e6)
+    assert_transfer(cli, addr_a, addr_b, amt=amt)
     # check set contract tx works
     contract = deploy_contract(c.w3, CONTRACTS["Greeter"], key=acc_b.key)
     assert "Hello" == contract.caller.greet()
-    tx = contract.functions.setGreeting("world").build_transaction()
-    receipt = send_transaction(c.w3, tx, key=acc_b.key)
-    assert receipt.status == 1
-    # check basic tx works
-    receipt = send_transaction(
-        c.w3,
-        {
-            "from": acc_b.address,
-            "to": bech32_to_eth(addr_a),
-            "value": 1000,
-            "gas": 21000,
-            "maxFeePerGas": 10000000000000,
-            "maxPriorityFeePerGas": 10000,
-        },
-        key=acc_b.key,
-    )
-    assert receipt.status == 1
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world")
+    wait_for_new_blocks(cli, 3)
+
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade("v5.0.0-rc1", target_height)
+
+    print(c.supervisorctl("stop", "mantra-canary-net-1-node1"))
+    # TODO: remove after fix graceful shutdown
+    time.sleep(5)
+    patch_app_mempool(c.cosmos_cli(i=1).data_dir / "config/app.toml", 5000)
+    print(c.supervisorctl("start", "mantra-canary-net-1-node1"))
+
+    wait_for_port(ports.evmrpc_port(c.base_port(0)))
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!")
+    wait_for_new_blocks(cli, 3)
+
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade("v5.0.0-rc2", target_height)
+
+    wait_for_port(ports.evmrpc_port(c.base_port(0)))
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!")
     wait_for_new_blocks(cli, 3)
 
 

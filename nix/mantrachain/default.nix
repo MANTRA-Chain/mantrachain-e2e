@@ -9,7 +9,7 @@
   pkgsStatic,
 }:
 let
-  version = "v5.0.0";
+  version = "v5.0.0-rc2";
   pname = "mantrachain";
   wasmvmVersion = "v2.2.4";
 
@@ -84,10 +84,10 @@ buildGo123Module' rec {
   src = fetchFromGitHub {
     owner = "MANTRA-Chain";
     repo = pname;
-    rev = "a769e657e8a1b6662f6bddab930d4f6da94ee331";
-    hash = "sha256-D3o8hWwFPsthDjDS1czNaF0K+5cCVjZKdZxjoJBPiz0=";
+    rev = "1aec224716e1f14dfcde07e7b0d125444f0f8584";
+    hash = "sha256-CXs1Jd0F8EcZ1bW+arqVdj/wsv30/zI+DWjzc1j1+K4=";
   };
-  vendorHash = "sha256-pYEb7aZvZYQqOIvdiAd/cYQD7PdY1ou9jMgn4CEEVhI=";
+  vendorHash = "sha256-EdcRiKmCkCCHdT72OseinCnpe8YVCoNiFAl1wklSWa8=";
   proxyVendor = true;
   subPackages = [ "cmd/mantrachaind" ];
   CGO_ENABLED = "1";

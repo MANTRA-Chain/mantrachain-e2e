@@ -16,7 +16,7 @@ TESTS_TO_RUN="${TESTS_TO_RUN:-all}"
 if [[ "$TESTS_TO_RUN" == "all" ]]; then
   echo "run all tests"
   pytest -v -s -m unmarked
-else
+elif [[ "$TESTS_TO_RUN" == "connect" ]]; then
   if [ -f ../scripts/network.env ]; then
     echo "Loading environment variables from network.env"
     set -a
@@ -28,4 +28,7 @@ else
   fi
   echo "run tests matching $TESTS_TO_RUN"
   pytest -vv -s -m connect
+else
+  echo "run tests matching $TESTS_TO_RUN"
+  pytest -v -s -m $TESTS_TO_RUN
 fi

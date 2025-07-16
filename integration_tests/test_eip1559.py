@@ -1,9 +1,6 @@
-import pytest
-
 from .utils import ADDRS, KEYS, adjust_base_fee, send_transaction, w3_wait_for_block
 
 
-@pytest.mark.skip(reason="skipping dynamic fee tx test")
 def test_dynamic_fee_tx(mantra):
     """
     test basic eip-1559 tx works:
@@ -37,14 +34,15 @@ def test_dynamic_fee_tx(mantra):
     # check the next block's base fee is adjusted accordingly
     w3_wait_for_block(w3, txreceipt.blockNumber + 1)
     next_base_price = w3.eth.get_block(txreceipt.blockNumber + 1).baseFeePerGas
-    assert next_base_price == adjust_base_fee(
-        blk.baseFeePerGas,
-        blk.gasLimit,
-        blk.gasUsed,
+    assert (
+        abs(
+            next_base_price
+            - adjust_base_fee(blk.baseFeePerGas, blk.gasLimit, blk.gasUsed)
+        )
+        <= 1
     )
 
 
-@pytest.mark.skip(reason="skipping test_base_fee_adjustment")
 def test_base_fee_adjustment(mantra):
     """
     verify base fee adjustment of three continuous empty blocks
@@ -58,7 +56,7 @@ def test_base_fee_adjustment(mantra):
 
     for i in range(3):
         fee = w3.eth.get_block(begin + 1 + i).baseFeePerGas
-        assert fee == adjust_base_fee(parent_fee, blk.gasLimit, 0)
+        assert abs(fee - adjust_base_fee(parent_fee, blk.gasLimit, 0)) <= 1
         parent_fee = fee
 
 

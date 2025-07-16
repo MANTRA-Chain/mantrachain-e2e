@@ -19,6 +19,8 @@ from .utils import (
 
 NEW_BASE_FEE = 10000000000
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
@@ -28,7 +30,6 @@ def custom_mantra(tmp_path_factory):
     )
 
 
-@pytest.mark.skip(reason="skipping basic")
 def test_basic(custom_mantra):
     w3: Web3 = custom_mantra.w3
     # need at least 5 blocks
@@ -77,7 +78,6 @@ def test_basic(custom_mantra):
         assert res["oldestBlock"] == hex(oldest if oldest > 0 else 0)
 
 
-@pytest.mark.skip(reason="skipping change")
 def test_change(custom_mantra):
     w3: Web3 = custom_mantra.w3
     call = w3.provider.make_request
@@ -97,7 +97,6 @@ def test_change(custom_mantra):
             assert history1 == history0
 
 
-@pytest.mark.skip(reason="skipping next")
 def test_next(custom_mantra):
     w3: Web3 = custom_mantra.w3
     tx = {"to": ADDRS["community"], "value": 10, "gasPrice": w3.eth.gas_price}
@@ -107,7 +106,6 @@ def test_next(custom_mantra):
     )
 
 
-@pytest.mark.skip(reason="skipping beyond head")
 def test_beyond_head(custom_mantra):
     end = hex(0x7FFFFFFFFFFFFFFF)
     res = custom_mantra.w3.provider.make_request("eth_feeHistory", [4, end, []])
@@ -115,7 +113,6 @@ def test_beyond_head(custom_mantra):
     assert msg in res["error"]["message"]
 
 
-@pytest.mark.skip(reason="skipping percentiles")
 def test_percentiles(custom_mantra):
     w3: Web3 = custom_mantra.w3
     call = w3.provider.make_request
@@ -153,7 +150,6 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
     assert p["base_fee_change_denominator"] == new_denominator
 
 
-@pytest.mark.skip(reason="skipping test_concurrent")
 def test_concurrent(custom_mantra, tmp_path):
     w3: Web3 = custom_mantra.w3
     tx = {"to": ADDRS["community"], "value": 10, "gasPrice": w3.eth.gas_price}
@@ -216,7 +212,6 @@ def assert_histories(w3, cli, blk, percentiles=[]):
     )
 
 
-@pytest.mark.skip(reason="skipping test_param_change")
 def test_param_change(custom_mantra, tmp_path):
     w3 = custom_mantra.w3
     cli = custom_mantra.cosmos_cli()
