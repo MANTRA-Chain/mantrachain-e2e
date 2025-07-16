@@ -3,11 +3,13 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from .utils import wait_for_new_blocks
 
 
-def test_tokenfactory_admin(mantra, tmp_path):
-    cli = mantra.cosmos_cli(2)
+def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     community = "community"
     signer2 = "signer2"
     cli.create_account(community, os.environ["COMMUNITY_MNEMONIC"], coin_type=60)
@@ -44,11 +46,17 @@ def test_tokenfactory_admin(mantra, tmp_path):
     rsp = cli.query_denom_authority_metadata(denom, _from=addr_a).get("Admin")
     assert rsp == addr_b, rsp
 
-    wait_for_new_blocks(cli, 5)
-    mantra.supervisorctl("stop", "mantra-canary-net-1-node2")
-    print(cli.prune())
-    mantra.supervisorctl("start", "mantra-canary-net-1-node2")
+    if need_prune:
+        wait_for_new_blocks(cli, 5)
+        mantra.supervisorctl("stop", "mantra-canary-net-1-node2")
+        print(mantra.cosmos_cli(2).prune())
+        mantra.supervisorctl("start", "mantra-canary-net-1-node2")
 
     rsp = cli.update_tokenfactory_admin(denom, addr_a, _from=addr_b)
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 5)
+
+
+@pytest.mark.connect
+def test_connect_tokenfactory(connect_mantra, tmp_path):
+    test_tokenfactory_admin(None, connect_mantra, tmp_path, need_prune=False)

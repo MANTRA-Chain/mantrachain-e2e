@@ -69,7 +69,8 @@ class CosmosCLI:
     def block_height(self):
         return int(get_sync_info(self.status())["latest_block_height"])
 
-    def balances(self, addr, height=0):
+    def balances(self, addr, height=0, **kwargs):
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "query",
@@ -77,9 +78,7 @@ class CosmosCLI:
                 "balances",
                 addr,
                 height=height,
-                output="json",
-                home=self.data_dir,
-                node=self.node_rpc,
+                **(default_kwargs | kwargs),
             )
         )["balances"]
 
@@ -119,8 +118,7 @@ class CosmosCLI:
         fees=None,
         **kwargs,
     ):
-        default_kwargs = {
-            "home": self.data_dir,
+        default_kwargs = self.get_kwargs() | {
             "gas_prices": DEFAULT_GAS_PRICE,
             "gas": DEFAULT_GAS,
         }
@@ -173,7 +171,7 @@ class CosmosCLI:
         rsp = json.loads(
             self.raw("tx", "broadcast", tx_file, node=self.node_rpc, **kwargs)
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"], **kwargs)
         return rsp
 
@@ -184,13 +182,7 @@ class CosmosCLI:
             return self.broadcast_tx(fp.name, **kwargs)
 
     def sign_tx(self, tx_file, signer, **kwargs):
-        default_kwargs = {
-            "home": self.data_dir,
-            "keyring_backend": "test",
-            "chain_id": self.chain_id,
-            "node": self.node_rpc,
-            "output": "json",
-        }
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "tx",
@@ -218,11 +210,7 @@ class CosmosCLI:
         "create new keypair in node's keyring"
         if kwargs.get("coin_type") == 60:
             kwargs["key_type"] = "eth_secp256k1"
-        default_kwargs = {
-            "home": self.data_dir,
-            "output": "json",
-            "keyring_backend": "test",
-        }
+        default_kwargs = self.get_kwargs()
         if mnemonic is None:
             output = self.raw(
                 "keys",
@@ -242,6 +230,7 @@ class CosmosCLI:
         return json.loads(output)
 
     def build_evm_tx(self, raw_tx: str, **kwargs):
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "tx",
@@ -251,7 +240,7 @@ class CosmosCLI:
                 "-y",
                 "--generate-only",
                 home=self.data_dir,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         )
 
@@ -278,7 +267,7 @@ class CosmosCLI:
                 **(default_kwargs | kwargs),
             )
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -345,7 +334,7 @@ class CosmosCLI:
                 **(default_kwargs | kwargs),
             )
         )
-        if rsp["code"] == 0 and event_query_tx:
+        if rsp.get("code") == 0 and event_query_tx:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -448,7 +437,7 @@ class CosmosCLI:
                 **(default_kwargs | kwargs),
             )
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -469,8 +458,10 @@ class CosmosCLI:
         )["base_fee"]
 
     def create_tokenfactory_denom(self, subdenom, generate_only=False, **kwargs):
-        kwargs.setdefault("gas_prices", DEFAULT_GAS_PRICE)
-        kwargs.setdefault("gas", DEFAULT_GAS)
+        default_kwargs = self.get_kwargs() | {
+            "gas_prices": DEFAULT_GAS_PRICE,
+            "gas": DEFAULT_GAS,
+        }
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -479,8 +470,7 @@ class CosmosCLI:
                 subdenom,
                 "--generate-only" if generate_only else None,
                 "-y",
-                home=self.data_dir,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         )
         if rsp.get("code") == 0:
@@ -488,22 +478,19 @@ class CosmosCLI:
         return rsp
 
     def query_tokenfactory_denoms(self, creator, **kwargs):
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "q",
                 "tokenfactory",
                 "denoms-from-creator",
                 creator,
-                output="json",
-                home=self.data_dir,
-                node=self.node_rpc,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         )
 
     def mint_tokenfactory_denom(self, coin, **kwargs):
-        default_kwargs = {
-            "home": self.data_dir,
+        default_kwargs = self.get_kwargs() | {
             "gas_prices": DEFAULT_GAS_PRICE,
             "gas": DEFAULT_GAS,
         }
@@ -522,8 +509,7 @@ class CosmosCLI:
         return rsp
 
     def burn_tokenfactory_denom(self, coin, **kwargs):
-        default_kwargs = {
-            "home": self.data_dir,
+        default_kwargs = self.get_kwargs() | {
             "gas_prices": DEFAULT_GAS_PRICE,
             "gas": DEFAULT_GAS,
         }
@@ -581,8 +567,7 @@ class CosmosCLI:
         return self.raw("prune", kind, home=self.data_dir).decode()
 
     def set_tokenfactory_denom(self, meta, generate_only=False, **kwargs):
-        default_kwargs = {
-            "home": self.data_dir,
+        default_kwargs = self.get_kwargs() | {
             "gas_prices": DEFAULT_GAS_PRICE,
             "gas": DEFAULT_GAS,
         }
@@ -602,36 +587,34 @@ class CosmosCLI:
         return rsp
 
     def query_denom_metadata(self, denom, **kwargs):
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "q",
                 "bank",
                 "denom-metadata",
                 denom,
-                output="json",
-                home=self.data_dir,
-                node=self.node_rpc,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         ).get("metadata")
 
     def query_denom_authority_metadata(self, denom, **kwargs):
+        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "q",
                 "tokenfactory",
                 "denom-authority-metadata",
                 denom,
-                output="json",
-                home=self.data_dir,
-                node=self.node_rpc,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         ).get("authority_metadata")
 
     def update_tokenfactory_admin(self, denom, address, generate_only=False, **kwargs):
-        kwargs.setdefault("gas_prices", DEFAULT_GAS_PRICE)
-        kwargs.setdefault("gas", DEFAULT_GAS)
+        default_kwargs = self.get_kwargs() | {
+            "gas_prices": DEFAULT_GAS_PRICE,
+            "gas": DEFAULT_GAS,
+        }
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -641,8 +624,7 @@ class CosmosCLI:
                 address,
                 "--generate-only" if generate_only else None,
                 "-y",
-                home=self.data_dir,
-                **kwargs,
+                **(default_kwargs | kwargs),
             )
         )
         if rsp.get("code") == 0:
@@ -700,7 +682,7 @@ class CosmosCLI:
                 **kwargs,
             )
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -721,7 +703,7 @@ class CosmosCLI:
                 **kwargs,
             )
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -741,7 +723,7 @@ class CosmosCLI:
                 **kwargs,
             )
         )
-        if rsp["code"] == 0:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
