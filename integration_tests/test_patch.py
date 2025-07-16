@@ -1,4 +1,8 @@
+import pytest
+
 from .utils import eth_to_bech32, module_address, submit_gov_proposal
+
+pytestmark = pytest.mark.slow
 
 
 def test_int_overflow(mantra, tmp_path):
