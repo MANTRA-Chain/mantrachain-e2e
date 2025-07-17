@@ -908,7 +908,7 @@ test = ["hypothesis (>=3.31.2)", "pytest (>=7.0.0)", "pytest-xdist (>=2.4.0)"]
 
 [[package]]
 name = "eth-contract"
-version = "0.1.0"
+version = "0.2.0"
 description = "Add your description here"
 optional = false
 python-versions = ">=3.9"
