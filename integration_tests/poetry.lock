@@ -912,13 +912,17 @@ version = "0.1.0"
 description = "Add your description here"
 optional = false
 python-versions = ">=3.9"
-files = [
-    {file = "eth_contract-0.1.0-py3-none-any.whl", hash = "sha256:1882ec94f8071821f531f9460e25708861e61a1cd9383f08e507debdb3c37441"},
-    {file = "eth_contract-0.1.0.tar.gz", hash = "sha256:61c4610fd0f0c3aa30678e5578d7a732039751bf391a908c3da56b9c0d988955"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 web3 = ">=7.12.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/mmsqe/eth-contract.git"
+reference = "deploy_utils"
+resolved_reference = "661f6e11ef50d0d75de70bc26c8b4923a44af6a6"
 
 [[package]]
 name = "eth-hash"
@@ -2763,4 +2767,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "704070f0abd293af2b41ddede35bdc54eb0931fda43e49c1f4405789310f0f50"
+content-hash = "092cc66d1347b2ac487d15915885ed2039603476335ca65d057d1bccafe81b32"
