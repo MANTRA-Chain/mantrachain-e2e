@@ -84,7 +84,7 @@
         params: {
           block: {
             max_bytes: '3000000',
-            max_gas: '300000000',
+            max_gas: '81500000',
           },
           abci: {
             vote_extensions_enable_height: '1',
