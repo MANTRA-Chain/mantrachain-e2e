@@ -396,8 +396,8 @@ def test_batch_tx(mantra):
         w3, cli, [deploy_tx, transfer_tx1, transfer_tx2]
     )
     rsp = cli.broadcast_tx_json(cosmos_tx)
-    assert rsp["code"] >= 0
-    assert f"expected only one EVM message, got {len(tx_hashes)}" in rsp["raw_log"]
+    assert rsp["code"] == 18
+    assert f"got {len(tx_hashes)}" in rsp["raw_log"]
 
 
 def test_refund_unused_gas_when_contract_tx_reverted(mantra):
