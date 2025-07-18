@@ -3,9 +3,14 @@ from pathlib import Path
 import pytest
 
 from .network import setup_custom_mantra
-from .utils import ADDRS, KEYS, send_transaction, w3_wait_for_block, wait_for_new_blocks
-
-pytest.skip("skipping min gas test", allow_module_level=True)
+from .utils import (
+    ADDRS,
+    KEYS,
+    adjust_base_fee,
+    send_transaction,
+    w3_wait_for_block,
+    wait_for_new_blocks,
+)
 
 
 @pytest.fixture(scope="module")
@@ -44,32 +49,18 @@ def custom_cluster(request, custom_mantra_eq, custom_mantra_lte, custom_mantra):
     return custom_mantra
 
 
-def adjust_base_fee(parent_fee, gas_limit, gas_used, params):
-    "spec: https://eips.ethereum.org/EIPS/eip-1559#specification"
-    change_denominator = params["base_fee_change_denominator"]
-    elasticity_multiplier = params["elasticity_multiplier"]
-    gas_target = gas_limit // elasticity_multiplier
-    if gas_used == gas_target:
-        return parent_fee
-    delta = parent_fee * abs(gas_target - gas_used) // gas_target // change_denominator
-    # https://github.com/crypto-org-chain/ethermint/blob/develop/x/feemarket/keeper/eip1559.go#L104
-    if gas_target > gas_used:
-        return max(parent_fee - delta, params["min_gas_price"])
-    else:
-        return parent_fee + max(delta, 1)
-
-
 def get_params(cli):
-    params = cli.query_params("feemarket")
+    params = cli.get_params("feemarket")["params"]
     return {k: int(float(v)) for k, v in params.items()}
 
 
 def test_dynamic_fee_tx(custom_cluster):
-    wait_for_new_blocks(custom_cluster.cosmos_cli(), 1)
+    cli = custom_cluster.cosmos_cli()
+    wait_for_new_blocks(cli, 1)
     w3 = custom_cluster.w3
     amount = 10000
     before = w3.eth.get_balance(ADDRS["community"])
-    tip_price = 1
+    tip_price = 1000000
     max_price = 10000000000000 + tip_price
     tx = {
         "to": "0x0000000000000000000000000000000000000000",
@@ -93,7 +84,7 @@ def test_dynamic_fee_tx(custom_cluster):
     # check the next block's base fee is adjusted accordingly
     w3_wait_for_block(w3, txreceipt.blockNumber + 1)
     fee = w3.eth.get_block(txreceipt.blockNumber + 1).baseFeePerGas
-    params = get_params(custom_cluster.cosmos_cli())
+    params = get_params(cli)
     assert fee == adjust_base_fee(
         blk.baseFeePerGas, blk.gasLimit, blk.gasUsed, params
     ), fee
@@ -103,14 +94,15 @@ def test_base_fee_adjustment(custom_cluster):
     """
     verify base fee adjustment of three continuous empty blocks
     """
-    wait_for_new_blocks(custom_cluster.cosmos_cli(), 1)
+    cli = custom_cluster.cosmos_cli()
+    wait_for_new_blocks(cli, 1)
     w3 = custom_cluster.w3
     begin = w3.eth.block_number
     w3_wait_for_block(w3, begin + 3)
 
     blk = w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
-    params = get_params(custom_cluster.cosmos_cli())
+    params = get_params(cli)
 
     for i in range(3):
         fee = w3.eth.get_block(begin + 1 + i).baseFeePerGas
