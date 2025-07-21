@@ -6,6 +6,7 @@ from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
     KEYS,
+    WEI_PER_UOM,
     adjust_base_fee,
     send_transaction,
     w3_wait_for_block,
@@ -51,7 +52,7 @@ def custom_cluster(request, custom_mantra_eq, custom_mantra_lte, custom_mantra):
 
 def get_params(cli):
     params = cli.get_params("feemarket")["params"]
-    return {k: int(float(v)) for k, v in params.items()}
+    return {k: float(v) for k, v in params.items()}
 
 
 def test_dynamic_fee_tx(custom_cluster):
@@ -61,7 +62,7 @@ def test_dynamic_fee_tx(custom_cluster):
     amount = 10000
     before = w3.eth.get_balance(ADDRS["community"])
     tip_price = 1000000
-    max_price = 10000000000000 + tip_price
+    max_price = 100000000000000 + tip_price
     tx = {
         "to": "0x0000000000000000000000000000000000000000",
         "value": amount,
@@ -112,4 +113,5 @@ def test_base_fee_adjustment(custom_cluster):
     call = w3.provider.make_request
     res = call("eth_feeHistory", [2, "latest", []])["result"]["baseFeePerGas"]
     # nextBaseFee should align max with minGasPrice in eth_feeHistory
-    assert all(fee == hex(10000000000000) for fee in res), res
+    min_gas_price = max(float(params.get("min_gas_price", 0)) * WEI_PER_UOM, 1)
+    assert all(fee == hex(int(min_gas_price)) for fee in res), res

@@ -597,7 +597,7 @@ def adjust_base_fee(parent_fee, gas_limit, gas_used, params={}):
     delta = parent_fee * abs(gas_target - gas_used) // gas_target // change_denominator
     # https://github.com/cosmos/evm/blob/0e511d32206b1ac709a0eb0ddb1aa21d29e833b8/x/feemarket/keeper/eip1559.go#L93
     if gas_target > gas_used:
-        min_gas_price_in_wei = int(float(params.get("min_gas_price", 0))) * WEI_PER_UOM
-        return max(parent_fee - delta, min_gas_price_in_wei)
+        min_gas_price = float(params.get("min_gas_price", 0)) * WEI_PER_UOM
+        return max(parent_fee - delta, min_gas_price)
     else:
         return parent_fee + max(delta, 1)
