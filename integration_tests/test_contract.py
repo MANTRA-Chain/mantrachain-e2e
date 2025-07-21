@@ -18,17 +18,13 @@ from eth_contract.multicall3 import (
     Call3Value,
     multicall,
 )
-from eth_contract.utils import (
-    ZERO_ADDRESS,
-    balance_of,
-    get_initcode,
-)
+from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH
 from web3 import AsyncWeb3
-from web3.types import Wei
+from web3.types import TxParams, Wei
 
 from .network import setup_custom_mantra
-from .utils import ADDRS
+from .utils import ACCOUNTS, ADDRS
 
 
 @pytest.fixture(scope="module")
@@ -210,3 +206,41 @@ async def test_flow(mantra_replay):
 
     # user get all funds back other than gas fees
     assert await balance_of(w3, ZERO_ADDRESS, users[0]) == before
+
+
+@pytest.mark.asyncio
+async def test_7702(mantra_replay):
+    w3 = mantra_replay.async_w3
+    await deploy_weth(w3)
+
+    assert w3.eth.get_code(WETH_ADDRESS)
+
+    acct = ACCOUNTS["validator"]
+    multicall3 = MULTICALL3ROUTER
+
+    nonce = await w3.eth.get_transaction_count(acct.address)
+    chain_id = await w3.eth.chain_id
+    auth = acct.sign_authorization(
+        {"chainId": chain_id, "address": multicall3, "nonce": nonce + 1}
+    )
+    amount = 1000
+    calls = [
+        Call3Value(WETH_ADDRESS, False, amount, WETH.fns.deposit().data),
+        Call3Value(WETH_ADDRESS, False, 0, WETH.fns.withdraw(amount).data),
+    ]
+    before = await balance_of(w3, ZERO_ADDRESS, acct.address)
+    tx: TxParams = {
+        "from": acct.address,
+        "chainId": chain_id,
+        "to": acct.address,
+        "value": amount,
+        "nonce": nonce,
+        "authorizationList": [auth],
+        "data": MULTICALL3.fns.aggregate3Value(calls).data,
+        # "gas": 50000,
+    }
+    print("gas", await w3.eth.estimate_gas(tx))
+    receipt = await send_transaction(w3, acct, **tx)
+    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    after = await balance_of(w3, ZERO_ADDRESS, acct.address)
+    assert after == before - fee
