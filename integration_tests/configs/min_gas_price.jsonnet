@@ -3,7 +3,7 @@ local config = import 'default.jsonnet';
 config {
   'mantra-canary-net-1'+: {
     validators: [validator {
-      gas_prices: '0.1uom',
+      gas_prices: '100uom',
     } for validator in super.validators],
     genesis+: {
       app_state+: {
