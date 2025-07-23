@@ -245,6 +245,9 @@ async def test_7702(mantra_replay):
         "data": MULTICALL3.fns.aggregate3Value(calls).data,
     }
 
+    before = await w3.eth.get_balance(acct.address)
     receipt = await send_transaction(w3, acct, **tx)
+    after = await w3.eth.get_balance(acct.address)
+    assert before - after == receipt["effectiveGasPrice"] * receipt["gasUsed"]
     assert len(receipt["logs"]) > 0
     assert await w3.eth.get_code(acct.address)
