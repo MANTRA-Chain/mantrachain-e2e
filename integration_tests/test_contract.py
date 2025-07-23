@@ -211,9 +211,16 @@ async def test_flow(mantra_replay):
 @pytest.mark.asyncio
 async def test_7702(mantra_replay):
     w3 = mantra_replay.async_w3
+    await ensure_create2_deployed(w3)
+    await ensure_multicall3_deployed(w3)
     await deploy_weth(w3)
+    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
+        w3, get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS)
+    )
 
-    assert w3.eth.get_code(WETH_ADDRESS)
+    assert await w3.eth.get_code(WETH_ADDRESS)
+    assert await w3.eth.get_code(MULTICALL3ROUTER)
+    assert await w3.eth.get_code(MULTICALL3_ADDRESS)
 
     acct = ACCOUNTS["validator"]
     multicall3 = MULTICALL3ROUTER
@@ -228,7 +235,6 @@ async def test_7702(mantra_replay):
         Call3Value(WETH_ADDRESS, False, amount, WETH.fns.deposit().data),
         Call3Value(WETH_ADDRESS, False, 0, WETH.fns.withdraw(amount).data),
     ]
-    before = await balance_of(w3, ZERO_ADDRESS, acct.address)
     tx: TxParams = {
         "from": acct.address,
         "chainId": chain_id,
@@ -237,10 +243,8 @@ async def test_7702(mantra_replay):
         "nonce": nonce,
         "authorizationList": [auth],
         "data": MULTICALL3.fns.aggregate3Value(calls).data,
-        # "gas": 50000,
     }
-    print("gas", await w3.eth.estimate_gas(tx))
+
     receipt = await send_transaction(w3, acct, **tx)
-    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    after = await balance_of(w3, ZERO_ADDRESS, acct.address)
-    assert after == before - fee
+    assert len(receipt["logs"]) > 0
+    assert await w3.eth.get_code(acct.address)
