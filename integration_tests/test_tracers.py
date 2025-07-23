@@ -14,6 +14,7 @@ from .utils import (
     CONTRACTS,
     create_contract_transaction,
     deploy_contract,
+    deploy_contract_with_receipt,
     derive_new_account,
     derive_random_account,
     fund_acc,
@@ -81,7 +82,7 @@ def test_storage_out_of_gas_error(mantra):
         assert res[0] == res[-1], res
 
 
-@pytest.mark.skip(reason="skipping onlyTopCall")
+# TODO: gas is not aligned with go-ethereum
 def test_trace_transactions_tracers(mantra):
     method = "debug_traceTransaction"
     tracer = {"tracer": "callTracer"}
@@ -103,7 +104,7 @@ def test_trace_transactions_tracers(mantra):
             [tx_hash, tracer | {"tracerConfig": {"onlyTopCall": True}}],
         )
         assert tx_res["result"] == EXPECTED_CALLTRACERS, ""
-        _, tx = deploy_contract(w3, CONTRACTS["TestERC20A"], key=acc.key)
+        _, tx = deploy_contract_with_receipt(w3, CONTRACTS["TestERC20A"], key=acc.key)
         tx_hash = tx["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
         w3_wait_for_new_blocks(w3, 1)
