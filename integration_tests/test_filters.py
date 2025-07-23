@@ -1,3 +1,5 @@
+import pytest
+import web3
 from web3 import Web3
 
 from .utils import (
@@ -17,21 +19,63 @@ def test_get_logs_by_topic(mantra):
     tx = contract.functions.setGreeting("world").build_transaction()
     receipt = send_transaction(w3, tx)
     assert receipt.status == 1
+
+    current = w3.eth.block_number
+    invalid_block_msg = "invalid block range params"
+    # invalid block ranges
+    test_cases = [
+        {"fromBlock": hex(2000), "toBlock": "latest", "address": [contract.address]},
+        {"fromBlock": hex(2), "toBlock": hex(1), "address": [contract.address]},
+        {
+            "fromBlock": "earliest",
+            "toBlock": hex(current + 200),
+            "address": [contract.address],
+        },
+        {
+            "fromBlock": hex(current + 20),
+            "toBlock": hex(current + 200),
+            "address": [contract.address],
+        },
+    ]
+
+    for params in test_cases:
+        with pytest.raises(web3.exceptions.Web3RPCError) as exc:
+            w3.eth.get_logs(params)
+        assert invalid_block_msg in str(exc.value)
+
+    # log exists
     logs = w3.eth.get_logs({"topics": [topic]})
     assert len(logs) == 1
     assert logs[0]["address"] == contract.address
+
+    # Wait and confirm log doesn't appear in new blocks
     w3_wait_for_new_blocks(w3, 2)
-    logs = w3.eth.get_logs({"topics": [topic]})
-    assert len(logs) == 0
-    params = {
-        # TODO: align earlist blk instead of "0x0"
-        "fromBlock": hex(receipt.blockNumber),
-        # TODO: align error for future blk
-        "toBlock": "latest",
-        "address": [contract.address],
-    }
-    logs = w3.eth.get_logs(params)
-    assert len(logs) > 0
+    assert len(w3.eth.get_logs({"topics": [topic]})) == 0
+
+    previous = current
+    current = w3.eth.block_number
+    # valid block ranges
+    valid_cases = [
+        {"fromBlock": "earliest", "toBlock": "latest", "address": [contract.address]},
+        {
+            "fromBlock": "earliest",
+            "toBlock": hex(current),
+            "address": [contract.address],
+        },
+        {
+            "fromBlock": hex(previous),
+            "toBlock": "latest",
+            "address": [contract.address],
+        },
+        {
+            "fromBlock": hex(previous),
+            "toBlock": hex(current),
+            "address": [contract.address],
+        },
+    ]
+    for params in valid_cases:
+        logs = w3.eth.get_logs(params)
+        assert len(logs) > 0
 
 
 def test_pending_transaction_filter(mantra):

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -574,6 +575,10 @@ def derive_new_account(n=1):
     return Account.from_mnemonic(mnemonic, account_path=account_path)
 
 
+def derive_random_account():
+    return derive_new_account(secrets.randbelow(10000) + 1)
+
+
 def edit_ini_sections(chain_id, ini_path, callback):
     ini = configparser.RawConfigParser()
     ini.read(ini_path)
@@ -613,3 +618,11 @@ def assert_duplicate(rpc, height):
         str = json.dumps(event)
         assert str not in values, f"dup event find: {str}"
         values.add(str)
+
+
+def fund_acc(w3, acc, fund=4000000000000000000):
+    addr = acc.address
+    if w3.eth.get_balance(addr, "latest") == 0:
+        tx = {"to": addr, "value": fund, "gasPrice": w3.eth.gas_price}
+        send_transaction(w3, tx)
+        assert w3.eth.get_balance(addr, "latest") == fund
