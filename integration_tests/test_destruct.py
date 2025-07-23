@@ -4,19 +4,11 @@ from .utils import (
     CONTRACTS,
     deploy_contract,
     derive_new_account,
+    fund_acc,
     send_raw_transactions,
-    send_transaction,
     sign_transaction,
     wait_for_fn,
 )
-
-
-def fund_acc(w3, acc, fund=4000000000000000000):
-    addr = acc.address
-    if w3.eth.get_balance(addr, "latest") == 0:
-        tx = {"to": addr, "value": fund, "gasPrice": w3.eth.gas_price}
-        send_transaction(w3, tx)
-        assert w3.eth.get_balance(addr, "latest") == fund
 
 
 @pytest.mark.flaky(max_runs=5)
