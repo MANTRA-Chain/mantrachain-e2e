@@ -1,4 +1,3 @@
-import pytest
 import requests
 from pystarport import ports
 
@@ -11,7 +10,6 @@ from .utils import (
 )
 
 
-@pytest.mark.skip(reason="skipping traceblock test")
 def test_traceblock(mantra):
     w3 = mantra.w3
     cli = mantra.cosmos_cli()
