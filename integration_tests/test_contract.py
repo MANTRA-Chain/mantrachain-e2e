@@ -55,26 +55,30 @@ MULTICALL3ROUTER = create2_address(
 )
 
 
-async def deploy_weth(w3: AsyncWeb3) -> None:
-    if await w3.eth.get_code(WETH_ADDRESS):
-        # already deployed
-        return
-    sender = (await w3.eth.accounts)[0]
-    address = await create2_deploy(
-        w3, sender, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
+async def assert_contract_deployed(w3):
+    account = (await w3.eth.accounts)[0]
+    await ensure_create2_deployed(w3, account)
+    await ensure_multicall3_deployed(w3, account)
+    await ensure_deployed_by_create2(
+        w3, account, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
     )
-    assert address == WETH_ADDRESS, f"Expected {WETH_ADDRESS}, got {address}"
+    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
+        w3, account, get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS)
+    )
+    assert await w3.eth.get_code(WETH_ADDRESS)
+    assert await w3.eth.get_code(MULTICALL3ROUTER)
+    assert await w3.eth.get_code(MULTICALL3_ADDRESS)
 
 
 async def test_flow(mantra_replay):
     w3 = mantra_replay.async_w3
-    await ensure_create2_deployed(w3)
-    await ensure_multicall3_deployed(w3)
-    await ensure_createx_deployed(w3)
-    await deploy_weth(w3)
-    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
-        w3, get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS)
+    await assert_contract_deployed(w3)
+    account = (await w3.eth.accounts)[0]
+    await ensure_createx_deployed(w3, account)
+    await ensure_deployed_by_create2(
+        w3, account, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
     )
+
     initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
     owner = (await w3.eth.accounts)[0]
 
@@ -214,16 +218,7 @@ async def test_flow(mantra_replay):
 
 async def test_7702(mantra_replay):
     w3: AsyncWeb3 = mantra_replay.async_w3
-    await ensure_create2_deployed(w3)
-    await ensure_multicall3_deployed(w3)
-    await deploy_weth(w3)
-    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
-        w3, get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS)
-    )
-
-    assert await w3.eth.get_code(WETH_ADDRESS)
-    assert await w3.eth.get_code(MULTICALL3ROUTER)
-    assert await w3.eth.get_code(MULTICALL3_ADDRESS)
+    await assert_contract_deployed(w3)
 
     acct = ACCOUNTS["validator"]
     multicall3 = MULTICALL3ROUTER
