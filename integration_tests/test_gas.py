@@ -1,56 +1,57 @@
 import pytest
+import web3
+from eth_contract.utils import send_transaction
 
 from .utils import (
     ADDRS,
     CONTRACTS,
-    KEYS,
-    deploy_contract_with_receipt,
-    send_transaction,
-    w3_wait_for_new_blocks,
+    deploy_contract_async,
+    w3_wait_for_new_blocks_async,
 )
 
+pytestmark = pytest.mark.asyncio
 
-def test_gas_call(mantra):
-    function_input = 10
-    mantra_contract, _ = deploy_contract_with_receipt(mantra.w3, CONTRACTS["BurnGas"])
-    mantra_txhash = mantra_contract.functions.burnGas(function_input).transact(
-        {"from": ADDRS["validator"], "gasPrice": mantra.w3.eth.gas_price}
+
+async def test_gas_call(mantra):
+    w3 = mantra.async_w3
+    input = 10
+    contract = await deploy_contract_async(w3, CONTRACTS["BurnGas"])
+    txhash = await contract.functions.burnGas(input).transact(
+        {"from": ADDRS["validator"], "gasPrice": await w3.eth.gas_price}
     )
-    mantra_call_receipt = mantra.w3.eth.wait_for_transaction_receipt(mantra_txhash)
-    assert mantra_call_receipt.gasUsed == 267426
+    receipt = await w3.eth.wait_for_transaction_receipt(txhash)
+    assert receipt.gasUsed == 267426
 
 
-def test_block_gas_limit(mantra):
-    tx_value = 10
-
+async def test_block_gas_limit(mantra):
+    w3 = mantra.async_w3
     # get the block gas limit from the latest block
-    w3_wait_for_new_blocks(mantra.w3, 5)
-    block = mantra.w3.eth.get_block("latest")
+    await w3_wait_for_new_blocks_async(w3, 5)
+    block = await w3.eth.get_block("latest")
     exceeded_gas_limit = block.gasLimit + 100
 
     # send a transaction exceeding the block gas limit
-    mantra_gas_price = mantra.w3.eth.gas_price
+    gas_price = await w3.eth.gas_price
+    value = 10
     tx = {
         "to": ADDRS["community"],
-        "value": tx_value,
+        "value": value,
         "gas": exceeded_gas_limit,
-        "gasPrice": mantra_gas_price,
+        "gasPrice": gas_price,
     }
-
     # expect an error due to the block gas limit
-    with pytest.raises(Exception):
-        send_transaction(mantra.w3, tx, KEYS["validator"])
-
-    # deploy a contract on mantra
-    mantra_contract, _ = deploy_contract_with_receipt(mantra.w3, CONTRACTS["BurnGas"])
+    msg = "exceeds block gas limit"
+    sender = ADDRS["validator"]
+    with pytest.raises(web3.exceptions.Web3RPCError, match=msg):
+        await send_transaction(w3, sender, False, **tx)
 
     # expect an error on contract call due to block gas limit
-    with pytest.raises(Exception):
-        mantra_txhash = mantra_contract.functions.burnGas(exceeded_gas_limit).transact(
+    with pytest.raises(web3.exceptions.Web3RPCError, match=msg):
+        contract = await deploy_contract_async(w3, CONTRACTS["BurnGas"])
+        await contract.functions.burnGas(exceeded_gas_limit).transact(
             {
-                "from": ADDRS["validator"],
+                "from": sender,
                 "gas": exceeded_gas_limit,
-                "gasPrice": mantra_gas_price,
+                "gasPrice": gas_price,
             }
         )
-        (mantra.w3.eth.wait_for_transaction_receipt(mantra_txhash))

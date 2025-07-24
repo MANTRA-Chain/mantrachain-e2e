@@ -1,3 +1,4 @@
+import asyncio
 import configparser
 import hashlib
 import json
@@ -20,8 +21,10 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_contract.utils import send_transaction as send_transaction_async
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
 load_dotenv(Path(__file__).parent.parent / "scripts/.env")
@@ -251,6 +254,17 @@ def w3_wait_for_new_blocks(w3, n, sleep=0.5):
             break
 
 
+async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
+    begin_height = await w3.eth.block_number
+    target = begin_height + n
+
+    while True:
+        cur_height = await w3.eth.block_number
+        if cur_height >= target:
+            break
+        await asyncio.sleep(sleep)
+
+
 def supervisorctl(inipath, *args):
     return subprocess.check_output(
         (sys.executable, "-msupervisor.supervisorctl", "-c", inipath, *args),
@@ -339,6 +353,27 @@ def deploy_contract_with_receipt(
         ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
     address = txreceipt.contractAddress
     return w3.eth.contract(address=address, abi=info["abi"]), txreceipt
+
+
+async def deploy_contract_async(
+    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
+):
+    acct = Account.from_key(key)
+    info = json.loads(jsonfile.read_text())
+    bytecode = ""
+    if "bytecode" in info:
+        bytecode = info["bytecode"]
+    if "byte" in info:
+        bytecode = info["byte"]
+    contract = w3.eth.contract(abi=info["abi"], bytecode=bytecode)
+    tx = await contract.constructor(*args).build_transaction({"from": acct.address})
+    txreceipt = await send_transaction_async(w3, acct.address, **tx)
+    if exp_gas_used is not None:
+        assert (
+            exp_gas_used == txreceipt.gasUsed
+        ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
+    address = txreceipt.contractAddress
+    return w3.eth.contract(address=address, abi=info["abi"])
 
 
 def get_contract(w3, address, jsonfile):
