@@ -205,7 +205,7 @@ def assert_histories(w3, cli, blk, percentiles=[]):
             next_base_price = res
         elif next_base_price != NEW_BASE_FEE:
             assert next_base_price == res
-        expected.append(hex(next_base_price))
+        expected.append(hex(int(next_base_price)))
     assert all(
         abs(int(a, 16) - int(exp_a, 16)) <= 1 and abs(int(b, 16) - int(exp_b, 16)) <= 1
         for (a, b), (exp_a, exp_b) in zip(histories, zip(expected, expected[1:]))
