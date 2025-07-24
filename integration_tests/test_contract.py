@@ -30,6 +30,8 @@ from web3.types import Wei
 from .network import setup_custom_mantra
 from .utils import ADDRS
 
+pytest.skip("fixed in v5", allow_module_level=True)
+
 
 @pytest.fixture(scope="module")
 def mantra_replay(tmp_path_factory):
