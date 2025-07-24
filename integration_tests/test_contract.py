@@ -210,7 +210,7 @@ async def test_flow(mantra_replay):
 
 @pytest.mark.asyncio
 async def test_7702(mantra_replay):
-    w3 = mantra_replay.async_w3
+    w3: AsyncWeb3 = mantra_replay.async_w3
     await ensure_create2_deployed(w3)
     await ensure_multicall3_deployed(w3)
     await deploy_weth(w3)
@@ -251,3 +251,9 @@ async def test_7702(mantra_replay):
     assert before - after == receipt["effectiveGasPrice"] * receipt["gasUsed"]
     assert len(receipt["logs"]) > 0
     assert await w3.eth.get_code(acct.address)
+    block = await w3.eth.get_block(receipt["blockNumber"], True)
+    assert block["transactions"][0] == await w3.eth.get_transaction(
+        receipt["transactionHash"]
+    )
+    receipts = await w3.eth.get_block_receipts(receipt["blockNumber"])
+    assert receipts[0] == receipt
