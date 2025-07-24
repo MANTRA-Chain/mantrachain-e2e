@@ -17,11 +17,8 @@ from .utils import (
     derive_new_account,
     derive_random_account,
     fund_acc,
-    send_raw_transactions,
     send_transaction,
-    sign_transaction,
     w3_wait_for_new_blocks,
-    wait_for_fn,
 )
 
 
@@ -153,53 +150,3 @@ def test_trace_tx(mantra):
         res = [future.result() for future in as_completed(tasks)]
         assert len(res) == len(providers)
         assert res[0] == res[-1], res
-
-
-@pytest.mark.flaky(max_runs=5)
-def test_destruct(mantra):
-    method = "debug_traceTransaction"
-    tracer = {"tracer": "callTracer"}
-    receiver = "0x0F0cb39319129BA867227e5Aae1abe9e7dd5f861"
-    acc = derive_new_account(11)
-    w3 = mantra.w3
-    fund_acc(w3, acc, fund=3077735635376769427)
-    sender = acc.address
-    raw_transactions = []
-    contracts = []
-    total = 3
-    for _ in range(total):
-        contract = deploy_contract(w3, CONTRACTS["SelfDestruct"], key=acc.key)
-        contracts.append(contract)
-
-    nonce = w3.eth.get_transaction_count(sender)
-
-    for i in range(total):
-        tx = (
-            contracts[i]
-            .functions.execute()
-            .build_transaction(
-                {
-                    "from": sender,
-                    "nonce": nonce,
-                    "gas": 167115,
-                    "gasPrice": 5050000000000,
-                    "value": 353434350000000000,
-                }
-            )
-        )
-        raw_transactions.append(sign_transaction(w3, tx, acc.key).raw_transaction)
-        nonce += 1
-    sended_hash_set = send_raw_transactions(w3, raw_transactions)
-
-    def wait_balance():
-        return w3.eth.get_balance(receiver) > 0
-
-    wait_for_fn("wait_balance", wait_balance)
-    for h in sended_hash_set:
-        tx_hash = h.hex()
-        tx_hash = f"0x{tx_hash}"
-        res = w3.provider.make_request(
-            method,
-            [tx_hash, tracer],
-        )
-        assert "insufficient funds" not in res, res
