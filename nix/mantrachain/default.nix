@@ -11,7 +11,7 @@
 let
   version = "v5.0.0-rc2";
   pname = "mantrachain";
-  wasmvmVersion = "v2.2.4";
+  wasmvmVersion = "v3.0.0-ibc2.1";
 
   # Use static packages for Linux to ensure musl compatibility
   buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo123Module; };
@@ -22,15 +22,15 @@ let
   wasmvmLibs = {
     darwin = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvmstatic_darwin.a";
-      sha256 = "sha256-Q/E0EBUUPGJrY0pwmHLv6EjkWtJERMCRSW+cZI/XGmc=";
+      sha256 = "sha256-c2O+xnYvOubIciFN1aphhZHxHW45DzJ7QAQDvVwj1Jk=";
     };
     linux-x86_64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.x86_64.a";
-      sha256 = "sha256-cMmJaE0rSMoXu9VbtpS7sTbXXDk8Bn7zvbyjHSsjtXg=";
+      sha256 = "sha256-/Phan0mC/EludahLAeakxG7ruOOdXNNKLXw/rzAps8s=";
     };
     linux-aarch64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.aarch64.a";
-      sha256 = "sha256-J/sTgh28UZEZ9PmMMKQssyQpsRGw/ciDaGw0pBd3SI8=";
+      sha256 = "sha256-fmG1Zp3S2sIkYFwFWlnBwjxS35jXqxocrKwjKti7f4c=";
     };
   };
 
