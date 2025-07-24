@@ -14,8 +14,8 @@ cd ..
 TESTS_TO_RUN="${TESTS_TO_RUN:-all}"
 
 if [[ "$TESTS_TO_RUN" == "all" ]]; then
-  echo "run all tests"
-  pytest -v -s -m unmarked
+  echo "run all local tests"
+  pytest -s -vvv -m "not connect"
 elif [[ "$TESTS_TO_RUN" == "connect" ]]; then
   if [ -f ../scripts/network.env ]; then
     echo "Loading environment variables from network.env"
