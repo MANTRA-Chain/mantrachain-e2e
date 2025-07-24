@@ -54,7 +54,7 @@ jobs:
         run: make test-e2e-nix
       - name: 'Tar debug files'
         if: failure()
-        run: tar cfz debug_files.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" .
+        run: tar cfz debug_files.tar.gz -C "${TMPDIR-/run/user/1001}/pytest-of-runner" .
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
