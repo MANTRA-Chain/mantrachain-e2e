@@ -179,6 +179,21 @@ def w3_wait_for_block(w3, height, timeout=240):
         raise TimeoutError(f"wait for block {height} timeout")
 
 
+async def w3_wait_for_block_sync(w3, height, timeout=240):
+    for _ in range(timeout * 2):
+        try:
+            current_height = await w3.eth.block_number
+        except Exception as e:
+            print(f"get json-rpc block number failed: {e}", file=sys.stderr)
+        else:
+            if current_height >= height:
+                break
+            print("current block height", current_height)
+        await asyncio.sleep(0.1)
+    else:
+        raise TimeoutError(f"wait for block {height} timeout")
+
+
 def get_sync_info(s):
     return s.get("SyncInfo") or s.get("sync_info")
 
