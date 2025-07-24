@@ -202,7 +202,7 @@ def exec(c):
     cli = do_upgrade("v5.0.0-rc1", target_height)
 
     print(c.supervisorctl("stop", "mantra-canary-net-1-node1"))
-    # TODO: remove after fix graceful shutdown
+    # TODO: remove after https://github.com/cosmos/evm/pull/313 backport to v5.0.0-rc1
     time.sleep(5)
     patch_app_mempool(c.cosmos_cli(i=1).data_dir / "config/app.toml", 5000)
     print(c.supervisorctl("start", "mantra-canary-net-1-node1"))
