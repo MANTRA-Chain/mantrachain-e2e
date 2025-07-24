@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 240
     strategy:
       matrix:
-        tests: [unmarked, slow]
+        tests: [asyncio, unmarked, slow]
     env:
       TESTS_TO_RUN: ${{ matrix.tests }}
     steps:
