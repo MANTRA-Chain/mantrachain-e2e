@@ -27,7 +27,6 @@ from .network import setup_custom_mantra
 from .utils import ACCOUNTS, ADDRS
 
 pytestmark = pytest.mark.asyncio
-pytest.skip("fixed in v5", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +56,9 @@ MULTICALL3ROUTER = create2_address(
 
 
 async def deploy_weth(w3: AsyncWeb3) -> None:
+    if await w3.eth.get_code(WETH_ADDRESS):
+        # already deployed
+        return
     sender = (await w3.eth.accounts)[0]
     address = await create2_deploy(
         w3, sender, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
@@ -210,7 +212,6 @@ async def test_flow(mantra_replay):
     assert await balance_of(w3, ZERO_ADDRESS, users[0]) == before
 
 
-@pytest.mark.asyncio
 async def test_7702(mantra_replay):
     w3: AsyncWeb3 = mantra_replay.async_w3
     await ensure_create2_deployed(w3)
