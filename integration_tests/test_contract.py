@@ -31,7 +31,6 @@ from .network import setup_custom_mantra
 from .utils import ADDRS
 
 pytestmark = pytest.mark.asyncio
-pytest.skip("fixed in v5", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")

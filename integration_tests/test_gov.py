@@ -23,7 +23,6 @@ def denom_to_erc20_address(denom):
     return to_checksum_address("0x" + denom_hash[-20:].hex())
 
 
-@pytest.mark.skip(reason="fixed in v5")
 def test_submit_send_enabled(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     sender = "community"

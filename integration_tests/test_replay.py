@@ -18,7 +18,6 @@ def mantra_replay(tmp_path_factory):
     )
 
 
-@pytest.mark.skip(reason="fixed in v5")
 def test_replay_tx(mantra_replay):
     w3 = mantra_replay.w3
     tx = HexBytes(

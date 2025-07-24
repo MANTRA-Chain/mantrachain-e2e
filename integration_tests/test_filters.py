@@ -12,7 +12,6 @@ from .utils import (
 )
 
 
-@pytest.mark.skip(reason="fixed in v5")
 def test_get_logs_by_topic(mantra):
     w3: Web3 = mantra.w3
     contract = deploy_contract(w3, CONTRACTS["Greeter"])

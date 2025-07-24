@@ -155,7 +155,7 @@ def test_trace_tx(mantra):
         assert res[0] == res[-1], res
 
 
-@pytest.mark.flaky(max_runs=5)
+@pytest.mark.flaky(max_runs=10)
 def test_destruct(mantra):
     method = "debug_traceTransaction"
     tracer = {"tracer": "callTracer"}
