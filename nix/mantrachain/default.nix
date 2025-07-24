@@ -30,7 +30,7 @@ let
     };
     linux-aarch64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.aarch64.a";
-      sha256 = "";
+      sha256 = "sha256-zv5z8Mqlqeq6NzPGOc31BAxHRqk8IGcLpskof+OUSLo=";
     };
   };
 
