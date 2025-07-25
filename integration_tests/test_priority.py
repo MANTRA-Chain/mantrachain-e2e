@@ -14,6 +14,8 @@ from .utils import (
     wait_for_new_blocks,
 )
 
+pytestmark = pytest.mark.slow
+
 PRIORITY_REDUCTION = 1000000
 
 
@@ -38,7 +40,6 @@ def tx_priority(tx, base_fee):
         return (tx["gasPrice"] - base_fee) // PRIORITY_REDUCTION
 
 
-@pytest.mark.skip(reason="skipping test_priority")
 def test_priority(mantra):
     """
     test priorities of different tx types

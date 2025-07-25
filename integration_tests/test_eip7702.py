@@ -1,9 +1,6 @@
-import pytest
-
 from .utils import send_transaction, wait_for_fn
 
 
-@pytest.mark.skip(reason="skipping eoa test")
 def test_eoa(mantra):
     w3 = mantra.w3
     # fund new acct
@@ -25,8 +22,10 @@ def test_eoa(mantra):
         return new_dst_balance != 0
 
     wait_for_fn("balance change", check_balance_change)
-    assert w3.eth.get_balance(acct.address) == value
+    balance = w3.eth.get_balance(acct.address)
+    assert balance == value
 
+    amount = 1000
     authz = acct.sign_authorization(
         {
             "address": "0xdeadbeef00000000000000000000000000000000",
@@ -41,7 +40,7 @@ def test_eoa(mantra):
         "maxFeePerGas": 10**11,
         "maxPriorityFeePerGas": 10**11,
         "to": acct.address,
-        "value": 0,
+        "value": amount,
         "accessList": [],
         "authorizationList": [authz],
         "data": "0x",
@@ -53,6 +52,9 @@ def test_eoa(mantra):
     # TODO: db sync fix release https://github.com/ethereum/go-ethereum/pull/31703
     code = w3.eth.get_code(acct.address, block_identifier=res["blockNumber"])
     assert code.hex().startswith("ef0100deadbeef"), "Code was not set!"
+    current = w3.eth.get_balance(acct.address)
+    assert current == balance - res["effectiveGasPrice"] * res["gasUsed"]
+    balance = current
 
     # clear code
     clear_tx = dict(tx)  # copy tx and replace relevant fields
@@ -72,3 +74,6 @@ def test_eoa(mantra):
     assert res.status == 1
     reset_code = w3.eth.get_code(acct.address)
     assert reset_code.hex().startswith(""), "Code was not clear!"
+    current = w3.eth.get_balance(acct.address)
+    assert current == balance - res["effectiveGasPrice"] * res["gasUsed"]
+    balance = current

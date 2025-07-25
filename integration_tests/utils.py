@@ -42,6 +42,7 @@ ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = "uom"
 CHAIN_ID = "mantra-canary-net-1"
+EVM_CHAIN_ID = 5887
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
@@ -511,7 +512,10 @@ def contract_address(addr, nonce):
 def build_batch_tx(w3, cli, txs, key=KEYS["validator"]):
     "return cosmos batch tx and eth tx hashes"
     signed_txs = [sign_transaction(w3, tx, key) for tx in txs]
-    tmp_txs = [cli.build_evm_tx(f"0x{s.raw_transaction.hex()}") for s in signed_txs]
+    tmp_txs = [
+        cli.build_evm_tx(f"0x{s.raw_transaction.hex()}", chain_id=EVM_CHAIN_ID)
+        for s in signed_txs
+    ]
 
     msgs = [tx["body"]["messages"][0] for tx in tmp_txs]
     fee = sum(int(tx["auth_info"]["fee"]["amount"][0]["amount"]) for tx in tmp_txs)

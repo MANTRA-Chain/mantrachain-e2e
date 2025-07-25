@@ -29,6 +29,9 @@
         'logs-cap': 10000,
         'gas-cap': 30000000,
       },
+      mempool: {
+        'max-txs': 5000,
+      },
     },
     validators: [{
       'coin-type': 60,
@@ -86,8 +89,8 @@
       consensus: {
         params: {
           block: {
-            max_bytes: '3000000',
-            max_gas: '300000000',
+            max_bytes: '1048576',
+            max_gas: '81500000',
           },
           abci: {
             vote_extensions_enable_height: '1',
