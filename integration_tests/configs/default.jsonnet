@@ -37,11 +37,13 @@
       'coin-type': 60,
       coins: '100001000000uom',
       staked: '1000000uom',
+      gas_prices: '0.01uom',
       mnemonic: '${VALIDATOR1_MNEMONIC}',
     }, {
       'coin-type': 60,
       coins: '100001000000uom',
       staked: '1000000uom',
+      gas_prices: '0.01uom',
       mnemonic: '${VALIDATOR2_MNEMONIC}',
       config: {
         db_backend: 'pebbledb',
@@ -53,6 +55,7 @@
       'coin-type': 60,
       coins: '100001000000uom',
       staked: '1000000uom',
+      gas_prices: '0.01uom',
       mnemonic: '${VALIDATOR3_MNEMONIC}',
       config: {
         db_backend: 'goleveldb',
@@ -103,7 +106,7 @@
         feemarket: {
           params: {
             base_fee: '0.010000000000000000',
-            min_gas_price: '0.000000000000000000',
+            min_gas_price: '0.010000000000000000',
             min_gas_multiplier: '0',
           },
         },

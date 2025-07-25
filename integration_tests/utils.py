@@ -597,8 +597,9 @@ def edit_ini_sections(chain_id, ini_path, callback):
         ini.write(fp)
 
 
-def adjust_base_fee(parent_fee, gas_limit, gas_used, params={}):
+def adjust_base_fee(parent_fee, gas_limit, gas_used, params):
     "spec: https://eips.ethereum.org/EIPS/eip-1559#specification"
+    params = {k: float(v) for k, v in params.items()}
     change_denominator = params.get("base_fee_change_denominator", 8)
     elasticity_multiplier = params.get("elasticity_multiplier", 2)
     gas_target = gas_limit // elasticity_multiplier

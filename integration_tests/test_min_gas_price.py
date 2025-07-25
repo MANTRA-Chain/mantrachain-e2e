@@ -50,11 +50,6 @@ def custom_cluster(request, custom_mantra_eq, custom_mantra_lte, custom_mantra):
     return custom_mantra
 
 
-def get_params(cli):
-    params = cli.get_params("feemarket")["params"]
-    return {k: float(v) for k, v in params.items()}
-
-
 def test_dynamic_fee_tx(custom_cluster):
     cli = custom_cluster.cosmos_cli()
     wait_for_new_blocks(cli, 1)
@@ -85,7 +80,7 @@ def test_dynamic_fee_tx(custom_cluster):
     # check the next block's base fee is adjusted accordingly
     w3_wait_for_block(w3, txreceipt.blockNumber + 1)
     fee = w3.eth.get_block(txreceipt.blockNumber + 1).baseFeePerGas
-    params = get_params(cli)
+    params = cli.get_params("feemarket")["params"]
     assert fee == adjust_base_fee(
         blk.baseFeePerGas, blk.gasLimit, blk.gasUsed, params
     ), fee
@@ -103,7 +98,7 @@ def test_base_fee_adjustment(custom_cluster):
 
     blk = w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
-    params = get_params(cli)
+    params = cli.get_params("feemarket")["params"]
 
     for i in range(3):
         fee = w3.eth.get_block(begin + 1 + i).baseFeePerGas

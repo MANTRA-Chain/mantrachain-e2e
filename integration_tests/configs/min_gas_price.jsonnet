@@ -6,6 +6,13 @@ config {
       gas_prices: '100uom',
     } for validator in super.validators],
     genesis+: {
+      consensus+: {
+        params+: {
+          block+: {
+            max_gas+: '81500000',
+          },
+        },
+      },
       app_state+: {
         feemarket+: {
           params+: {
