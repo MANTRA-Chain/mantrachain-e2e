@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -220,5 +221,36 @@ def exec(c):
     wait_for_new_blocks(cli, 3)
 
 
+def make_writable_recursive(path):
+    for root, dirs, files in os.walk(path):
+        for d in dirs:
+            os.chmod(os.path.join(root, d), 0o777)
+        for f in files:
+            os.chmod(os.path.join(root, f), 0o666)
+        os.chmod(root, 0o777)
+
+
+def handle_remove_readonly(func, path, exc):
+    os.chmod(path, 0o777)
+    func(path)
+
+
+def cleanup_upgrades_folder(upgrades_path):
+    upgrades_path = Path(upgrades_path)
+    if upgrades_path.exists():
+        for item in upgrades_path.iterdir():
+            try:
+                if item.is_dir():
+                    make_writable_recursive(str(item))
+                    shutil.rmtree(str(item), onerror=handle_remove_readonly)
+                else:
+                    item.chmod(0o666)
+                    item.unlink()
+            except Exception as e:
+                print(f"Failed to remove {item}: {e}")
+
+
 def test_cosmovisor_upgrade(custom_mantra: Mantra):
     exec(custom_mantra)
+    upgrades = Path(custom_mantra.cosmos_cli().data_dir / "../../upgrades")
+    cleanup_upgrades_folder(upgrades)
