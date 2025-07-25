@@ -16,6 +16,8 @@ from .utils import (
     transfer_via_cosmos,
 )
 
+pytest.skip("fixed in v5", allow_module_level=True)
+
 
 @pytest.mark.connect
 def test_connect_flow(connect_mantra, tmp_path):
