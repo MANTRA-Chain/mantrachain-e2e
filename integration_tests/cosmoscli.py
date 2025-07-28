@@ -214,6 +214,15 @@ class CosmosCLI:
             )
         return json.loads(output)
 
+    def list_accounts(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "keys",
+                "list",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
     def build_evm_tx(self, raw_tx: str, **kwargs):
         default_kwargs = self.get_kwargs()
         return json.loads(
