@@ -24,6 +24,9 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     assert denom in rsp.get("denoms"), rsp
     rsp = cli.query_denom_authority_metadata(denom, _from=addr_a).get("Admin")
     assert rsp == addr_a, rsp
+    msg = "denom prefix is incorrect. Is: invalidfactory"
+    with pytest.raises(AssertionError, match=msg):
+        cli.query_denom_authority_metadata(f"invalid{denom}", _from=addr_a).get("Admin")
 
     name = "Dubai"
     symbol = "DLD"
