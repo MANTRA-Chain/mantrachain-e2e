@@ -27,9 +27,8 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
         "denom_units": [{"denom": denom}],
         "base": denom,
         "name": denom,
-        # TODO: add after https://github.com/MANTRA-Chain/mantrachain/pull/384/files
-        # "display": denom,
-        # "symbol": denom,
+        "display": denom,
+        "symbol": denom,
     }
     assert cli.query_denom_metadata(denom) == meta
     rsp = cli.query_denom_authority_metadata(denom, _from=addr_a).get("Admin")
