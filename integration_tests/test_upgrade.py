@@ -220,6 +220,11 @@ def exec(c):
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!")
     wait_for_new_blocks(cli, 3)
 
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade("v5.0.0-rc3", target_height)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!!")
+
 
 def make_writable_recursive(path):
     for root, dirs, files in os.walk(path):

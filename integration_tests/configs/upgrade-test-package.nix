@@ -27,11 +27,17 @@ let
     else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw="
     else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw="
     else throw "Unsupported platform";
+  releasedV5Rc3Sha256 =
+    if pkgs.stdenv.isDarwin then ""
+    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then ""
+    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then ""
+    else throw "Unsupported platform";
 
   genesisUrl = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v4.0.1/mantrachaind-4.0.1-${platform}.tar.gz";
   releasedV5Rc0Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc0/mantrachaind-5.0.0-rc0-${platform}.tar.gz";
   releasedV5Rc1Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc1/mantrachaind-5.0.0-rc1-${platform}.tar.gz";
   releasedV5Rc2Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc2/mantrachaind-5.0.0-rc2-${platform}.tar.gz";
+  releasedV5Rc3Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc3/mantrachaind-5.0.0-rc3-${platform}.tar.gz";
 
   genesis = pkgs.stdenv.mkDerivation {
     name = "mantrachaind-v4.0.1";
@@ -89,6 +95,19 @@ let
     '';
   };
 
+  releasedV5Rc3 = pkgs.stdenv.mkDerivation {
+    name = "mantrachaind-v5.0.0-rc3";
+    src = pkgs.fetchurl {
+      url = releasedV5Rc3Url;
+      sha256 = releasedV5Rc3Sha256;
+    };
+    unpackPhase = "tar xzf $src";
+    installPhase = ''
+      mkdir -p $out
+      mkdir -p $out/bin
+      cp mantrachaind $out/bin/
+    '';
+  };
 in
 pkgs.linkFarm "upgrade-test-package" [
   {
@@ -106,5 +125,9 @@ pkgs.linkFarm "upgrade-test-package" [
   {
     name = "v5.0.0-rc2";
     path = releasedV5Rc2;
+  }
+  {
+    name = "v5.0.0-rc3";
+    path = releasedV5Rc3;
   }
 ]
