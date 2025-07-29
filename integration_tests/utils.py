@@ -470,6 +470,47 @@ def assert_transfer(cli, addr_a, addr_b, amt=1):
     assert cli.balance(addr_b) == balance_b + amt
 
 
+def denom_to_erc20_address(denom):
+    denom_hash = hashlib.sha256(denom.encode()).digest()
+    return to_checksum_address("0x" + denom_hash[-20:].hex())
+
+
+def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
+    rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "create_denom", lambda attrs: "creator" in attrs
+    )
+    addr_a = kwargs.get("_from")
+    rsp = cli.query_tokenfactory_denoms(addr_a)
+    denom = f"factory/{addr_a}/{subdenom}"
+    assert denom in rsp.get("denoms"), rsp
+    expected = {"creator": addr_a, "new_token_denom": denom}
+    erc20_address = None
+    if not is_legacy:
+        erc20_address = denom_to_erc20_address(denom)
+        expected["new_token_eth_addr"] = erc20_address
+        pair = cli.query_erc20_token_pair(denom)
+        assert pair == {
+            "erc20_address": erc20_address,
+            "denom": denom,
+            "enabled": True,
+            "contract_owner": "OWNER_EXTERNAL",
+        }
+    assert expected.items() <= event.items()
+    meta = {"denom_units": [{"denom": denom}], "base": denom}
+    if not is_legacy:
+        meta["name"] = denom
+        meta["display"] = denom
+        meta["symbol"] = denom
+    assert cli.query_bank_denom_metadata(denom) == meta
+    if is_legacy:
+        _from = None
+    rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
+    assert rsp == addr_a, rsp
+    return denom
+
+
 def recover_community(cli, tmp_path):
     return cli.create_account(
         "community",

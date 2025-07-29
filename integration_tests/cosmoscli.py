@@ -512,8 +512,7 @@ class CosmosCLI:
                 "erc20",
                 "token-pair",
                 token,
-                home=self.data_dir,
-                **kwargs,
+                **(self.get_base_kwargs() | kwargs),
             )
         ).get("token_pair", {})
 
@@ -549,7 +548,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def query_denom_metadata(self, denom, **kwargs):
+    def query_bank_denom_metadata(self, denom, **kwargs):
         return json.loads(
             self.raw(
                 "q",
