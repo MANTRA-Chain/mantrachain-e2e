@@ -191,9 +191,9 @@ class CosmosCLI:
             fp.flush()
             return self.sign_tx(fp.name, signer, **kwargs)
 
-    def create_account(self, name, mnemonic=None, **kwargs):
+    def create_account(self, name, mnemonic=None, coin_type=60, **kwargs):
         "create new keypair in node's keyring"
-        if kwargs.get("coin_type") == 60:
+        if coin_type == 60:
             kwargs["key_type"] = "eth_secp256k1"
         default_kwargs = self.get_kwargs()
         if mnemonic is None:
@@ -213,6 +213,15 @@ class CosmosCLI:
                 **(default_kwargs | kwargs),
             )
         return json.loads(output)
+
+    def list_accounts(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "keys",
+                "list",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
 
     def build_evm_tx(self, raw_tx: str, **kwargs):
         default_kwargs = self.get_kwargs()
@@ -634,3 +643,75 @@ class CosmosCLI:
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("disabled_list")
+
+    def grant_authorization(self, grantee, authz_type, granter, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "grant",
+                grantee,
+                authz_type,
+                "-y",
+                from_=granter,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def exec_tx_by_grantee(self, tx_file, grantee, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "exec",
+                tx_file,
+                "-y",
+                from_=grantee,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def revoke_authorization(self, grantee, msg_type, granter, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "revoke",
+                grantee,
+                msg_type,
+                "-y",
+                from_=granter,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def query_grants(self, granter, grantee, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "authz",
+                "grants",
+                granter,
+                grantee,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("grants", [])
+
+    def query_blacklist(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "sanction",
+                "blacklist",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("blacklisted_accounts", [])

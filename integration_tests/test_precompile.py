@@ -1,22 +1,35 @@
 import hashlib
 
+import pytest
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_utils import to_hex
 
+pytestmark = pytest.mark.asyncio
 
-def test_ecrecover(mantra):
-    w3 = mantra.w3
+
+# Berlin precompile addresses
+PRECOMPILE_ECRECOVER = "0x0000000000000000000000000000000000000001"
+PRECOMPILE_SHA256 = "0x0000000000000000000000000000000000000002"
+PRECOMPILE_RIPEMD160 = "0x0000000000000000000000000000000000000003"
+PRECOMPILE_DATACOPY = "0x0000000000000000000000000000000000000004"
+PRECOMPILE_BIGMODEXP = "0x0000000000000000000000000000000000000005"
+PRECOMPILE_BN256ADD = "0x0000000000000000000000000000000000000006"
+PRECOMPILE_BN256SCALARMUL = "0x0000000000000000000000000000000000000007"
+PRECOMPILE_BN256PAIRING = "0x0000000000000000000000000000000000000008"
+PRECOMPILE_BLAKE2F = "0x0000000000000000000000000000000000000009"
+
+
+async def test_ecrecover(mantra):
+    w3 = mantra.async_w3
     account = Account.create()
     message = b"hello world"
     signable_message = encode_defunct(message)
-
     signed_message = account.sign_message(signable_message)
     message_hash = signed_message.message_hash
     v = signed_message.v
     r = signed_message.r
     s = signed_message.s
-
     # Prepare input: hash(32) + v(32) + r(32) + s(32)
     input_data = (
         message_hash
@@ -24,14 +37,12 @@ def test_ecrecover(mantra):
         + r.to_bytes(32, "big")
         + s.to_bytes(32, "big")
     )
-
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000001",
+            "to": PRECOMPILE_ECRECOVER,
             "data": to_hex(input_data),
         }
     )
-
     # The result should be the address (last 20 bytes, padded to 32)
     recovered_address = "0x" + result[-20:].hex()
     expected_address = account.address.lower()
@@ -44,12 +55,12 @@ def test_ecrecover(mantra):
     assert len(result) == 32
 
 
-def test_sha256(mantra):
-    w3 = mantra.w3
+async def test_sha256(mantra):
+    w3 = mantra.async_w3
     test_data = b"hello world"
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000002",
+            "to": PRECOMPILE_SHA256,
             "data": to_hex(test_data),
         }
     )
@@ -58,12 +69,12 @@ def test_sha256(mantra):
     print(f"SHA-256 test passed: {result.hex()}")
 
 
-def test_ripemd160(mantra):
-    w3 = mantra.w3
+async def test_ripemd160(mantra):
+    w3 = mantra.async_w3
     test_data = b"hello world"
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000003",
+            "to": PRECOMPILE_RIPEMD160,
             "data": to_hex(test_data),
         }
     )
@@ -72,12 +83,12 @@ def test_ripemd160(mantra):
     print(f"RIPEMD-160 test passed: {result.hex()}")
 
 
-def test_identity(mantra):
-    w3 = mantra.w3
+async def test_identity(mantra):
+    w3 = mantra.async_w3
     test_data = b"hello world test data"
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000004",
+            "to": PRECOMPILE_DATACOPY,
             "data": to_hex(test_data),
         }
     )
@@ -85,8 +96,8 @@ def test_identity(mantra):
     print(f"Identity test passed: {result.hex()}")
 
 
-def test_bigmodexp(mantra):
-    w3 = mantra.w3
+async def test_bigmodexp(mantra):
+    w3 = mantra.async_w3
     # Test 2^2 mod 3 = 1
     base_len = (1).to_bytes(32, "big")  # base length = 1
     exp_len = (1).to_bytes(32, "big")  # exponent length = 1
@@ -94,12 +105,10 @@ def test_bigmodexp(mantra):
     base = (2).to_bytes(1, "big")  # base = 2
     exp = (2).to_bytes(1, "big")  # exponent = 2
     mod = (3).to_bytes(1, "big")  # modulus = 3
-
     input_data = base_len + exp_len + mod_len + base + exp + mod
-
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000005",
+            "to": PRECOMPILE_BIGMODEXP,
             "data": to_hex(input_data),
         }
     )
@@ -109,20 +118,18 @@ def test_bigmodexp(mantra):
     print(f"BigModExp test passed: {result.hex()}")
 
 
-def test_bn256add(mantra):
-    w3 = mantra.w3
+async def test_bn256add(mantra):
+    w3 = mantra.async_w3
     # Test adding two valid points on the curve
     # Using generator point (1, 2) + point at infinity
     p1_x = (1).to_bytes(32, "big")
     p1_y = (2).to_bytes(32, "big")
     p2_x = (0).to_bytes(32, "big")  # Point at infinity
     p2_y = (0).to_bytes(32, "big")
-
     input_data = p1_x + p1_y + p2_x + p2_y
-
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000006",
+            "to": PRECOMPILE_BN256ADD,
             "data": to_hex(input_data),
         }
     )
@@ -130,18 +137,16 @@ def test_bn256add(mantra):
     print(f"bn256Add test passed: {result.hex()}")
 
 
-def test_bn256scalarmul(mantra):
-    w3 = mantra.w3
+async def test_bn256scalarmul(mantra):
+    w3 = mantra.async_w3
     # Multiply generator point by scalar 1
     p_x = (1).to_bytes(32, "big")
     p_y = (2).to_bytes(32, "big")
     scalar = (1).to_bytes(32, "big")
-
     input_data = p_x + p_y + scalar
-
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000007",
+            "to": PRECOMPILE_BN256SCALARMUL,
             "data": to_hex(input_data),
         }
     )
@@ -149,34 +154,75 @@ def test_bn256scalarmul(mantra):
     print(f"bn256ScalarMul test passed: {result.hex()}")
 
 
-def test_bn256pairing(mantra):
-    w3 = mantra.w3
+async def test_bn256pairing(mantra):
+    w3 = mantra.async_w3
     # Empty input should return true (1)
-    result = w3.eth.call(
-        {"to": "0x0000000000000000000000000000000000000008", "data": "0x"}
-    )
+    result = await w3.eth.call({"to": PRECOMPILE_BN256PAIRING, "data": "0x"})
     # Empty pairing should return 1 (true)
     expected = (1).to_bytes(32, "big")
     assert result == expected
     print(f"bn256Pairing test passed: {result.hex()}")
 
 
-def test_blake2f(mantra):
-    w3 = mantra.w3
+async def test_blake2f(mantra):
+    w3 = mantra.async_w3
     # Minimal test with 1 round
     rounds = (1).to_bytes(4, "big")
     h = b"\x00" * 64  # 64 bytes of state
     m = b"\x00" * 128  # 128 bytes of message
     t = b"\x00" * 16  # 16 bytes of offset counters
     final_flag = b"\x01"  # 1 byte final flag
-
     input_data = rounds + h + m + t + final_flag
-
-    result = w3.eth.call(
+    result = await w3.eth.call(
         {
-            "to": "0x0000000000000000000000000000000000000009",
+            "to": PRECOMPILE_BLAKE2F,
             "data": to_hex(input_data),
         }
     )
     assert len(result) == 64  # Should return 64 bytes
     print(f"BLAKE2F test passed: {result.hex()}")
+
+
+async def test_all_berlin_precompiles_exist(mantra):
+    w3 = mantra.async_w3
+    berlin_precompiles = [
+        PRECOMPILE_ECRECOVER,
+        PRECOMPILE_SHA256,
+        PRECOMPILE_RIPEMD160,
+        PRECOMPILE_DATACOPY,
+        PRECOMPILE_BIGMODEXP,
+        PRECOMPILE_BN256ADD,
+        PRECOMPILE_BN256SCALARMUL,
+        PRECOMPILE_BN256PAIRING,
+        PRECOMPILE_BLAKE2F,
+    ]
+    for address in berlin_precompiles:
+        # Check if precompile exists by getting code (should be empty)
+        code = await w3.eth.get_code(address)
+        print(f"{address}: code length {len(code)}")
+        # Precompiles should have empty code but still be callable
+        assert len(code) == 0, f"{address} should have empty code"
+
+
+async def test_precompile_gas_costs_berlin(mantra):
+    w3 = mantra.async_w3
+    # Test simple inputs to verify gas costs
+    test_cases = [
+        (PRECOMPILE_ECRECOVER, "0x" + "00" * 128, 3000),  # ECRecover base cost
+        (PRECOMPILE_SHA256, "0x" + "00" * 32, 60),  # SHA256 base cost
+        (PRECOMPILE_RIPEMD160, "0x" + "00" * 32, 600),  # RIPEMD160 base cost
+        (PRECOMPILE_DATACOPY, "0x" + "00" * 32, 15),  # Identity base cost
+        (PRECOMPILE_BN256ADD, "0x" + "00" * 128, 150),  # BN256Add cost
+        (PRECOMPILE_BN256SCALARMUL, "0x" + "00" * 96, 6000),  # BN256ScalarMul cost
+    ]
+    for address, data, expected_min_gas in test_cases:
+        gas_estimate = await w3.eth.estimate_gas(
+            {
+                "to": address,
+                "data": data,
+            }
+        )
+        print(
+            f"{address}: estimated gas {gas_estimate}, expected min {expected_min_gas}"
+        )
+        assert gas_estimate >= expected_min_gas, f"Gas estimate too low for {address}"

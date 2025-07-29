@@ -4,6 +4,11 @@ config {
   'mantra-canary-net-1'+: {
     validators: [validator {
       'coin-type':: validator['coin-type'],
+      'app-config'+: {
+        mempool: {
+          'max-txs': -1,  // TODO: wait fix sender release
+        },
+      },
     } for validator in super.validators],
     accounts: [account {
       'coin-type':: account['coin-type'],

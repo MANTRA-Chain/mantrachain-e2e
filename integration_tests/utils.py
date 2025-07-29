@@ -42,6 +42,7 @@ ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = "uom"
 CHAIN_ID = "mantra-canary-net-1"
+EVM_CHAIN_ID = 5887
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
@@ -455,13 +456,17 @@ def assert_balance(cli, w3, name, evm=False):
     return wei if evm else uom
 
 
+def find_fee(rsp):
+    res = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
+    return int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
+
+
 def assert_transfer(cli, addr_a, addr_b, amt=1):
     balance_a = cli.balance(addr_a)
     balance_b = cli.balance(addr_b)
     rsp = cli.transfer(addr_a, addr_b, f"{amt}{DEFAULT_DENOM}")
     assert rsp["code"] == 0, rsp["raw_log"]
-    res = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
-    fee = int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
+    fee = find_fee(rsp)
     assert cli.balance(addr_a) == balance_a - amt - fee
     assert cli.balance(addr_b) == balance_b + amt
 
@@ -471,7 +476,6 @@ def recover_community(cli, tmp_path):
         "community",
         mnemonic=os.getenv("COMMUNITY_MNEMONIC"),
         home=tmp_path,
-        coin_type=60,
     )["address"]
 
 
@@ -512,7 +516,10 @@ def contract_address(addr, nonce):
 def build_batch_tx(w3, cli, txs, key=KEYS["validator"]):
     "return cosmos batch tx and eth tx hashes"
     signed_txs = [sign_transaction(w3, tx, key) for tx in txs]
-    tmp_txs = [cli.build_evm_tx(f"0x{s.raw_transaction.hex()}") for s in signed_txs]
+    tmp_txs = [
+        cli.build_evm_tx(f"0x{s.raw_transaction.hex()}", chain_id=EVM_CHAIN_ID)
+        for s in signed_txs
+    ]
 
     msgs = [tx["body"]["messages"][0] for tx in tmp_txs]
     fee = sum(int(tx["auth_info"]["fee"]["amount"][0]["amount"]) for tx in tmp_txs)
