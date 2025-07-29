@@ -1,13 +1,10 @@
+import time
+
 import pytest
 import web3
 from eth_contract.utils import send_transaction
 
-from .utils import (
-    ADDRS,
-    CONTRACTS,
-    deploy_contract_async,
-    w3_wait_for_new_blocks_async,
-)
+from .utils import ADDRS, CONTRACTS, deploy_contract_async, w3_wait_for_new_blocks_async
 
 pytestmark = pytest.mark.asyncio
 
@@ -20,6 +17,7 @@ async def test_gas_call(mantra):
         {"from": ADDRS["validator"], "gasPrice": await w3.eth.gas_price}
     )
     receipt = await w3.eth.wait_for_transaction_receipt(txhash)
+    time.sleep(1)
     assert receipt.gasUsed == 267426
 
 

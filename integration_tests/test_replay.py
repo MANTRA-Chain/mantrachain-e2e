@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ def test_replay_tx(mantra_replay):
     if w3.eth.get_balance(signer) < fee:
         send_transaction(w3, {"to": signer, "value": fee})
     txhash = w3.eth.send_raw_transaction(tx)
+    time.sleep(1)
     receipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt["status"] == 1
     assert to_checksum_address(receipt["contractAddress"]) == CREATE2_FACTORY

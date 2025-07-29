@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,7 @@ def test_pruned_node(mantra):
 
     print("wait for transaction receipt", txhash.hex())
     txreceipt = w3.eth.wait_for_transaction_receipt(txhash)
+    time.sleep(1)
     assert txreceipt.gasUsed == exp_gas_used
     assert len(txreceipt.logs) == 1
     data = "0x000000000000000000000000000000000000000000000000000000000000000a"
