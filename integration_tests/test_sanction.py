@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import web3
 
 from .utils import (
     DEFAULT_DENOM,
@@ -87,17 +88,15 @@ def test_blacklist(mantra, tmp_path):
     assert cli.balance(granter) == granter_balance - amt - fee
     assert cli.balance(receiver) == receiver_balance + amt
 
-    w3 = mantra.w3
-    txhash = w3.eth.send_transaction(
-        {
-            "from": bech32_to_eth(granter),
-            "to": bech32_to_eth(community),
-            "value": 1000,
-        }
-    )
-    receipt = w3.eth.wait_for_transaction_receipt(txhash)
-    # TODO: expect fail status when evm tx is blocked
-    assert receipt.status == 1, receipt
+    err = f"{granter} is blacklisted"
+    with pytest.raises(web3.exceptions.Web3RPCError, match=err):
+        mantra.w3.eth.send_transaction(
+            {
+                "from": bech32_to_eth(granter),
+                "to": bech32_to_eth(community),
+                "value": 1000,
+            }
+        )
 
     msg["@type"] = "/mantrachain.sanction.v1.MsgRemoveBlacklistAccounts"
     submit_gov_proposal(mantra, tmp_path, messages=[msg])
