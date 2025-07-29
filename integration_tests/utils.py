@@ -317,7 +317,7 @@ def send_raw_transactions(w3, raw_transactions):
 def send_transaction(w3, tx, key=KEYS["validator"]):
     signed = sign_transaction(w3, tx, key)
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    time.sleep(1)
+    time.sleep(2)
     return w3.eth.wait_for_transaction_receipt(txhash)
 
 

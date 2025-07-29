@@ -41,7 +41,7 @@ def test_traceblock(mantra):
         txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
         txhashes.append(txhash)
     for txhash in txhashes[0 : total - 1]:
-        time.sleep(1)
+        time.sleep(2)
         res = w3.eth.wait_for_transaction_receipt(txhash)
         assert res.status == 1
 

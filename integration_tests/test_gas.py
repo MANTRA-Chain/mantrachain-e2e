@@ -17,7 +17,7 @@ async def test_gas_call(mantra):
         {"from": ADDRS["validator"], "gasPrice": await w3.eth.gas_price}
     )
     receipt = await w3.eth.wait_for_transaction_receipt(txhash)
-    time.sleep(1)
+    time.sleep(2)
     assert receipt.gasUsed == 267426
 
 
