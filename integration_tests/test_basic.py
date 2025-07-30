@@ -20,6 +20,7 @@ from .utils import (
     build_batch_tx,
     contract_address,
     deploy_contract,
+    do_multisig,
     recover_community,
     send_transaction,
     transfer_via_cosmos,
@@ -487,42 +488,7 @@ def test_failed_transfer_tx(mantra):
 
 def test_multisig(mantra, tmp_path):
     cli = mantra.cosmos_cli()
-    cli.make_multisig("multitest1", "signer1", "signer2")
-    multi_addr = cli.address("multitest1")
-    signer1 = cli.address("signer1")
-    amt = 4000
-    cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
-    acc = cli.account(multi_addr)
-    res = cli.account_by_num(acc["account"]["value"]["account_number"])
-    assert res["account_address"] == multi_addr
-
-    m_txt = tmp_path / "m.txt"
-    p1_txt = tmp_path / "p1.txt"
-    p2_txt = tmp_path / "p2.txt"
-    tx_txt = tmp_path / "tx.txt"
-    amt = 1
-    signer2 = cli.address("signer2")
-    multi_tx = cli.transfer(
-        multi_addr,
-        signer2,
-        f"{amt}{DEFAULT_DENOM}",
-        generate_only=True,
-    )
-    json.dump(multi_tx, m_txt.open("w"))
-    signature1 = cli.sign_multisig_tx(m_txt, multi_addr, "signer1")
-    json.dump(signature1, p1_txt.open("w"))
-    signature2 = cli.sign_multisig_tx(m_txt, multi_addr, "signer2")
-    json.dump(signature2, p2_txt.open("w"))
-    final_multi_tx = cli.combine_multisig_tx(
-        m_txt,
-        "multitest1",
-        p1_txt,
-        p2_txt,
-    )
-    json.dump(final_multi_tx, tx_txt.open("w"))
-    rsp = cli.broadcast_tx(tx_txt)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
+    do_multisig(cli, tmp_path, "signer1", "signer2", "multitest1")
 
 
 def test_multisig_cosmos(mantra, tmp_path):
@@ -543,43 +509,7 @@ def test_multisig_cosmos(mantra, tmp_path):
     sender = cli.address("community")
     transfer_via_cosmos(cli, sender, addr_recover1, amt)
     transfer_via_cosmos(cli, sender, addr_recover2, amt)
-    cli.make_multisig("multitest2", recover1, recover2)
-    multi_addr = cli.address("multitest2")
-    signer1 = cli.address(recover1)
-    amt = 4000
-    rsp = cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
-    assert rsp["code"] == 0, rsp["raw_log"]
-    acc = cli.account(multi_addr)
-    res = cli.account_by_num(acc["account"]["value"]["account_number"])
-    assert res["account_address"] == multi_addr
-
-    m_txt = tmp_path / "m.txt"
-    p1_txt = tmp_path / "p1.txt"
-    p2_txt = tmp_path / "p2.txt"
-    tx_txt = tmp_path / "tx.txt"
-    amt = 1
-    signer2 = cli.address(recover2)
-    multi_tx = cli.transfer(
-        multi_addr,
-        signer2,
-        f"{amt}{DEFAULT_DENOM}",
-        generate_only=True,
-    )
-    json.dump(multi_tx, m_txt.open("w"))
-    signature1 = cli.sign_multisig_tx(m_txt, multi_addr, recover1)
-    json.dump(signature1, p1_txt.open("w"))
-    signature2 = cli.sign_multisig_tx(m_txt, multi_addr, recover2)
-    json.dump(signature2, p2_txt.open("w"))
-    final_multi_tx = cli.combine_multisig_tx(
-        m_txt,
-        "multitest2",
-        p1_txt,
-        p2_txt,
-    )
-    json.dump(final_multi_tx, tx_txt.open("w"))
-    rsp = cli.broadcast_tx(tx_txt)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
+    do_multisig(cli, tmp_path, recover1, recover2, "multitest2")
 
 
 def test_textual(mantra):

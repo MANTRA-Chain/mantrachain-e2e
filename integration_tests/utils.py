@@ -726,3 +726,43 @@ def fund_acc(w3, acc, fund=4000000000000000000):
         tx = {"to": addr, "value": fund, "gasPrice": w3.eth.gas_price}
         send_transaction(w3, tx)
         assert w3.eth.get_balance(addr, "latest") == fund
+
+
+def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
+    # prepare multisig and accounts
+    cli.make_multisig(multisig_name, signer1_name, signer2_name)
+    multi_addr = cli.address(multisig_name)
+    signer1 = cli.address(signer1_name)
+    amt = 4000
+    cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
+    acc = cli.account(multi_addr)
+    res = cli.account_by_num(acc["account"]["value"]["account_number"])
+    assert res["account_address"] == multi_addr
+
+    m_txt = tmp_path / "m.txt"
+    p1_txt = tmp_path / "p1.txt"
+    p2_txt = tmp_path / "p2.txt"
+    tx_txt = tmp_path / "tx.txt"
+    amt = 1
+    signer2 = cli.address(signer2_name)
+    multi_tx = cli.transfer(
+        multi_addr,
+        signer2,
+        f"{amt}{DEFAULT_DENOM}",
+        generate_only=True,
+    )
+    json.dump(multi_tx, m_txt.open("w"))
+    signature1 = cli.sign_multisig_tx(m_txt, multi_addr, signer1_name)
+    json.dump(signature1, p1_txt.open("w"))
+    signature2 = cli.sign_multisig_tx(m_txt, multi_addr, signer2_name)
+    json.dump(signature2, p2_txt.open("w"))
+    final_multi_tx = cli.combine_multisig_tx(
+        m_txt,
+        multisig_name,
+        p1_txt,
+        p2_txt,
+    )
+    json.dump(final_multi_tx, tx_txt.open("w"))
+    rsp = cli.broadcast_tx(tx_txt)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
