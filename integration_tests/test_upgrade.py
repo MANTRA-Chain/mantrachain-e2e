@@ -204,9 +204,7 @@ def exec(c, tmp_path):
     file_meta.write_text(json.dumps(meta))
     rsp = cli.set_tokenfactory_denom(file_meta, _from=addr_a, gas_prices=gas_prices)
     assert rsp["code"] == 0, rsp["raw_log"]
-    mm = cli.query_bank_denom_metadata(denom)
-    print("mm-mm", mm, meta)
-    # assert cli.query_bank_denom_metadata(denom) == meta
+    assert cli.query_bank_denom_metadata(denom) == meta
     rsp = cli.query_denom_authority_metadata(denom).get("Admin")
     assert rsp == addr_a, rsp
 
