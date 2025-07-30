@@ -17,6 +17,7 @@ from .utils import (
     CONTRACTS,
     DEFAULT_FEE,
     approve_proposal,
+    assert_create_tokenfactory_denom,
     assert_transfer,
     bech32_to_eth,
     deploy_contract,
@@ -135,7 +136,7 @@ def check_basic_eth_tx(w3, contract, from_acc, to, msg):
     assert receipt.status == 1
 
 
-def exec(c):
+def exec(c, tmp_path):
     """
     - propose an upgrade and pass it
     - wait for it to happen
@@ -182,9 +183,32 @@ def exec(c):
 
     height = cli.block_height()
     target_height = height + 15
+    addr_a = cli.address(community)
+
+    subdenom = f"admin{time.time()}"
+    gas_prices = "1uom"
+    denom = assert_create_tokenfactory_denom(
+        cli, subdenom, is_legacy=True, _from=addr_a, gas_prices=gas_prices
+    )
+    name = "Dubai"
+    symbol = "DLD"
+    meta = {
+        "description": name,
+        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
+        "base": denom,
+        "display": symbol,
+        "name": name,
+        "symbol": symbol,
+    }
+    file_meta = Path(tmp_path) / "meta.json"
+    file_meta.write_text(json.dumps(meta))
+    rsp = cli.set_tokenfactory_denom(file_meta, _from=addr_a, gas_prices=gas_prices)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.query_bank_denom_metadata(denom) == meta
+    rsp = cli.query_denom_authority_metadata(denom).get("Admin")
+    assert rsp == addr_a, rsp
 
     cli = do_upgrade("v5", target_height)
-    addr_a = cli.address(community)
     acc_b = derive_new_account(100)
     addr_b = eth_to_bech32(acc_b.address)
 
@@ -219,6 +243,25 @@ def exec(c):
     wait_for_port(ports.evmrpc_port(c.base_port(0)))
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!")
     wait_for_new_blocks(cli, 3)
+    # check already registered ethContractAddr doesn't break upgrade
+    subdenom = f"admin{time.time()}"
+    denom = assert_create_tokenfactory_denom(
+        cli, subdenom, is_legacy=True, _from=addr_a, gas=620000
+    )
+
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade("v5.0.0-rc3", target_height)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!!")
+
+    metadata = cli.query_bank_denom_metadata(denom)
+    assert metadata == {
+        "denom_units": [{"denom": denom}],
+        "base": denom,
+        "display": denom,
+        "name": denom,
+        "symbol": denom,
+    }, metadata
 
 
 def make_writable_recursive(path):
@@ -250,7 +293,7 @@ def cleanup_upgrades_folder(upgrades_path):
                 print(f"Failed to remove {item}: {e}")
 
 
-def test_cosmovisor_upgrade(custom_mantra: Mantra):
-    exec(custom_mantra)
+def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
+    exec(custom_mantra, tmp_path)
     upgrades = Path(custom_mantra.cosmos_cli().data_dir / "../../upgrades")
     cleanup_upgrades_folder(upgrades)

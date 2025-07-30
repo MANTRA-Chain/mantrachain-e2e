@@ -470,6 +470,47 @@ def assert_transfer(cli, addr_a, addr_b, amt=1):
     assert cli.balance(addr_b) == balance_b + amt
 
 
+def denom_to_erc20_address(denom):
+    denom_hash = hashlib.sha256(denom.encode()).digest()
+    return to_checksum_address("0x" + denom_hash[-20:].hex())
+
+
+def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
+    rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "create_denom", lambda attrs: "creator" in attrs
+    )
+    addr_a = kwargs.get("_from")
+    rsp = cli.query_tokenfactory_denoms(addr_a)
+    denom = f"factory/{addr_a}/{subdenom}"
+    assert denom in rsp.get("denoms"), rsp
+    expected = {"creator": addr_a, "new_token_denom": denom}
+    erc20_address = None
+    if not is_legacy:
+        erc20_address = denom_to_erc20_address(denom)
+        expected["new_token_eth_addr"] = erc20_address
+        pair = cli.query_erc20_token_pair(denom)
+        assert pair == {
+            "erc20_address": erc20_address,
+            "denom": denom,
+            "enabled": True,
+            "contract_owner": "OWNER_EXTERNAL",
+        }
+    assert expected.items() <= event.items()
+    meta = {"denom_units": [{"denom": denom}], "base": denom}
+    if not is_legacy:
+        # all missing metadata fields fixed in rc3
+        meta["name"] = denom
+        meta["display"] = denom
+        meta["symbol"] = denom
+    assert meta.items() <= cli.query_bank_denom_metadata(denom).items()
+    _from = None if is_legacy else addr_a
+    rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
+    assert rsp == addr_a, rsp
+    return denom
+
+
 def recover_community(cli, tmp_path):
     return cli.create_account(
         "community",
@@ -685,3 +726,43 @@ def fund_acc(w3, acc, fund=4000000000000000000):
         tx = {"to": addr, "value": fund, "gasPrice": w3.eth.gas_price}
         send_transaction(w3, tx)
         assert w3.eth.get_balance(addr, "latest") == fund
+
+
+def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
+    # prepare multisig and accounts
+    cli.make_multisig(multisig_name, signer1_name, signer2_name)
+    multi_addr = cli.address(multisig_name)
+    signer1 = cli.address(signer1_name)
+    amt = 4000
+    cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
+    acc = cli.account(multi_addr)
+    res = cli.account_by_num(acc["account"]["value"]["account_number"])
+    assert res["account_address"] == multi_addr
+
+    m_txt = tmp_path / "m.txt"
+    p1_txt = tmp_path / "p1.txt"
+    p2_txt = tmp_path / "p2.txt"
+    tx_txt = tmp_path / "tx.txt"
+    amt = 1
+    signer2 = cli.address(signer2_name)
+    multi_tx = cli.transfer(
+        multi_addr,
+        signer2,
+        f"{amt}{DEFAULT_DENOM}",
+        generate_only=True,
+    )
+    json.dump(multi_tx, m_txt.open("w"))
+    signature1 = cli.sign_multisig_tx(m_txt, multi_addr, signer1_name)
+    json.dump(signature1, p1_txt.open("w"))
+    signature2 = cli.sign_multisig_tx(m_txt, multi_addr, signer2_name)
+    json.dump(signature2, p2_txt.open("w"))
+    final_multi_tx = cli.combine_multisig_tx(
+        m_txt,
+        multisig_name,
+        p1_txt,
+        p2_txt,
+    )
+    json.dump(final_multi_tx, tx_txt.open("w"))
+    rsp = cli.broadcast_tx(tx_txt)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr

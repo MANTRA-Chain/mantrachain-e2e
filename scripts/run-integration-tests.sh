@@ -31,5 +31,5 @@ elif [[ "$TESTS_TO_RUN" == "connect" ]]; then
   pytest -vv -s -m connect
 else
   echo "run tests matching $TESTS_TO_RUN"
-  pytest -v -s -m $TESTS_TO_RUN
+  pytest -vv -s -m $TESTS_TO_RUN
 fi

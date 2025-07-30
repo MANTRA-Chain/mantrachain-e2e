@@ -88,7 +88,6 @@ let
       cp mantrachaind $out/bin/
     '';
   };
-
 in
 pkgs.linkFarm "upgrade-test-package" [
   {
@@ -106,5 +105,9 @@ pkgs.linkFarm "upgrade-test-package" [
   {
     name = "v5.0.0-rc2";
     path = releasedV5Rc2;
+  }
+  {
+    name = "v5.0.0-rc3";
+    path = pkgs.callPackage ../../nix/mantrachain { };
   }
 ]

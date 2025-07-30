@@ -88,7 +88,7 @@ def test_blacklist(mantra, tmp_path):
     assert cli.balance(granter) == granter_balance - amt - fee
     assert cli.balance(receiver) == receiver_balance + amt
 
-    err = f"{granter} is blacklisted"
+    err = f"{bech32_to_eth(granter)} is blacklisted"
     with pytest.raises(web3.exceptions.Web3RPCError, match=err):
         mantra.w3.eth.send_transaction(
             {

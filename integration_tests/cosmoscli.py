@@ -328,14 +328,13 @@ class CosmosCLI:
         ).get("send_enabled", [])
 
     def make_multisig(self, name, signer1, signer2, **kwargs):
-        default_kwargs = self.get_kwargs()
         self.raw(
             "keys",
             "add",
             name,
             multisig=f"{signer1},{signer2}",
             multisig_threshold="2",
-            **(default_kwargs | kwargs),
+            **(self.get_base_kwargs() | kwargs),
         )
 
     def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
@@ -512,8 +511,7 @@ class CosmosCLI:
                 "erc20",
                 "token-pair",
                 token,
-                home=self.data_dir,
-                **kwargs,
+                **(self.get_base_kwargs() | kwargs),
             )
         ).get("token_pair", {})
 
@@ -549,7 +547,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def query_denom_metadata(self, denom, **kwargs):
+    def query_bank_denom_metadata(self, denom, **kwargs):
         return json.loads(
             self.raw(
                 "q",
