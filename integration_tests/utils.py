@@ -504,8 +504,7 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
         meta["display"] = denom
         meta["symbol"] = denom
     assert cli.query_bank_denom_metadata(denom) == meta
-    if is_legacy:
-        _from = None
+    _from = None if is_legacy else addr_a
     rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
     assert rsp == addr_a, rsp
     return denom
