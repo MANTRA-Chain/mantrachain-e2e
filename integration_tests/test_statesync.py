@@ -66,7 +66,7 @@ def test_statesync(mantra):
     clustercli.supervisor.startProcess(f"{clustercli.chain_id}-node{i}")
     # Wait 1 more block
     wait_for_block(clustercli.cosmos_cli(i), cli0.block_height() + 1)
-    time.sleep(2)
+    time.sleep(1)
 
     # check query chain state works
     assert not get_sync_info(clustercli.status(i))["catching_up"]

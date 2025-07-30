@@ -60,7 +60,6 @@ def test_send_transaction(mantra):
             "value": 1000,
         }
     )
-    time.sleep(2)
     receipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt.status == 1
     assert receipt.gasUsed == 21000
