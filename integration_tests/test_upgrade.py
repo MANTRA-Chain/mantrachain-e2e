@@ -243,6 +243,10 @@ def exec(c, tmp_path):
     wait_for_port(ports.evmrpc_port(c.base_port(0)))
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!")
     wait_for_new_blocks(cli, 3)
+    subdenom = f"admin{time.time()}"
+    denom = assert_create_tokenfactory_denom(
+        cli, subdenom, is_legacy=True, _from=addr_a, gas=620000
+    )
 
     height = cli.block_height()
     target_height = height + 15
