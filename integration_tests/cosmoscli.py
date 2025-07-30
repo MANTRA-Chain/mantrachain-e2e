@@ -328,14 +328,13 @@ class CosmosCLI:
         ).get("send_enabled", [])
 
     def make_multisig(self, name, signer1, signer2, **kwargs):
-        default_kwargs = self.get_kwargs()
         self.raw(
             "keys",
             "add",
             name,
             multisig=f"{signer1},{signer2}",
             multisig_threshold="2",
-            **(default_kwargs | kwargs),
+            **(self.get_base_kwargs() | kwargs),
         )
 
     def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
