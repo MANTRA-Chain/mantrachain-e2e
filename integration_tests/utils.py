@@ -500,10 +500,11 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     assert expected.items() <= event.items()
     meta = {"denom_units": [{"denom": denom}], "base": denom}
     if not is_legacy:
+        # all missing metadata fields fixed in rc3
         meta["name"] = denom
         meta["display"] = denom
         meta["symbol"] = denom
-    assert meta <= cli.query_bank_denom_metadata(denom)
+    assert meta.items() <= cli.query_bank_denom_metadata(denom).items()
     _from = None if is_legacy else addr_a
     rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
     assert rsp == addr_a, rsp
