@@ -1,8 +1,16 @@
-{ pkgs ? import ../../nix { } }:
-let mantrachaind = (pkgs.callPackage ../../nix/mantrachain/. { });
+{
+  pkgs ? import ../../nix { },
+  includeMainMantrachaind ? true,
+}:
+let 
+  baseMantrachaind = if includeMainMantrachaind 
+    then (pkgs.callPackage ../../nix/main/. { })
+    else (pkgs.callPackage ../../nix/mantrachain/. { });
+  
+  brokenMantrachaind = baseMantrachaind.overrideAttrs (oldAttrs: {
+    patches = oldAttrs.patches or [ ] ++ [
+      ./broken-mantrachaind.patch
+    ];
+  });
 in
-mantrachaind.overrideAttrs (oldAttrs: {
-  patches = oldAttrs.patches or [ ] ++ [
-    ./broken-mantrachaind.patch
-  ];
-})
+brokenMantrachaind
