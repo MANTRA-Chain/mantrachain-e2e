@@ -108,6 +108,6 @@ pkgs.linkFarm "upgrade-test-package" [
   }
   {
     name = "v5.0.0-rc3";
-    path = pkgs.callPackage ../../. { };
+    path = pkgs.callPackage ../../nix/mantrachain { };
   }
 ]
