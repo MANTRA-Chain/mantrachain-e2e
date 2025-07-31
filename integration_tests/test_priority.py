@@ -14,6 +14,8 @@ from .utils import (
     wait_for_new_blocks,
 )
 
+pytestmark = pytest.mark.slow
+
 PRIORITY_REDUCTION = 1000000
 
 
