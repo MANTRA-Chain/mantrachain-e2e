@@ -84,8 +84,8 @@ buildGo123Module' rec {
   src = fetchFromGitHub {
     owner = "MANTRA-Chain";
     repo = pname;
-    rev = "bbb71f9b9e07da4be415920177b37aab5319a5a4";
-    hash = "sha256-DqyuP859QdyRaPZ+CYHMFRknmkcXNm/pWDPZ4R944ts=";
+    rev = "e2368d0e1f5a0c9453898b983b36ec30036ed1b0";
+    hash = "sha256-hugryZn13HgmEcRyFLbGtArxfEwqZf63P7g2tVyyB7s=";
   };
   vendorHash = "sha256-A8acpN6PMlEUTncCzhzghzmYkPPX3gHSewl6eYB8dz8=";
   proxyVendor = true;
