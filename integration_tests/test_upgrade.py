@@ -262,6 +262,8 @@ def exec(c, tmp_path):
         "name": denom,
         "symbol": denom,
     }, metadata
+    allow = cli.get_params("evm").get("params", {}).get("allow_unprotected_txs")
+    assert allow is True, "allow_unprotected_txs should be true"
 
 
 def make_writable_recursive(path):

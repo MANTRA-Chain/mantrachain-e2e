@@ -5,11 +5,21 @@ from pathlib import Path
 
 import pytest
 
-from .utils import assert_create_tokenfactory_denom, wait_for_new_blocks
+from .utils import (
+    DEFAULT_GAS,
+    assert_create_tokenfactory_denom,
+    assert_transfer,
+    get_balance,
+    wait_for_new_blocks,
+)
 
 
 def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     cli = connect_mantra.cosmos_cli(tmp_path)
+    fee = cli.get_params("tokenfactory").get("params", {}).get("denom_creation_fee", [])
+    if fee and int(fee[0].get("amount", 0)) > DEFAULT_GAS:
+        print(f"denom_creation_fee {fee[0]['amount']} is too high, skip test")
+        return
     community = "community"
     signer2 = "signer2"
     cli.create_account(community, os.environ["COMMUNITY_MNEMONIC"])
@@ -49,6 +59,9 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
         print(mantra.cosmos_cli(2).prune())
         mantra.supervisorctl("start", "mantra-canary-net-1-node2")
 
+    amt = 10000
+    if get_balance(cli, addr_b) < amt:
+        assert_transfer(cli, addr_a, addr_b, amt=amt)
     rsp = cli.update_tokenfactory_admin(denom, addr_a, _from=addr_b)
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 5)
