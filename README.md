@@ -33,9 +33,19 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```
 
 3. **Run tests:**
+   to try all test
    ```sh
-   pytest -v -s -m unmarked
-   pytest -v -s -m unmarked test_flow.py
+   make test-e2e-nix
+   ```
+   or specific marker
+   ```sh
+   pytest -vv -s -m asyncio
+   pytest -vv -s -m unmarked
+   pytest -vv -s -m slow
+   ```
+   or more specific
+   ```sh
+   pytest -vv -s test_basic.py::test_multisig
    ```
 
 ### Nix Build Targets

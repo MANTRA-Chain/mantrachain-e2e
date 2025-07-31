@@ -19,9 +19,21 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items, config):
+    keywordexpr = config.option.keyword
+    markexpr = config.option.markexpr
+    skip_connect = pytest.mark.skip(reason="Skipping connect tests by default")
     for item in items:
+        # add "unmarked" marker to tests that have no markers
         if not any(item.iter_markers()):
             item.add_marker("unmarked")
+
+        # skip connect-marked tests unless explicitly requested
+        if "connect" in item.keywords:
+            if not (
+                (keywordexpr and "connect" in keywordexpr)
+                or (markexpr and "connect" in markexpr)
+            ):
+                item.add_marker(skip_connect)
 
 
 @pytest.fixture(scope="session")
