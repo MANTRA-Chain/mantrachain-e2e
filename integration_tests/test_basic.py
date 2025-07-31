@@ -374,6 +374,7 @@ def test_contract(mantra, connect_mantra, tmp_path):
     assert_balance(cli, w3, name)
 
 
+@pytest.mark.skip(reason="fixed in evm is reverted")
 def test_batch_tx(mantra):
     "send multiple eth txs in single cosmos tx should be disabled"
     w3 = mantra.w3

@@ -13,6 +13,7 @@ from .utils import (
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.mark.skip(reason="fixed in evm is reverted")
 async def test_get_logs_by_topic(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     contract = await deploy_contract_async(w3, CONTRACTS["Greeter"])

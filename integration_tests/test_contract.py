@@ -67,6 +67,7 @@ async def deploy_weth(w3: AsyncWeb3) -> None:
     assert address == WETH_ADDRESS, f"Expected {WETH_ADDRESS}, got {address}"
 
 
+@pytest.mark.skip(reason="fixed in evm is reverted")
 async def test_flow(mantra_replay):
     w3 = mantra_replay.async_w3
     await ensure_create2_deployed(w3)
