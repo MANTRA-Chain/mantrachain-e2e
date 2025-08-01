@@ -173,8 +173,9 @@ def connect_custom_mantra():
 
 
 class Geth:
-    def __init__(self, w3):
+    def __init__(self, w3, async_w3):
         self.w3 = w3
+        self.async_w3 = async_w3
 
 
 def setup_geth(path, base_port):
@@ -200,9 +201,12 @@ def setup_geth(path, base_port):
         )
         try:
             wait_for_port(base_port)
-            w3 = web3.Web3(web3.providers.HTTPProvider(f"http://127.0.0.1:{base_port}"))
+            url = f"http://127.0.0.1:{base_port}"
+            w3 = web3.Web3(web3.providers.HTTPProvider(url))
             w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-            yield Geth(w3)
+            async_w3 = AsyncWeb3(AsyncHTTPProvider(url, cache_allowed_requests=True))
+            async_w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+            yield Geth(w3, async_w3)
         finally:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             # proc.terminate()
