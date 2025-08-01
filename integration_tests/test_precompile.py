@@ -5,6 +5,8 @@ import pytest
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_utils import to_hex
+from py_ecc.bls12_381 import G1, add, multiply
+from py_ecc.fields import FQ
 
 pytestmark = pytest.mark.asyncio
 
@@ -242,36 +244,37 @@ async def test_precompile_gas_costs_berlin(mantra):
 class Spec:
     # BLS12-381 field modulus
     BLS_MODULUS = 0x73EDA753299D7D483339D80809A1D80553BDA402FFFE5BFEFFFFFFFF00000001
-    INF_POINT = b"\xc0" + b"\x00" * 47  # Infinity point in G1 (compressed)
+    INF_POINT = b"\xc0" + b"\x00" * 47
 
-    # CORRECTED Generator point G1 (128 bytes: 64 bytes each for X and Y)
-    # BLS12-381 coordinates need to be padded to 64 bytes each for the precompile
-    G1_GENERATOR = bytes.fromhex(
-        # X coordinate: pad to 64 bytes
-        "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"  # noqa: E501
-        # Y coordinate: pad to 64 bytes
-        "0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"  # noqa: E501
-    )
+    @staticmethod
+    def pad_fq(x: FQ) -> bytes:
+        # py_ecc FQ elements are integers mod prime, 48 bytes big-endian native size
+        # Ethereum expects 64 bytes left-padded with zeros
+        as_bytes = x.n.to_bytes(48, "big")
+        return as_bytes.rjust(64, b"\x00")
 
-    # 2 * Generator (G + G, point doubling result)
-    # This is the correct expected result for generator_plus_generator
-    G1_GENERATOR_DOUBLE = bytes.fromhex(
-        # 2G X coordinate (64 bytes)
-        "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e"  # noqa: E501
-        # 2G Y coordinate (64 bytes)
-        "00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
-    )
+    @classmethod
+    def point_to_bytes(cls, point) -> bytes:
+        if point is None:
+            # Represent point at infinity as zeros (128 bytes)
+            return b"\x00" * 128
+        x, y = point
+        return cls.pad_fq(x) + cls.pad_fq(y)
 
-    # Identity element (point at infinity) - 128 bytes of zeros
-    G1_IDENTITY = b"\x00" * 128
 
-    # Test point 1 - also properly padded to 64 bytes each coordinate
-    TEST_POINT_1 = bytes.fromhex(
-        # X coordinate: pad to 64 bytes
-        "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e"  # noqa: E501
-        # Y coordinate: pad to 64 bytes
-        "00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
-    )
+# Identity element (point at infinity) - 128 bytes of zeros
+G1_IDENTITY = b"\x00" * 128
+
+# Create G1 generator and related points
+G1_GENERATOR = Spec.point_to_bytes(G1)
+
+# Double the generator point: 2*G1
+G1_GENERATOR_DOUBLE_POINT = add(G1, G1)
+G1_GENERATOR_DOUBLE = Spec.point_to_bytes(G1_GENERATOR_DOUBLE_POINT)
+
+# Example arbitrary test point (multiply G1 by 7)
+TEST_POINT_1_POINT = multiply(G1, 7)
+TEST_POINT_1 = Spec.point_to_bytes(TEST_POINT_1_POINT)
 
 
 def kzg_to_versioned_hash(kzg_commitment: bytes) -> bytes:
@@ -313,22 +316,21 @@ async def test_kzg_point_evaluation(mantra):
             "gas": 150000,
         }
     )
-    assert (
-        res.hex()
-        == "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"  # noqa: E501
-    )
+    prefix_bytes = b"\x00" * 30 + b"\x10\x00"
+    modulus_bytes = Spec.BLS_MODULUS.to_bytes(32, "big")
+    assert res == prefix_bytes + modulus_bytes
 
 
 @pytest.mark.parametrize(
     "point_a,point_b,expected",
     [
         # Identity element tests
-        (Spec.G1_IDENTITY, Spec.G1_IDENTITY, Spec.G1_IDENTITY),
-        (Spec.G1_GENERATOR, Spec.G1_IDENTITY, Spec.G1_GENERATOR),
-        (Spec.G1_IDENTITY, Spec.G1_GENERATOR, Spec.G1_GENERATOR),
+        (G1_IDENTITY, G1_IDENTITY, G1_IDENTITY),
+        (G1_GENERATOR, G1_IDENTITY, G1_GENERATOR),
+        (G1_IDENTITY, G1_GENERATOR, G1_GENERATOR),
         # Valid point addition tests
-        (Spec.G1_GENERATOR, Spec.G1_GENERATOR, Spec.G1_GENERATOR_DOUBLE),
-        (Spec.TEST_POINT_1, Spec.G1_IDENTITY, Spec.TEST_POINT_1),
+        (G1_GENERATOR, G1_GENERATOR, G1_GENERATOR_DOUBLE),
+        (TEST_POINT_1, G1_IDENTITY, TEST_POINT_1),
     ],
     ids=[
         "identity_plus_identity",
@@ -359,7 +361,7 @@ async def test_bls12381_g1_multiexp(mantra):
     w3 = mantra.async_w3
     # Test case 1: Single point multiplication - G * 2 = 2G
     # Input format: point (128 bytes) + scalar (32 bytes) = 160 bytes per pair
-    point1 = Spec.G1_GENERATOR
+    point1 = G1_GENERATOR
     scalar1 = (2).to_bytes(32, "big")  # Multiply by 2
     input_data = point1 + scalar1
     # Verify input points are correct length
@@ -376,8 +378,4 @@ async def test_bls12381_g1_multiexp(mantra):
         }
     )
     assert len(res) == 128, f"Result should be 128 bytes, got {len(res)}"
-    assert res == Spec.G1_GENERATOR_DOUBLE, "G * 2 should equal 2G"
-    assert (
-        res.hex()
-        == "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
-    )
+    assert res == G1_GENERATOR_DOUBLE, "G * 2 should equal 2G"
