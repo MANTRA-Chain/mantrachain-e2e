@@ -69,12 +69,12 @@
     }, {
       'coin-type': 60,
       name: 'signer1',
-      coins: '20000000000000000000000uom',
+      coins: '200000000000uom',
       mnemonic: '${SIGNER1_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'signer2',
-      coins: '30000000000000000000000uom',
+      coins: '300000000000uom',
       mnemonic: '${SIGNER2_MNEMONIC}',
     }, {
       'coin-type': 60,

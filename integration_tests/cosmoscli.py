@@ -486,6 +486,13 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def tx_search(self, events: str):
+        return json.loads(
+            self.raw(
+                "query", "txs", query=f'"{events}"', output="json", node=self.node_rpc
+            )
+        )
+
     def tx_search_rpc(self, events: str):
         rsp = requests.get(
             f"{self.node_rpc_http}/tx_search",
@@ -634,3 +641,86 @@ class CosmosCLI:
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("disabled_list")
+
+    def grant_authorization(self, grantee, authz_type, granter, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "grant",
+                grantee,
+                authz_type,
+                "-y",
+                from_=granter,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def exec_tx_by_grantee(self, tx_file, grantee, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "exec",
+                tx_file,
+                "-y",
+                from_=grantee,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def revoke_authorization(self, grantee, msg_type, granter, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "authz",
+                "revoke",
+                grantee,
+                msg_type,
+                "-y",
+                from_=granter,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def query_grants(self, granter, grantee, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "authz",
+                "grants",
+                granter,
+                grantee,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("grants", [])
+
+    def query_blacklist(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "sanction",
+                "blacklist",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("blacklisted_accounts", [])
+
+    def ibc_denom_hash(self, path, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "ibc-transfer",
+                "denom-hash",
+                path,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("hash")

@@ -21,6 +21,7 @@ import sources.nixpkgs {
           dotenv = builtins.path { name = "dotenv"; path = ../scripts/.env; };
         };
       })
+    (_: pkgs: { hermes = pkgs.callPackage ./hermes.nix { src = sources.hermes; };})
     (_: pkgs: { test-env = pkgs.callPackage ./testenv.nix { }; })
     (_: pkgs: { cosmovisor = pkgs.callPackage ./cosmovisor.nix { }; })
     (_: pkgs: { mantrachaind = pkgs.callPackage ./mantrachain/default.nix { }; })
