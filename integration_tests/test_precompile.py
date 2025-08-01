@@ -535,3 +535,38 @@ async def test_bls12381_pairing(mantra, pairs):
     assert len(res) == 32, f"Pairing result should be 32 bytes, got {len(res)}"
     expected_bytes = b"\x00" * 31 + b"\x01"
     assert res == expected_bytes, f"Expected true (1), got {res.hex()}"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        0,
+        1,
+        2,
+        42,
+        2**64 - 1,
+        Spec.BLS_MODULUS // 2,
+        Spec.BLS_MODULUS - 1,
+    ],
+    ids=[
+        "zero",
+        "one",
+        "two",
+        "forty_two",
+        "large_number",
+        "half_modulus",
+        "max_field_element",
+    ],
+)
+async def test_bls12381_map_g1(mantra, field):
+    w3 = mantra.async_w3
+    input = field.to_bytes(64, "big")
+    assert len(input) == 64, f"input should be 64 bytes, got {len(input)}"
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_MAP_G1,
+            "data": f"0x{input.hex()}",
+            "gas": 50000,
+        }
+    )
+    assert len(res) == 128, f"G1 map result should be 128 bytes, got {len(res)}"
