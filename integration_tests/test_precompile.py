@@ -5,7 +5,7 @@ import pytest
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_utils import to_hex
-from py_ecc.bls12_381 import G1, add, multiply
+from py_ecc.bls12_381 import G1, G2, add, multiply
 from py_ecc.fields import FQ
 
 pytestmark = pytest.mark.asyncio
@@ -261,12 +261,27 @@ class Spec:
         x, y = point
         return cls.pad_fq(x) + cls.pad_fq(y)
 
+    @classmethod
+    def g2_point_to_bytes(cls, point) -> bytes:
+        """Convert G2 point to 256 bytes."""
+        if point is None:
+            # Represent point at infinity as zeros (256 bytes)
+            return b"\x00" * 256
+        x, y = point
+        # G2 points have Fp2 coordinates: x = (x.c0, x.c1), y = (y.c0, y.c1)
+        # Each component is an FQ element that needs 64-byte padding
+        x_c0_bytes = cls.pad_fq(x.coeffs[0])  # 64 bytes
+        x_c1_bytes = cls.pad_fq(x.coeffs[1])  # 64 bytes
+        y_c0_bytes = cls.pad_fq(y.coeffs[0])  # 64 bytes
+        y_c1_bytes = cls.pad_fq(y.coeffs[1])  # 64 bytes
+        return x_c0_bytes + x_c1_bytes + y_c0_bytes + y_c1_bytes
 
-# Identity element (point at infinity) - 128 bytes of zeros
+
+# Identity element (point at infinity)
 G1_IDENTITY = b"\x00" * 128
-
-# Create G1 generator and related points
+G2_IDENTITY = b"\x00" * 256
 G1_GENERATOR = Spec.point_to_bytes(G1)
+G2_GENERATOR = Spec.g2_point_to_bytes(G2)
 
 # Double the generator point: 2*G1
 G1_GENERATOR_DOUBLE_POINT = add(G1, G1)
@@ -379,3 +394,51 @@ async def test_bls12381_g1_multiexp(mantra):
     )
     assert len(res) == 128, f"Result should be 128 bytes, got {len(res)}"
     assert res == G1_GENERATOR_DOUBLE, "G * 2 should equal 2G"
+
+
+async def test_bls12381_g2_add(mantra):
+    w3 = mantra.async_w3
+    # G2 points are 256 bytes each (128 bytes for X + 128 bytes for Y)
+    # Each coordinate (X, Y) is 128 bytes because G2 is over Fp2 (two Fp elements)
+    # Verify the generator point is exactly 256 bytes
+    assert (
+        len(G2_GENERATOR) == 256
+    ), f"G2 generator should be 256 bytes, got {len(G2_GENERATOR)}"
+
+    async def call(input):
+        return await w3.eth.call(
+            {
+                "to": PRECOMPILE_BLS12381_G2_ADD,
+                "data": f"0x{input.hex()}",
+                "gas": 50000,
+            }
+        )
+
+    # Test case 1: Identity + Identity = Identity
+    input = G2_IDENTITY + G2_IDENTITY
+    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
+    res = await call(input)
+    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
+    assert res == G2_IDENTITY, "Identity + Identity should equal Identity"
+
+    # Test case 2: Generator + Identity = Generator
+    input = G2_GENERATOR + G2_IDENTITY
+    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
+    res = await call(input)
+    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
+    assert res == G2_GENERATOR, "Generator + Identity should equal Generator"
+
+    # Test case 3: Identity + Generator = Generator
+    input = G2_IDENTITY + G2_GENERATOR
+    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
+    res = await call(input)
+    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
+    assert res == G2_GENERATOR, "Identity + Generator should equal Generator"
+
+    # Test case 4: Generator + Generator = 2*Generator (point doubling)
+    input = G2_GENERATOR + G2_GENERATOR
+    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
+    res = await call(input)
+    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
+    assert res != G2_GENERATOR, "Generator + Generator should not equal Generator"
+    assert res != G2_IDENTITY, "Generator + Generator should not equal Identity"
