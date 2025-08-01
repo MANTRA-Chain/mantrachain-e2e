@@ -442,3 +442,52 @@ async def test_bls12381_g2_add(mantra):
     assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
     assert res != G2_GENERATOR, "Generator + Generator should not equal Generator"
     assert res != G2_IDENTITY, "Generator + Generator should not equal Identity"
+
+
+@pytest.mark.parametrize(
+    "points,scalars,expected",
+    [
+        # Single point multiplication
+        ([G2_GENERATOR], [1], G2_GENERATOR),  # G2 * 1 = G2
+        ([G2_IDENTITY], [5], G2_IDENTITY),  # Identity * 5 = Identity
+        ([G2_GENERATOR], [0], G2_IDENTITY),  # G2 * 0 = Identity
+        # Multiple points with zero scalars
+        ([G2_GENERATOR, G2_GENERATOR], [0, 0], G2_IDENTITY),  # G2*0 + G2*0 = Identity
+        # Identity point multiplication (should always result in identity)
+        (
+            [G2_IDENTITY, G2_IDENTITY],
+            [100, 200],
+            G2_IDENTITY,
+        ),  # Identity*100 + Identity*200 = Identity
+    ],
+    ids=[
+        "g2_times_1",
+        "identity_times_5",
+        "g2_times_0",
+        "zero_scalars",
+        "identity_multiplication",
+    ],
+)
+async def test_bls12381_g2_multiexp(mantra, points, scalars, expected):
+    w3 = mantra.async_w3
+    assert len(points) == len(scalars), "Number of points must equal number of scalars"
+    # Build input data: point1 + scalar1 + point2 + scalar2 + ...
+    input_data = b""
+    for point, scalar in zip(points, scalars):
+        assert len(point) == 256, f"Each G2 point must be 256 bytes, got {len(point)}"
+        scalar_bytes = scalar.to_bytes(32, "big")
+        input_data += point + scalar_bytes
+
+    expected_input_length = len(points) * 288  # 288 bytes per (point + scalar) pair
+    assert (
+        len(input_data) == expected_input_length
+    ), f"Input should be {expected_input_length} bytes, got {len(input_data)}"
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_G2_MULTIEXP,
+            "data": "0x" + input_data.hex(),
+            "gas": 100000,
+        }
+    )
+    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
+    assert res == expected, f"Expected {expected.hex()}, got {res.hex()}"
