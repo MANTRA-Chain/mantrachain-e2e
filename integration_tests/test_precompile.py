@@ -1,4 +1,5 @@
 import hashlib
+from typing import Optional
 
 import pytest
 from eth_account import Account
@@ -18,6 +19,16 @@ PRECOMPILE_BN256ADD = "0x0000000000000000000000000000000000000006"
 PRECOMPILE_BN256SCALARMUL = "0x0000000000000000000000000000000000000007"
 PRECOMPILE_BN256PAIRING = "0x0000000000000000000000000000000000000008"
 PRECOMPILE_BLAKE2F = "0x0000000000000000000000000000000000000009"
+# Cancun precompile addresses
+PRECOMPILE_KZG_POINT_EVALUATION = "0x000000000000000000000000000000000000000A"
+# Prague precompile addresses
+PRECOMPILE_BLS12381_G1_ADD = "0x000000000000000000000000000000000000000b"
+PRECOMPILE_BLS12381_G1_MULTIEXP = "0x000000000000000000000000000000000000000C"
+PRECOMPILE_BLS12381_G2_ADD = "0x000000000000000000000000000000000000000d"
+PRECOMPILE_BLS12381_G2_MULTIEXP = "0x000000000000000000000000000000000000000E"
+PRECOMPILE_BLS12381_PAIRING = "0x000000000000000000000000000000000000000F"
+PRECOMPILE_BLS12381_MAP_G1 = "0x0000000000000000000000000000000000000010"
+PRECOMPILE_BLS12381_MAP_G2 = "0x0000000000000000000000000000000000000011"
 
 
 async def test_ecrecover(mantra):
@@ -226,3 +237,83 @@ async def test_precompile_gas_costs_berlin(mantra):
             f"{address}: estimated gas {gas_estimate}, expected min {expected_min_gas}"
         )
         assert gas_estimate >= expected_min_gas, f"Gas estimate too low for {address}"
+
+
+class Spec:
+    # BLS12-381 field modulus
+    BLS_MODULUS = 0x73EDA753299D7D483339D80809A1D80553BDA402FFFE5BFEFFFFFFFF00000001
+    INF_POINT = b"\xc0" + b"\x00" * 47  # Infinity point in G1 (compressed)
+
+    # CORRECTED Generator point G1 (128 bytes: 64 bytes each for X and Y)
+    # BLS12-381 coordinates need to be padded to 64 bytes each for the precompile
+    G1_GENERATOR = bytes.fromhex(
+        # X coordinate: pad to 64 bytes
+        "0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"  # noqa: E501
+        # Y coordinate: pad to 64 bytes
+        "0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"  # noqa: E501
+    )
+
+    # 2 * Generator (G + G, point doubling result)
+    # This is the correct expected result for generator_plus_generator
+    G1_GENERATOR_DOUBLE = bytes.fromhex(
+        # 2G X coordinate (64 bytes)
+        "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e"  # noqa: E501
+        # 2G Y coordinate (64 bytes)
+        "00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
+    )
+
+    # Identity element (point at infinity) - 128 bytes of zeros
+    G1_IDENTITY = b"\x00" * 128
+
+    # Test point 1 - also properly padded to 64 bytes each coordinate
+    TEST_POINT_1 = bytes.fromhex(
+        # X coordinate: pad to 64 bytes
+        "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e"  # noqa: E501
+        # Y coordinate: pad to 64 bytes
+        "00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
+    )
+
+
+def kzg_to_versioned_hash(kzg_commitment: bytes) -> bytes:
+    """Convert KZG commitment to versioned hash."""
+    hash_result = hashlib.sha256(kzg_commitment).digest()
+    # Add version byte (0x01 for KZG)
+    return bytes([0x01]) + hash_result[1:]
+
+
+async def format_precompile_input(
+    versioned_hash: Optional[bytes],
+    z: int,
+    y: int,
+    kzg_commitment: bytes,
+    kzg_proof: bytes,
+) -> bytes:
+    """Format the input for the point evaluation precompile (192 bytes total)."""
+    z_bytes = z.to_bytes(32, "big")
+    y_bytes = y.to_bytes(32, "big")
+    if versioned_hash is None:
+        versioned_hash = kzg_to_versioned_hash(kzg_commitment)
+    return versioned_hash + z_bytes + y_bytes + kzg_commitment + kzg_proof
+
+
+async def test_kzg_point_evaluation(mantra):
+    w3 = mantra.async_w3
+    # Use a valid input (infinity point)
+    input = await format_precompile_input(
+        versioned_hash=None,
+        z=Spec.BLS_MODULUS - 1,
+        y=0,
+        kzg_commitment=Spec.INF_POINT,
+        kzg_proof=Spec.INF_POINT,
+    )
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_KZG_POINT_EVALUATION,
+            "data": to_hex(input),
+            "gas": 150000,
+        }
+    )
+    assert (
+        res.hex()
+        == "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"  # noqa: E501
+    )
