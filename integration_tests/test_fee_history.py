@@ -21,8 +21,6 @@ NEW_BASE_FEE = 10000000000
 
 pytestmark = pytest.mark.slow
 
-pytest.skip("fixed in evm is reverted", allow_module_level=True)
-
 
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
