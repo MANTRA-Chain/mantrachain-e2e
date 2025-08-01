@@ -353,3 +353,31 @@ async def test_bls12381_g1_add(mantra, point_a, point_b: bytes, expected):
     )
     assert len(res) == 128
     assert expected == res
+
+
+async def test_bls12381_g1_multiexp(mantra):
+    w3 = mantra.async_w3
+    # Test case 1: Single point multiplication - G * 2 = 2G
+    # Input format: point (128 bytes) + scalar (32 bytes) = 160 bytes per pair
+    point1 = Spec.G1_GENERATOR
+    scalar1 = (2).to_bytes(32, "big")  # Multiply by 2
+    input_data = point1 + scalar1
+    # Verify input points are correct length
+    assert len(point1) == 128, f"Point should be 128 bytes, got {len(point1)}"
+    assert len(scalar1) == 32, f"Scalar should be 32 bytes, got {len(scalar1)}"
+    assert (
+        len(input_data) == 160
+    ), f"Single multiexp input should be 160 bytes, got {len(input_data)}"
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_G1_MULTIEXP,
+            "data": "0x" + input_data.hex(),
+            "gas": 50000,
+        }
+    )
+    assert len(res) == 128, f"Result should be 128 bytes, got {len(res)}"
+    assert res == Spec.G1_GENERATOR_DOUBLE, "G * 2 should equal 2G"
+    assert (
+        res.hex()
+        == "000000000000000000000000000000000572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e00000000000000000000000000000000166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28"  # noqa: E501
+    )
