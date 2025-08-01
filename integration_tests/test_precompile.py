@@ -491,3 +491,47 @@ async def test_bls12381_g2_multiexp(mantra, points, scalars, expected):
     )
     assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
     assert res == expected, f"Expected {expected.hex()}, got {res.hex()}"
+
+
+@pytest.mark.parametrize(
+    "pairs",
+    [
+        # Single pair with identities (should be true)
+        ([(G1_IDENTITY, G2_GENERATOR)]),
+        ([(G1_GENERATOR, G2_IDENTITY)]),
+        ([(G1_IDENTITY, G2_IDENTITY)]),
+        # Multiple pairs that should result in true
+        ([(G1_IDENTITY, G2_GENERATOR), (G1_GENERATOR, G2_IDENTITY)]),
+        ([(G1_IDENTITY, G2_IDENTITY), (G1_IDENTITY, G2_IDENTITY)]),
+    ],
+    ids=[
+        "g1_identity_g2_gen",
+        "g1_gen_g2_identity",
+        "double_identity",
+        "mixed_identities",
+        "all_identities",
+    ],
+)
+async def test_bls12381_pairing(mantra, pairs):
+    w3 = mantra.async_w3
+    # Build input data: g1_point1 + g2_point1 + g1_point2 + g2_point2 + ...
+    input_data = b""
+    for g1_point, g2_point in pairs:
+        assert len(g1_point) == 128, f"G1 point must be 128 bytes, got {len(g1_point)}"
+        assert len(g2_point) == 256, f"G2 point must be 256 bytes, got {len(g2_point)}"
+        input_data += g1_point + g2_point
+
+    expected_input_length = len(pairs) * 384  # 384 bytes per (G1 + G2) pair
+    assert (
+        len(input_data) == expected_input_length
+    ), f"Input should be {expected_input_length} bytes, got {len(input_data)}"
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_PAIRING,
+            "data": "0x" + input_data.hex(),
+            "gas": 200000 + len(pairs) * 100000,  # More gas for more pairs
+        }
+    )
+    assert len(res) == 32, f"Pairing result should be 32 bytes, got {len(res)}"
+    expected_bytes = b"\x00" * 31 + b"\x01"
+    assert res == expected_bytes, f"Expected true (1), got {res.hex()}"
