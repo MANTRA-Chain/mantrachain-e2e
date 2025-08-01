@@ -317,3 +317,39 @@ async def test_kzg_point_evaluation(mantra):
         res.hex()
         == "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"  # noqa: E501
     )
+
+
+@pytest.mark.parametrize(
+    "point_a,point_b,expected",
+    [
+        # Identity element tests
+        (Spec.G1_IDENTITY, Spec.G1_IDENTITY, Spec.G1_IDENTITY),
+        (Spec.G1_GENERATOR, Spec.G1_IDENTITY, Spec.G1_GENERATOR),
+        (Spec.G1_IDENTITY, Spec.G1_GENERATOR, Spec.G1_GENERATOR),
+        # Valid point addition tests
+        (Spec.G1_GENERATOR, Spec.G1_GENERATOR, Spec.G1_GENERATOR_DOUBLE),
+        (Spec.TEST_POINT_1, Spec.G1_IDENTITY, Spec.TEST_POINT_1),
+    ],
+    ids=[
+        "identity_plus_identity",
+        "generator_plus_identity",
+        "identity_plus_generator",
+        "generator_plus_generator",
+        "test_point_plus_identity",
+    ],
+)
+async def test_bls12381_g1_add(mantra, point_a, point_b: bytes, expected):
+    # Verify input points are correct length
+    if len(point_a) != 128 or len(point_b) != 128:
+        raise ValueError("Each G1 point must be exactly 128 bytes")
+    input_data = point_a + point_b
+    w3 = mantra.async_w3
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_G1_ADD,
+            "data": "0x" + input_data.hex(),
+            "gas": 30000,
+        }
+    )
+    assert len(res) == 128
+    assert expected == res
