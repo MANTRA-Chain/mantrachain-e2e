@@ -570,3 +570,45 @@ async def test_bls12381_map_g1(mantra, field):
         }
     )
     assert len(res) == 128, f"G1 map result should be 128 bytes, got {len(res)}"
+
+
+@pytest.mark.parametrize(
+    "field_pair",
+    [
+        (0, 0),
+        (1, 0),
+        (0, 1),
+        (1, 1),
+        (42, 123),
+        (2**64 - 1, 2**32 - 1),
+        (Spec.BLS_MODULUS // 2, Spec.BLS_MODULUS // 3),
+        (Spec.BLS_MODULUS - 1, Spec.BLS_MODULUS - 2),
+    ],
+    ids=[
+        "zero_zero",
+        "one_zero",
+        "zero_one",
+        "one_one",
+        "forty_two_oneTwoThree",
+        "large_numbers",
+        "half_third_modulus",
+        "max_field_elements",
+    ],
+)
+async def test_bls12381_map_g2(mantra, field_pair):
+    w3 = mantra.async_w3
+    field1, field2 = field_pair
+    # G2 map takes two field elements (128 bytes total: 64 bytes each)
+    # This represents an Fp2 element: field1 + field2 * i
+    data1 = field1.to_bytes(64, "big")
+    data2 = field2.to_bytes(64, "big")
+    input = data1 + data2
+    assert len(input) == 128, f"G2 map input should be 128 bytes, got {len(input)}"
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_MAP_G2,
+            "data": "0x" + input.hex(),
+            "gas": 75000,
+        }
+    )
+    assert len(res) == 256, f"G2 map result should be 256 bytes, got {len(res)}"
