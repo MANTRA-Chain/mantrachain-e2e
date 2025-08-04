@@ -8,13 +8,16 @@ from .utils import (
     ADDRS,
     CONTRACTS,
     DEFAULT_DENOM,
+    KEYS,
     assert_balance,
+    derive_new_account,
     escrow_address,
     eth_to_bech32,
     find_duplicate,
     get_contract,
     ibc_denom_address,
     parse_events_rpc,
+    send_transaction,
     wait_for_fn,
 )
 
@@ -84,3 +87,18 @@ def test_ibc_transfer(ibc):
     total = erc20_contract.caller.totalSupply()
     balance = erc20_contract.caller.balanceOf(ADDRS[community])
     assert total == balance == src_amount
+    receiver = derive_new_account(2).address
+    res = send_transaction(
+        w3,
+        erc20_contract.functions.transfer(receiver, 5).build_transaction(
+            {
+                "from": ADDRS[community],
+                "gas": 22000,
+                "gasPrice": w3.eth.gas_price,
+                "nonce": w3.eth.get_transaction_count(ADDRS[community]),
+            }
+        ),
+        key=KEYS[community],
+    )
+    print("mm-res", res)
+    # assert res.status == 1
