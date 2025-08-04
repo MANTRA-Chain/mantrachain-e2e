@@ -36,7 +36,7 @@ def assert_dynamic_fee(cli):
     gas = int(tx["gas_wanted"])
     # the effective fee is decided by the max_priority_fee (base fee is zero)
     # rather than the normal gas price
-    cosmos_evm_dynamic_fee = 10000000000000000 / 1e18
+    cosmos_evm_dynamic_fee = 10000000000000000 / 10**18
     assert fee == math.ceil(gas * cosmos_evm_dynamic_fee)
 
 
@@ -79,5 +79,8 @@ def test_ibc_transfer(ibc):
     assert_dup_events(cli)
 
     ibc_denom_addr = ibc_denom_address(dst_denom)
-    erc20_contract = get_contract(ibc.ibc1.w3, ibc_denom_addr, CONTRACTS["IERC20"])
-    assert erc20_contract.caller.balanceOf(ADDRS["community"]) == src_amount
+    w3 = ibc.ibc1.w3
+    erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
+    total = erc20_contract.caller.totalSupply()
+    balance = erc20_contract.caller.balanceOf(ADDRS[community])
+    assert total == balance == src_amount

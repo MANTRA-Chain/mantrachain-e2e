@@ -524,7 +524,6 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     erc20_address = None
     if not is_legacy:
         erc20_address = denom_to_erc20_address(denom)
-        print("mm-erc20_address", erc20_address, denom)
         expected["new_token_eth_addr"] = erc20_address
         pair = cli.query_erc20_token_pair(denom)
         assert pair == {
