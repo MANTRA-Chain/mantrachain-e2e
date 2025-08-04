@@ -93,10 +93,10 @@ async def test_ibc_transfer(ibc):
 
     # TODO: fix after display align with unit https://github.com/cosmos/evm/issues/396
     fn = ERC20.fns.decimals()
-    # result = await async_w3.eth.call(
-    #     {"to": erc20_address, "data": f"0x{fn.data.hex()}"}
-    # )
-    # assert fn.decode(result) == 0
+    result = await async_w3.eth.call(
+        {"to": ibc_denom_addr, "data": f"0x{fn.data.hex()}"}
+    )
+    assert fn.decode(result) == 0
 
     total = erc20_contract.caller.totalSupply()
     sender = ADDRS[community]
