@@ -2,6 +2,7 @@ import hashlib
 import math
 
 import pytest
+from eth_contract.erc20 import ERC20
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
@@ -84,6 +85,11 @@ def test_ibc_transfer(ibc):
     ibc_denom_addr = ibc_denom_address(dst_denom)
     w3 = ibc.ibc1.w3
     erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
+
+    fn = ERC20.fns.decimals()
+    result = w3.eth.call({"to": erc20_contract.address, "data": fn.data})
+    assert fn.decode(result) == 0
+
     assert erc20_contract.caller.decimals() == 0
     total = erc20_contract.caller.totalSupply()
     sender = ADDRS[community]
