@@ -84,6 +84,7 @@ def test_ibc_transfer(ibc):
     ibc_denom_addr = ibc_denom_address(dst_denom)
     w3 = ibc.ibc1.w3
     erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
+    assert erc20_contract.caller.decimals() == 0
     total = erc20_contract.caller.totalSupply()
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
