@@ -11,6 +11,8 @@ from .utils import (
     DEFAULT_DENOM,
     KEYS,
     assert_balance,
+    assert_create_tokenfactory_denom,
+    denom_to_erc20_address,
     derive_new_account,
     escrow_address,
     eth_to_bech32,
@@ -21,6 +23,8 @@ from .utils import (
     send_transaction,
     wait_for_fn,
 )
+
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +57,7 @@ def assert_dup_events(cli):
         assert not dup, f"duplicate {dup} in {event['type']}"
 
 
-def test_ibc_transfer(ibc):
+async def test_ibc_transfer(ibc):
     src_amount = 10
     port = "transfer"
     channel = "channel-0"
@@ -84,13 +88,16 @@ def test_ibc_transfer(ibc):
 
     ibc_denom_addr = ibc_denom_address(dst_denom)
     w3 = ibc.ibc1.w3
+    async_w3 = ibc.ibc1.async_w3
     erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
 
+    # TODO: fix after display align with unit https://github.com/cosmos/evm/issues/396
     fn = ERC20.fns.decimals()
-    result = w3.eth.call({"to": erc20_contract.address, "data": fn.data})
-    assert fn.decode(result) == 0
+    # result = await async_w3.eth.call(
+    #     {"to": erc20_address, "data": f"0x{fn.data.hex()}"}
+    # )
+    # assert fn.decode(result) == 0
 
-    assert erc20_contract.caller.decimals() == 0
     total = erc20_contract.caller.totalSupply()
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
@@ -157,3 +164,14 @@ def test_ibc_transfer(ibc):
     assert erc20_contract.caller.balanceOf(sender) == balance - amt - amt2
     assert erc20_contract.caller.balanceOf(receiver2) == 0
     assert erc20_contract.caller.balanceOf(receiver3) == amt2
+
+    subdenom = "test"
+    # check create tokenfactory denom
+    denom = assert_create_tokenfactory_denom(
+        cli, subdenom, _from=cli.address(community), gas=620000
+    )
+    erc20_address = denom_to_erc20_address(denom)
+    result = await async_w3.eth.call(
+        {"to": erc20_address, "data": f"0x{fn.data.hex()}"}
+    )
+    assert fn.decode(result) == 0
