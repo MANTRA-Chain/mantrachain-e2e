@@ -6,11 +6,14 @@ import pytest
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
+    CONTRACTS,
     DEFAULT_DENOM,
     assert_balance,
     escrow_address,
     eth_to_bech32,
     find_duplicate,
+    get_contract,
+    ibc_denom_address,
     parse_events_rpc,
     wait_for_fn,
 )
@@ -74,3 +77,7 @@ def test_ibc_transfer(ibc):
     assert_balance(cli2, ibc.ibc2.w3, escrow_address(port, channel)) == dst_amount
     assert_dynamic_fee(cli)
     assert_dup_events(cli)
+
+    ibc_denom_addr = ibc_denom_address(dst_denom)
+    erc20_contract = get_contract(ibc.ibc1.w3, ibc_denom_addr, CONTRACTS["IERC20"])
+    assert erc20_contract.caller.balanceOf(ADDRS["community"]) == src_amount

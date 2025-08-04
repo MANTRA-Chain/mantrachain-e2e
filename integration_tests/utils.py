@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import configparser
 import hashlib
 import json
@@ -65,6 +66,7 @@ TEST_CONTRACTS = {
     "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
+    "IERC20": "IERC20.sol",
 }
 
 
@@ -498,6 +500,16 @@ def escrow_address(port, channel):
     return eth_to_bech32(hashlib.sha256(pre_image.encode()).digest()[:20].hex())
 
 
+def ibc_denom_address(denom):
+    if not denom.startswith("ibc/"):
+        raise ValueError(f"coin {denom} does not have 'ibc/' prefix")
+    if len(denom) < 5 or denom[4:].strip() == "":
+        raise ValueError(f"coin {denom} is not a valid IBC voucher hash")
+    hash_part = denom[4:]  # remove "ibc/" prefix
+    hash_bytes = binascii.unhexlify(hash_part)
+    return to_checksum_address("0x" + hash_bytes[-20:].hex())
+
+
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -512,6 +524,7 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     erc20_address = None
     if not is_legacy:
         erc20_address = denom_to_erc20_address(denom)
+        print("mm-erc20_address", erc20_address, denom)
         expected["new_token_eth_addr"] = erc20_address
         pair = cli.query_erc20_token_pair(denom)
         assert pair == {
