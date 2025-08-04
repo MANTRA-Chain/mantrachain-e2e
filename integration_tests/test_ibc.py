@@ -3,13 +3,13 @@ import math
 
 import pytest
 from eth_contract.erc20 import ERC20
+from eth_contract.utils import send_transaction
+from web3.types import TxParams
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
-    CONTRACTS,
     DEFAULT_DENOM,
-    KEYS,
     assert_balance,
     assert_create_tokenfactory_denom,
     denom_to_erc20_address,
@@ -17,10 +17,8 @@ from .utils import (
     escrow_address,
     eth_to_bech32,
     find_duplicate,
-    get_contract,
     ibc_denom_address,
     parse_events_rpc,
-    send_transaction,
     wait_for_fn,
 )
 
@@ -86,92 +84,72 @@ async def test_ibc_transfer(ibc):
     assert_dynamic_fee(cli)
     assert_dup_events(cli)
 
-    ibc_denom_addr = ibc_denom_address(dst_denom)
-    w3 = ibc.ibc1.w3
-    async_w3 = ibc.ibc1.async_w3
-    erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
+    ibc_erc20_addr = ibc_denom_address(dst_denom)
+    w3 = ibc.ibc1.async_w3
 
     # TODO: fix after display align with unit https://github.com/cosmos/evm/issues/396
-    fn = ERC20.fns.decimals()
-    result = await async_w3.eth.call(
-        {"to": ibc_denom_addr, "data": f"0x{fn.data.hex()}"}
-    )
-    assert fn.decode(result) == 0
+    assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
 
-    total = erc20_contract.caller.totalSupply()
+    total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
-    balance = erc20_contract.caller.balanceOf(sender)
+    balance = await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
     assert total == balance == src_amount
     amt = 5
-    tx = erc20_contract.functions.transfer(receiver, amt).build_transaction(
+
+    tx = TxParams(
         {
             "from": sender,
-            "gasPrice": w3.eth.gas_price,
-            "nonce": w3.eth.get_transaction_count(sender),
+            "to": ibc_erc20_addr,
+            "data": ERC20.fns.transfer(receiver, amt).data,
+            "gasPrice": await w3.eth.gas_price,
         }
     )
-    tx["gas"] = w3.eth.estimate_gas(tx)
-    res = send_transaction(
-        w3,
-        tx,
-        key=KEYS[community],
+    tx["gas"] = await w3.eth.estimate_gas(tx)
+    await send_transaction(w3, sender, **tx)
+    assert balance - amt == await ERC20.fns.balanceOf(sender).call(
+        w3, to=ibc_erc20_addr
     )
-    assert res.status == 1
-    assert erc20_contract.caller.balanceOf(sender) == balance - amt
-    assert erc20_contract.caller.balanceOf(receiver) == amt
+    assert amt == await ERC20.fns.balanceOf(receiver).call(w3, to=ibc_erc20_addr)
 
     receiver2 = ADDRS["signer2"]
     receiver3 = ADDRS["signer1"]
     amt2 = 2
-    tx = erc20_contract.functions.approve(
-        receiver2,
-        amt2,
-    ).build_transaction(
+
+    tx = TxParams(
         {
             "from": sender,
-            "gasPrice": w3.eth.gas_price,
-            "nonce": w3.eth.get_transaction_count(sender),
+            "to": ibc_erc20_addr,
+            "data": ERC20.fns.approve(receiver2, amt2).data,
+            "gasPrice": await w3.eth.gas_price,
         }
     )
-    tx["gas"] = w3.eth.estimate_gas(tx)
-    res = send_transaction(
-        w3,
-        tx,
-        key=KEYS[community],
-    )
-    assert res.status == 1
-    assert erc20_contract.caller.allowance(sender, receiver2) == amt2
+    tx["gas"] = await w3.eth.estimate_gas(tx)
+    await send_transaction(w3, sender, **tx)
+    assert (
+        await ERC20.fns.allowance(sender, receiver2).call(w3, to=ibc_erc20_addr)
+    ) == amt2
 
-    tx = erc20_contract.functions.transferFrom(
-        sender,
-        receiver3,
-        amt2,
-    ).build_transaction(
+    tx = TxParams(
         {
             "from": receiver2,
-            "gasPrice": w3.eth.gas_price,
-            "nonce": w3.eth.get_transaction_count(receiver2),
+            "to": ibc_erc20_addr,
+            "data": ERC20.fns.transferFrom(sender, receiver3, amt2).data,
+            "gasPrice": await w3.eth.gas_price,
         }
     )
-    tx["gas"] = w3.eth.estimate_gas(tx)
-    res = send_transaction(
-        w3,
-        tx,
-        key=KEYS["signer2"],
-    )
-    assert res.status == 1
-    assert erc20_contract.caller.balanceOf(sender) == balance - amt - amt2
-    assert erc20_contract.caller.balanceOf(receiver2) == 0
-    assert erc20_contract.caller.balanceOf(receiver3) == amt2
+    tx["gas"] = await w3.eth.estimate_gas(tx)
+    await send_transaction(w3, receiver2, **tx)
+    assert (
+        await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
+    ) == balance - amt - amt2
+    assert (await ERC20.fns.balanceOf(receiver2).call(w3, to=ibc_erc20_addr)) == 0
+    assert (await ERC20.fns.balanceOf(receiver3).call(w3, to=ibc_erc20_addr)) == amt2
 
     subdenom = "test"
     # check create tokenfactory denom
     denom = assert_create_tokenfactory_denom(
         cli, subdenom, _from=cli.address(community), gas=620000
     )
-    erc20_address = denom_to_erc20_address(denom)
-    result = await async_w3.eth.call(
-        {"to": erc20_address, "data": f"0x{fn.data.hex()}"}
-    )
-    assert fn.decode(result) == 0
+    tf_erc20_addr = denom_to_erc20_address(denom)
+    assert (await ERC20.fns.decimals().call(w3, to=tf_erc20_addr)) == 0

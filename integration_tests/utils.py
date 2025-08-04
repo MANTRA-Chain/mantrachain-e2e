@@ -66,7 +66,6 @@ TEST_CONTRACTS = {
     "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
-    "IERC20": "IERC20.sol",
 }
 
 
