@@ -48,15 +48,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "hermes": {
-        "branch": "v1.10.5",
+        "branch": "v1.13.2",
         "description": "Rust implementation of an Inter-Blockchain Communication (IBC) relayer",
         "homepage": "",
-        "owner": "mmsqe",
-        "repo": "ibc-rs",
-        "rev": "4d0ca778b8ad6610203a0635ecaff354f620fa3c",
-        "sha256": "005nasjz4bghsm85i01vpldfrs5883symh6r7imgqx7inxkn3gpn",
+        "owner": "allthatjazzleo",
+        "repo": "hermes",
+        "rev": "474db763e1a84cc54500278be722205549336527",
+        "sha256": "1gcfi8bdz8ydxlw3krqxfhm3ijra9dkh8a81aaxk6fqh0c9d4a0l",
         "type": "tarball",
-        "url": "https://github.com/mmsqe/ibc-rs/archive/4d0ca778b8ad6610203a0635ecaff354f620fa3c.tar.gz",
+        "url": "https://github.com/allthatjazzleo/hermes/archive/474db763e1a84cc54500278be722205549336527.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
