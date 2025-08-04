@@ -88,17 +88,21 @@ def test_ibc_transfer(ibc):
     balance = erc20_contract.caller.balanceOf(ADDRS[community])
     assert total == balance == src_amount
     receiver = derive_new_account(2).address
+    amt = 5
+    tx = erc20_contract.functions.transfer(receiver, amt).build_transaction(
+        {
+            "from": ADDRS[community],
+            "gasPrice": w3.eth.gas_price,
+            "nonce": w3.eth.get_transaction_count(ADDRS[community]),
+        }
+    )
+    gas = w3.eth.estimate_gas(tx)
+    tx["gas"] = gas
     res = send_transaction(
         w3,
-        erc20_contract.functions.transfer(receiver, 5).build_transaction(
-            {
-                "from": ADDRS[community],
-                "gas": 22000,
-                "gasPrice": w3.eth.gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS[community]),
-            }
-        ),
+        tx,
         key=KEYS[community],
     )
-    print("mm-res", res)
-    # assert res.status == 1
+    assert res.status == 1
+    assert erc20_contract.caller.balanceOf(ADDRS[community]) == balance - amt
+    assert erc20_contract.caller.balanceOf(receiver) == amt
