@@ -85,24 +85,68 @@ def test_ibc_transfer(ibc):
     w3 = ibc.ibc1.w3
     erc20_contract = get_contract(w3, ibc_denom_addr, CONTRACTS["IERC20"])
     total = erc20_contract.caller.totalSupply()
-    balance = erc20_contract.caller.balanceOf(ADDRS[community])
-    assert total == balance == src_amount
+    sender = ADDRS[community]
     receiver = derive_new_account(2).address
+    balance = erc20_contract.caller.balanceOf(sender)
+    assert total == balance == src_amount
     amt = 5
     tx = erc20_contract.functions.transfer(receiver, amt).build_transaction(
         {
-            "from": ADDRS[community],
+            "from": sender,
             "gasPrice": w3.eth.gas_price,
-            "nonce": w3.eth.get_transaction_count(ADDRS[community]),
+            "nonce": w3.eth.get_transaction_count(sender),
         }
     )
-    gas = w3.eth.estimate_gas(tx)
-    tx["gas"] = gas
+    tx["gas"] = w3.eth.estimate_gas(tx)
     res = send_transaction(
         w3,
         tx,
         key=KEYS[community],
     )
     assert res.status == 1
-    assert erc20_contract.caller.balanceOf(ADDRS[community]) == balance - amt
+    assert erc20_contract.caller.balanceOf(sender) == balance - amt
     assert erc20_contract.caller.balanceOf(receiver) == amt
+
+    receiver2 = ADDRS["signer2"]
+    receiver3 = ADDRS["signer1"]
+    amt2 = 2
+    tx = erc20_contract.functions.approve(
+        receiver2,
+        amt2,
+    ).build_transaction(
+        {
+            "from": sender,
+            "gasPrice": w3.eth.gas_price,
+            "nonce": w3.eth.get_transaction_count(sender),
+        }
+    )
+    tx["gas"] = w3.eth.estimate_gas(tx)
+    res = send_transaction(
+        w3,
+        tx,
+        key=KEYS[community],
+    )
+    assert res.status == 1
+    assert erc20_contract.caller.allowance(sender, receiver2) == amt2
+
+    tx = erc20_contract.functions.transferFrom(
+        sender,
+        receiver3,
+        amt2,
+    ).build_transaction(
+        {
+            "from": receiver2,
+            "gasPrice": w3.eth.gas_price,
+            "nonce": w3.eth.get_transaction_count(receiver2),
+        }
+    )
+    tx["gas"] = w3.eth.estimate_gas(tx)
+    res = send_transaction(
+        w3,
+        tx,
+        key=KEYS["signer2"],
+    )
+    assert res.status == 1
+    assert erc20_contract.caller.balanceOf(sender) == balance - amt - amt2
+    assert erc20_contract.caller.balanceOf(receiver2) == 0
+    assert erc20_contract.caller.balanceOf(receiver3) == amt2
