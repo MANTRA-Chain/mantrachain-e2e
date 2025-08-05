@@ -14,6 +14,12 @@ config {
             allow_unprotected_txs: true,
           },
         },
+        feemarket+: {
+          params+: {
+            no_base_fee: true,
+            base_fee: '0',
+          },
+        },
       },
     },
   },
