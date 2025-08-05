@@ -74,21 +74,21 @@ def prepare_network(tmp_path, name):
         wait_for_port(hermes.port)
 
 
-def hermes_transfer(ibc, port, channel, src_amount, dst_addr):
+def hermes_transfer(ibc, port, channel, src_amount, dst_addr, denom=DEFAULT_DENOM):
     # wait for hermes
     output = subprocess.getoutput(
         f"curl -s -X GET 'http://127.0.0.1:{ibc.hermes.port}/state' | jq"
     )
     assert json.loads(output)["status"] == "success"
     # mantra-canary-net-2 -> mantra-canary-net-1
-    ibc2 = "mantra-canary-net-2"
-    ibc1 = "mantra-canary-net-1"
+    src_chain = "mantra-canary-net-2"
+    dst_chain = "mantra-canary-net-1"
     # dstchainid srcchainid srcportid srchannelid
     cmd = (
         f"hermes --config {ibc.hermes.configpath} tx ft-transfer "
-        f"--dst-chain {ibc1} --src-chain {ibc2} --src-port {port} "
+        f"--dst-chain {dst_chain} --src-chain {src_chain} --src-port {port} "
         f"--src-channel {channel} --amount {src_amount} "
         f"--timeout-height-offset 1000 --number-msgs 1 "
-        f"--denom {DEFAULT_DENOM} --receiver {dst_addr} --key-name relayer"
+        f"--denom {denom} --receiver {dst_addr} --key-name relayer"
     )
     subprocess.run(cmd, check=True, shell=True)

@@ -2,12 +2,20 @@ import hashlib
 import math
 
 import pytest
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_deployed_by_create2,
+)
 from eth_contract.erc20 import ERC20
+from eth_contract.utils import get_initcode
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
+    WETH9_ARTIFACT,
+    WETH_ADDRESS,
+    WETH_SALT,
     assert_balance,
     assert_burn_tokenfactory_denom,
     assert_create_tokenfactory_denom,
@@ -19,7 +27,9 @@ from .utils import (
     eth_to_bech32,
     find_duplicate,
     ibc_denom_address,
+    module_address,
     parse_events_rpc,
+    submit_gov_proposal,
     wait_for_fn,
 )
 
@@ -56,7 +66,16 @@ def assert_dup_events(cli):
         assert not dup, f"duplicate {dup} in {event['type']}"
 
 
-async def test_ibc_transfer(ibc):
+async def test_ibc_transfer(ibc, tmp_path):
+    w3 = ibc.ibc1.async_w3
+    account = (await w3.eth.accounts)[0]
+    await ensure_create2_deployed(w3, account)
+    await ensure_deployed_by_create2(
+        w3,
+        account,
+        get_initcode(WETH9_ARTIFACT),
+        salt=WETH_SALT,
+    )
     src_amount = 10
     port = "transfer"
     channel = "channel-0"
@@ -86,7 +105,6 @@ async def test_ibc_transfer(ibc):
     assert_dup_events(cli)
 
     ibc_erc20_addr = ibc_denom_address(dst_denom)
-    w3 = ibc.ibc1.async_w3
 
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
@@ -131,6 +149,20 @@ async def test_ibc_transfer(ibc):
     ) == balance - amt - amt2
     assert (await ERC20.fns.balanceOf(receiver2).call(w3, to=ibc_erc20_addr)) == 0
     assert (await ERC20.fns.balanceOf(receiver3).call(w3, to=ibc_erc20_addr)) == amt2
+
+    submit_gov_proposal(
+        ibc.ibc1,
+        tmp_path,
+        messages=[
+            {
+                "@type": "/cosmos.evm.erc20.v1.MsgRegisterERC20",
+                "signer": eth_to_bech32(module_address("gov")),
+                "erc20addresses": [WETH_ADDRESS],
+            }
+        ],
+    )
+
+    hermes_transfer(ibc, port, channel, src_amount, dst_addr, denom=WETH_ADDRESS)
 
     # check create mint transfer and burn tokenfactory denom
     addr_sender = eth_to_bech32(sender)

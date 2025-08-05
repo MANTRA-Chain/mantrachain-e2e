@@ -24,6 +24,8 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_contract.create2 import create2_address
+from eth_contract.utils import get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
@@ -67,6 +69,12 @@ TEST_CONTRACTS = {
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
 }
+
+WETH_SALT = 999
+WETH9_ARTIFACT = json.loads(
+    Path(__file__).parent.joinpath("contracts/contracts/WETH9.json").read_text()
+)
+WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 
 
 def contract_path(name, filename):

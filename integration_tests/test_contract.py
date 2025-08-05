@@ -24,7 +24,7 @@ from web3 import AsyncWeb3
 from web3.types import TxParams, Wei
 
 from .network import setup_custom_mantra
-from .utils import ACCOUNTS, ADDRS
+from .utils import ACCOUNTS, ADDRS, WETH9_ARTIFACT, WETH_ADDRESS, WETH_SALT
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,11 +40,7 @@ def mantra_replay(tmp_path_factory):
 MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
 )
-WETH_SALT = 999
-WETH9_ARTIFACT = json.loads(
-    Path(__file__).parent.joinpath("contracts/contracts/WETH9.json").read_text()
-)
-WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
+
 MULTICALL3ROUTER_ARTIFACT = json.loads(
     Path(__file__)
     .parent.joinpath("contracts/contracts/Multicall3Router.json")
