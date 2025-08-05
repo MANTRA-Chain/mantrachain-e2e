@@ -920,9 +920,9 @@ web3 = ">=7.12.0"
 
 [package.source]
 type = "git"
-url = "https://github.com/mmsqe/eth-contract.git"
+url = "https://github.com/yihuang/eth-contract.git"
 reference = "main"
-resolved_reference = "a72cd0fc70435e9af9ea614f3d2f881ca73eb272"
+resolved_reference = "c7b6b98d1de0d0799279738f1ce729c03896d39b"
 
 [[package]]
 name = "eth-hash"
@@ -2767,4 +2767,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "fa504d672b25a2374c42b6c792e994121d1e475515bb177df50a273eef7c0503"
+content-hash = "f8ad290c5b265f50a318ca1419eee8e31cc3280102691ace711e3aa6270a27ef"

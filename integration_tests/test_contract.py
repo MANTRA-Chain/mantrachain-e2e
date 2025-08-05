@@ -60,20 +60,18 @@ MULTICALL3ROUTER = create2_address(
 
 async def assert_contract_deployed(w3):
     account = (await w3.eth.accounts)[0]
-    await ensure_create2_deployed(w3, account, gasPrice=await w3.eth.gas_price)
-    await ensure_multicall3_deployed(w3, account, gasPrice=await w3.eth.gas_price)
+    await ensure_create2_deployed(w3, account)
+    await ensure_multicall3_deployed(w3, account)
     await ensure_deployed_by_create2(
         w3,
         account,
         get_initcode(WETH9_ARTIFACT),
         salt=WETH_SALT,
-        gasPrice=await w3.eth.gas_price,
     )
     assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
         w3,
         account,
         get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS),
-        gasPrice=await w3.eth.gas_price,
     )
     assert await w3.eth.get_code(WETH_ADDRESS)
     assert await w3.eth.get_code(MULTICALL3ROUTER)
@@ -84,56 +82,40 @@ async def test_flow(mantra_replay):
     w3 = mantra_replay.async_w3
     await assert_contract_deployed(w3)
     owner = (await w3.eth.accounts)[0]
-    await ensure_createx_deployed(w3, owner, gasPrice=await w3.eth.gas_price)
+    await ensure_createx_deployed(w3, owner)
     initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
 
     # test_create2_deploy
     salt = 100
-    token = await create2_deploy(
-        w3, owner, initcode, salt=salt, gasPrice=await w3.eth.gas_price
-    )
+    token = await create2_deploy(w3, owner, initcode, salt=salt)
     assert (
         token
         == create2_address(initcode, salt)
         == "0x854d811d90C6E81B84b29C1d7ed957843cF87bba"
     )
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 0
-    await ERC20.fns.mint(owner, 1000).transact(
-        w3, owner, to=token, gasPrice=await w3.eth.gas_price
-    )
+    await ERC20.fns.mint(owner, 1000).transact(w3, owner, to=token)
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 1000
 
     # test_create3_deploy
     salt = 200
     token = await create3_deploy(
-        w3,
-        owner,
-        initcode,
-        salt=salt,
-        factory=CREATEX_FACTORY,
-        value=Wei(0),
-        gasPrice=await w3.eth.gas_price,
+        w3, owner, initcode, salt=salt, factory=CREATEX_FACTORY, value=Wei(0)
     )
     assert (
         token == create3_address(salt) == "0x60f7B32B5799838a480572Aee2A8F0355f607b38"
     )
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 0
-    await ERC20.fns.mint(owner, 1000).transact(
-        w3, owner, to=token, gasPrice=await w3.eth.gas_price
-    )
+    await ERC20.fns.mint(owner, 1000).transact(w3, owner, to=token)
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 1000
 
     # test_weth
     weth = WETH(to=WETH_ADDRESS)
     before = await balance_of(w3, ZERO_ADDRESS, owner)
-    receipt = await weth.fns.deposit().transact(
-        w3, owner, value=1000, gasPrice=await w3.eth.gas_price
-    )
+    receipt = await weth.fns.deposit().transact(w3, owner, value=1000)
     fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
     await balance_of(w3, WETH_ADDRESS, owner) == 1000
-    receipt = await weth.fns.withdraw(1000).transact(
-        w3, owner, gasPrice=await w3.eth.gas_price
-    )
+    receipt = await weth.fns.withdraw(1000).transact(w3, owner)
     fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
     await balance_of(w3, WETH_ADDRESS, owner) == 0
     assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
@@ -151,12 +133,12 @@ async def test_flow(mantra_replay):
             Call3Value(WETH_ADDRESS, False, 0, ERC20.fns.transfer(user, amount).data)
             for user in users
         ]
-    ).transact(w3, users[0], value=amount_all, gasPrice=await w3.eth.gas_price)
+    ).transact(w3, users[0], value=amount_all)
     assert all(x == amount for x in await multicall(w3, balances))
 
     for user in users:
         await ERC20.fns.approve(MULTICALL3_ADDRESS, amount).transact(
-            w3, user, to=WETH_ADDRESS, gasPrice=await w3.eth.gas_price
+            w3, user, to=WETH_ADDRESS
         )
 
     await MULTICALL3.fns.aggregate3Value(
@@ -175,10 +157,8 @@ async def test_flow(mantra_replay):
                 ).data,
             ),
         ]
-    ).transact(w3, users[0], gasPrice=await w3.eth.gas_price)
-    await weth.fns.withdraw(amount_all).transact(
-        w3, users[0], to=WETH_ADDRESS, gasPrice=await w3.eth.gas_price
-    )
+    ).transact(w3, users[0])
+    await weth.fns.withdraw(amount_all).transact(w3, users[0], to=WETH_ADDRESS)
     assert all(x == 0 for x in await multicall(w3, balances))
     assert await balance_of(w3, WETH_ADDRESS, MULTICALL3_ADDRESS) == 0
 
@@ -199,9 +179,7 @@ async def test_flow(mantra_replay):
             Call3Value(WETH_ADDRESS, False, 0, ERC20.fns.transfer(user, amount).data)
             for user in users
         ]
-    ).transact(
-        w3, users[0], to=multicall3, value=amount_all, gasPrice=await w3.eth.gas_price
-    )
+    ).transact(w3, users[0], to=multicall3, value=amount_all)
     before -= receipt["effectiveGasPrice"] * receipt["gasUsed"]
     # check users's weth balances
     assert all(x == amount for x in await multicall(w3, balances))
@@ -209,7 +187,7 @@ async def test_flow(mantra_replay):
     # approve multicall3 to transfer WETH on behalf of users
     for i, user in enumerate(users):
         receipt = await ERC20.fns.approve(multicall3, amount).transact(
-            w3, user, to=WETH_ADDRESS, gasPrice=await w3.eth.gas_price
+            w3, user, to=WETH_ADDRESS
         )
         if i == 0:
             before -= receipt["effectiveGasPrice"] * receipt["gasUsed"]
@@ -230,7 +208,7 @@ async def test_flow(mantra_replay):
                 data=router.fns.sellToPool(ZERO_ADDRESS, 10000, users[0], 0, b"").data,
             ),
         ]
-    ).transact(w3, users[0], to=multicall3, gasPrice=await w3.eth.gas_price)
+    ).transact(w3, users[0], to=multicall3)
     before -= receipt["effectiveGasPrice"] * receipt["gasUsed"]
 
     assert all(x == 0 for x in await multicall(w3, balances))
