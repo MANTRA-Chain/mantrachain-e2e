@@ -32,7 +32,7 @@ def test_replay_tx(mantra_replay):
 
     fee = 10**17
     if w3.eth.get_balance(signer) < fee:
-        send_transaction(w3, {"to": signer, "value": fee})
+        send_transaction(w3, {"to": signer, "value": fee, "gasPrice": w3.eth.gas_price})
     txhash = w3.eth.send_raw_transaction(tx)
     receipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt["status"] == 1
@@ -44,5 +44,12 @@ def test_wrong_chain_id(mantra_replay):
     recipient = to_checksum_address("0x3fab184622dc19b6109349b94811493bf2a45362")
     with pytest.raises(Web3RPCError, match="invalid chain id"):
         send_transaction(
-            w3, {"to": recipient, "value": 1000, "chainId": 0, "gas": 21000}
+            w3,
+            {
+                "to": recipient,
+                "value": 1000,
+                "chainId": 0,
+                "gas": 21000,
+                "gasPrice": w3.eth.gas_price,
+            },
         )
