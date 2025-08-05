@@ -8,6 +8,7 @@ from eth_contract.deploy_utils import (
 )
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
+from eth_contract.weth import WETH
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
@@ -150,6 +151,7 @@ async def test_ibc_transfer(ibc, tmp_path):
     assert (await ERC20.fns.balanceOf(receiver2).call(w3, to=ibc_erc20_addr)) == 0
     assert (await ERC20.fns.balanceOf(receiver3).call(w3, to=ibc_erc20_addr)) == amt2
 
+    # register native erc20
     submit_gov_proposal(
         ibc.ibc1,
         tmp_path,
@@ -162,7 +164,24 @@ async def test_ibc_transfer(ibc, tmp_path):
         ],
     )
 
-    hermes_transfer(ibc, port, channel, src_amount, dst_addr, denom=WETH_ADDRESS)
+    assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
+    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS)
+    assert total == balance_eth == 0
+
+    weth = WETH(to=WETH_ADDRESS)
+    deposit_amt = 1000
+    res = await weth.fns.deposit().transact(w3, sender, value=deposit_amt)
+    assert res.status == 1
+    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS)
+    assert total == balance_eth == deposit_amt
+
+    res = await weth.fns.withdraw(deposit_amt).transact(w3, sender)
+    assert res.status == 1
+    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS)
+    assert total == balance_eth == 0
 
     # check create mint transfer and burn tokenfactory denom
     addr_sender = eth_to_bech32(sender)
