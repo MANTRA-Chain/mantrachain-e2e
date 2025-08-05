@@ -111,8 +111,10 @@ async def test_ibc_transfer(ibc, tmp_path):
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
-    balance = await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
-    assert total == balance == src_amount
+    addr_sender = eth_to_bech32(sender)
+    addr_receiver = eth_to_bech32(receiver)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
+    assert total == balance_eth == src_amount
     amt = 5
 
     await ERC20.fns.transfer(receiver, amt).transact(
@@ -121,7 +123,7 @@ async def test_ibc_transfer(ibc, tmp_path):
         to=ibc_erc20_addr,
         gasPrice=(await w3.eth.gas_price),
     )
-    assert balance - amt == await ERC20.fns.balanceOf(sender).call(
+    assert balance_eth - amt == await ERC20.fns.balanceOf(sender).call(
         w3, to=ibc_erc20_addr
     )
     assert amt == (await ERC20.fns.balanceOf(receiver).call(w3, to=ibc_erc20_addr))
@@ -147,11 +149,11 @@ async def test_ibc_transfer(ibc, tmp_path):
     )
     assert (
         await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
-    ) == balance - amt - amt2
+    ) == balance_eth - amt - amt2
     assert (await ERC20.fns.balanceOf(receiver2).call(w3, to=ibc_erc20_addr)) == 0
     assert (await ERC20.fns.balanceOf(receiver3).call(w3, to=ibc_erc20_addr)) == amt2
 
-    # register native erc20
+    # check native erc20 transfer
     submit_gov_proposal(
         ibc.ibc1,
         tmp_path,
@@ -177,15 +179,18 @@ async def test_ibc_transfer(ibc, tmp_path):
     balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS)
     assert total == balance_eth == deposit_amt
 
-    res = await weth.fns.withdraw(deposit_amt).transact(w3, sender)
-    assert res.status == 1
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS)
-    assert total == balance_eth == 0
+    rsp = cli.convert_erc20(WETH_ADDRESS, deposit_amt, _from=addr_sender, gas=999999)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert await ERC20.fns.balanceOf(sender).call(w3, to=WETH_ADDRESS) == 0
+    erc20_denom = f"erc20:{WETH_ADDRESS}"
+    assert cli.balance(addr_sender, erc20_denom) == deposit_amt
+    transfer_amt = 10
+    rsp = cli.transfer(addr_sender, addr_receiver, f"{transfer_amt}{erc20_denom}")
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.balance(addr_sender, erc20_denom) == deposit_amt - transfer_amt
+    assert cli.balance(addr_receiver, erc20_denom) == transfer_amt
 
     # check create mint transfer and burn tokenfactory denom
-    addr_sender = eth_to_bech32(sender)
-    addr_receiver = eth_to_bech32(receiver)
     subdenom = "test"
     gas = 300000
     amt = 10**6
