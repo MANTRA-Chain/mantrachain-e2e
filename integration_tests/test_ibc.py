@@ -3,15 +3,16 @@ import math
 
 import pytest
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import send_transaction
-from web3.types import TxParams
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
     assert_balance,
+    assert_burn_tokenfactory_denom,
     assert_create_tokenfactory_denom,
+    assert_mint_tokenfactory_denom,
+    assert_transfer_tokenfactory_denom,
     denom_to_erc20_address,
     derive_new_account,
     escrow_address,
@@ -89,7 +90,6 @@ async def test_ibc_transfer(ibc):
 
     # TODO: fix after display align with unit https://github.com/cosmos/evm/issues/396
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
-
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
@@ -97,59 +97,79 @@ async def test_ibc_transfer(ibc):
     assert total == balance == src_amount
     amt = 5
 
-    tx = TxParams(
-        {
-            "from": sender,
-            "to": ibc_erc20_addr,
-            "data": ERC20.fns.transfer(receiver, amt).data,
-            "gasPrice": await w3.eth.gas_price,
-        }
+    await ERC20.fns.transfer(receiver, amt).transact(
+        w3,
+        sender,
+        to=ibc_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
-    tx["gas"] = await w3.eth.estimate_gas(tx)
-    await send_transaction(w3, sender, **tx)
     assert balance - amt == await ERC20.fns.balanceOf(sender).call(
         w3, to=ibc_erc20_addr
     )
-    assert amt == await ERC20.fns.balanceOf(receiver).call(w3, to=ibc_erc20_addr)
+    assert amt == (await ERC20.fns.balanceOf(receiver).call(w3, to=ibc_erc20_addr))
 
     receiver2 = ADDRS["signer2"]
     receiver3 = ADDRS["signer1"]
     amt2 = 2
 
-    tx = TxParams(
-        {
-            "from": sender,
-            "to": ibc_erc20_addr,
-            "data": ERC20.fns.approve(receiver2, amt2).data,
-            "gasPrice": await w3.eth.gas_price,
-        }
+    await ERC20.fns.approve(receiver2, amt2).transact(
+        w3,
+        sender,
+        to=ibc_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
-    tx["gas"] = await w3.eth.estimate_gas(tx)
-    await send_transaction(w3, sender, **tx)
-    assert (
-        await ERC20.fns.allowance(sender, receiver2).call(w3, to=ibc_erc20_addr)
-    ) == amt2
+    allowance = await ERC20.fns.allowance(sender, receiver2).call(w3, to=ibc_erc20_addr)
+    assert allowance == amt2
 
-    tx = TxParams(
-        {
-            "from": receiver2,
-            "to": ibc_erc20_addr,
-            "data": ERC20.fns.transferFrom(sender, receiver3, amt2).data,
-            "gasPrice": await w3.eth.gas_price,
-        }
+    await ERC20.fns.transferFrom(sender, receiver3, amt2).transact(
+        w3,
+        receiver2,
+        to=ibc_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
-    tx["gas"] = await w3.eth.estimate_gas(tx)
-    await send_transaction(w3, receiver2, **tx)
     assert (
         await ERC20.fns.balanceOf(sender).call(w3, to=ibc_erc20_addr)
     ) == balance - amt - amt2
     assert (await ERC20.fns.balanceOf(receiver2).call(w3, to=ibc_erc20_addr)) == 0
     assert (await ERC20.fns.balanceOf(receiver3).call(w3, to=ibc_erc20_addr)) == amt2
 
+    # check create mint transfer and burn tokenfactory denom
+    addr_sender = eth_to_bech32(sender)
+    addr_receiver = eth_to_bech32(receiver)
     subdenom = "test"
-    # check create tokenfactory denom
+    gas = 300000
+    amt = 10**6
+    transfer_amt = 1
+    burn_amt = 10**3
     denom = assert_create_tokenfactory_denom(
-        cli, subdenom, _from=cli.address(community), gas=620000
+        cli, subdenom, _from=addr_sender, gas=620000
     )
     tf_erc20_addr = denom_to_erc20_address(denom)
     assert (await ERC20.fns.decimals().call(w3, to=tf_erc20_addr)) == 0
+    total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+    balance = cli.balance(addr_sender, denom)
+    assert total == balance == balance_eth == 0
+
+    balance = assert_mint_tokenfactory_denom(
+        cli, denom, amt, _from=addr_sender, gas=gas
+    )
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+    total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
+    assert total == balance == balance_eth == amt
+
+    balance = assert_transfer_tokenfactory_denom(
+        cli, denom, addr_receiver, transfer_amt, _from=addr_sender, gas=gas
+    )
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+    assert balance == balance_eth == amt - transfer_amt
+
+    balance = assert_burn_tokenfactory_denom(
+        cli, denom, burn_amt, _from=addr_sender, gas=gas
+    )
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+    assert balance == balance_eth == amt - transfer_amt - burn_amt
+
+    balance = cli.balance(addr_receiver, denom)
+    balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
+    assert balance == balance_eth == transfer_amt

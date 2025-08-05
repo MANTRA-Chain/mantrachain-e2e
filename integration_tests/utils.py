@@ -510,16 +510,17 @@ def ibc_denom_address(denom):
 
 
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
+    # check create tokenfactory denom
     rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     event = find_log_event_attrs(
         rsp["events"], "create_denom", lambda attrs: "creator" in attrs
     )
-    addr_a = kwargs.get("_from")
-    rsp = cli.query_tokenfactory_denoms(addr_a)
-    denom = f"factory/{addr_a}/{subdenom}"
+    sender = kwargs.get("_from")
+    rsp = cli.query_tokenfactory_denoms(sender)
+    denom = f"factory/{sender}/{subdenom}"
     assert denom in rsp.get("denoms"), rsp
-    expected = {"creator": addr_a, "new_token_denom": denom}
+    expected = {"creator": sender, "new_token_denom": denom}
     erc20_address = None
     if not is_legacy:
         erc20_address = denom_to_erc20_address(denom)
@@ -539,10 +540,61 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
         meta["display"] = denom
         meta["symbol"] = denom
     assert meta.items() <= cli.query_bank_denom_metadata(denom).items()
-    _from = None if is_legacy else addr_a
+    _from = None if is_legacy else sender
     rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
-    assert rsp == addr_a, rsp
+    assert rsp == sender, rsp
     return denom
+
+
+def assert_mint_tokenfactory_denom(cli, denom, amt, **kwargs):
+    # check mint tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    coin = f"{amt}{denom}"
+    rsp = cli.mint_tokenfactory_denom(coin, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
+    )
+    expected = {
+        "mint_to_address": sender,
+        "amount": coin,
+    }
+    assert expected.items() <= event.items()
+    current = cli.balance(sender, denom)
+    assert current == balance + amt
+    return current
+
+
+def assert_transfer_tokenfactory_denom(cli, denom, receiver, amt, **kwargs):
+    # check transfer tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    rsp = cli.transfer(sender, receiver, f"{amt}{denom}")
+    assert rsp["code"] == 0, rsp["raw_log"]
+    current = cli.balance(sender, denom)
+    assert current == balance - amt
+    return current
+
+
+def assert_burn_tokenfactory_denom(cli, denom, amt, **kwargs):
+    # check burn tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    coin = f"{amt}{denom}"
+    rsp = cli.burn_tokenfactory_denom(coin, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "tf_burn", lambda attrs: "burn_from_address" in attrs
+    )
+    expected = {
+        "burn_from_address": sender,
+        "amount": coin,
+    }
+    assert expected.items() <= event.items()
+    current = cli.balance(sender, denom)
+    assert current == balance - amt
+    return current
 
 
 def recover_community(cli, tmp_path):
