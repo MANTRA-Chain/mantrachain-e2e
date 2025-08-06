@@ -189,7 +189,7 @@ def test_transaction(mantra):
             },
             KEYS["validator"],
         )["transactionHash"]
-    assert "out of gas" in str(exc)
+    assert "intrinsic gas too low" in str(exc)
 
     # insufficient fee
     with pytest.raises(web3.exceptions.Web3RPCError) as exc:
@@ -523,7 +523,6 @@ def test_textual(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
 
-@pytest.mark.skip(reason="skipping opBlockhash test")
 def test_op_blk_hash(mantra):
     w3 = mantra.w3
     contract = deploy_contract(w3, CONTRACTS["TestBlockTxProperties"])
