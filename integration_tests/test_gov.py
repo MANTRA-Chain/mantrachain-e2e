@@ -45,7 +45,7 @@ def test_submit_any_proposal(mantra, tmp_path):
     }
     proposal_file = tmp_path / "proposal.json"
     proposal_file.write_text(json.dumps(proposal_json))
-    rsp = cli.submit_gov_proposal(proposal_file, from_="community")
+    rsp = cli.submit_gov_proposal(proposal_file, from_="community", gas=210000)
     assert rsp["code"] == 0, rsp["raw_log"]
     approve_proposal(mantra, rsp["events"])
     grant_detail = cli.query_grant(granter_addr, grantee_addr)
