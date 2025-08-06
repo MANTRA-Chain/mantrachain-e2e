@@ -1,9 +1,6 @@
-import pytest
-
 from .utils import send_transaction, wait_for_fn
 
 
-@pytest.mark.skip(reason="skipping eoa test")
 def test_eoa(mantra):
     w3 = mantra.w3
     # fund new acct
