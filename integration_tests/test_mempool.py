@@ -14,8 +14,6 @@ from .utils import (
     wait_for_new_blocks,
 )
 
-pytest.skip("skipping mempool test", allow_module_level=True)
-
 
 @pytest.fixture(scope="module")
 def mantra_mempool(tmp_path_factory):
