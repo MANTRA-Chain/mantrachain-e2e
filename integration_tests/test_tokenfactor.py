@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from .utils import (
-    DEFAULT_GAS,
     assert_create_tokenfactory_denom,
     assert_transfer,
     get_balance,
