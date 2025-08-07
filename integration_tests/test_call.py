@@ -1,6 +1,5 @@
 import json
 
-import pytest
 from hexbytes import HexBytes
 from web3 import Web3
 from web3._utils.contracts import encode_transaction_data
@@ -8,7 +7,6 @@ from web3._utils.contracts import encode_transaction_data
 from .utils import CONTRACTS, deploy_contract
 
 
-@pytest.mark.skip(reason="skipping temporary_contract_code test")
 def test_temporary_contract_code(mantra):
     state = 100
     w3: Web3 = mantra.w3
@@ -36,7 +34,6 @@ def test_temporary_contract_code(mantra):
     assert (state,) == w3.codec.decode(("uint256",), result)
 
 
-@pytest.mark.skip(reason="skipping override_state test")
 def test_override_state(mantra):
     w3: Web3 = mantra.w3
     contract = deploy_contract(w3, CONTRACTS["Greeter"])
