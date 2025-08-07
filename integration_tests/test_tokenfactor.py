@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from .utils import (
-    DEFAULT_GAS,
     assert_create_tokenfactory_denom,
     assert_transfer,
     get_balance,
@@ -16,10 +15,6 @@ from .utils import (
 
 def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     cli = connect_mantra.cosmos_cli(tmp_path)
-    fee = cli.get_params("tokenfactory").get("params", {}).get("denom_creation_fee", [])
-    if fee and int(fee[0].get("amount", 0)) > DEFAULT_GAS:
-        print(f"denom_creation_fee {fee[0]['amount']} is too high, skip test")
-        return
     community = "community"
     signer2 = "signer2"
     cli.create_account(community, os.environ["COMMUNITY_MNEMONIC"])
