@@ -76,8 +76,6 @@ async def test_get_logs_by_topic(mantra):
         assert len(logs) > 0
 
 
-# TODO: rm flaky after pending tx fix
-@pytest.mark.flaky(max_runs=5)
 async def test_pending_transaction_filter(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     flt = await w3.eth.filter("pending")
