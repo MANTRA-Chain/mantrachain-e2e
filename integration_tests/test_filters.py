@@ -7,9 +7,6 @@ from .utils import (
     ADDRS,
     CONTRACTS,
     deploy_contract_async,
-)
-from .utils import send_transaction as send_transaction_sync
-from .utils import (
     w3_wait_for_new_blocks_async,
 )
 
@@ -79,15 +76,14 @@ async def test_get_logs_by_topic(mantra):
         assert len(logs) > 0
 
 
-# TODO: test in async after pending tx fix
-def test_pending_transaction_filter(mantra):
-    w3 = mantra.w3
-    flt = w3.eth.filter("pending")
-    assert flt.get_new_entries() == []
+async def test_pending_transaction_filter(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    flt = await w3.eth.filter("pending")
+    assert await flt.get_new_entries() == []
     tx = {"to": ADDRS["community"], "value": 1000}
-    receipt = send_transaction_sync(w3, tx)
+    receipt = await send_transaction(w3, ADDRS["validator"], **tx)
     assert receipt.status == 1
-    assert receipt["transactionHash"] in flt.get_new_entries()
+    assert receipt["transactionHash"] in await flt.get_new_entries()
 
 
 async def test_block_filter(mantra):
