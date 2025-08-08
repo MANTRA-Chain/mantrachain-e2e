@@ -69,10 +69,10 @@ def test_send_transaction(mantra):
 
 @pytest.mark.connect
 def test_connect_events(connect_mantra):
-    test_events(None, connect_mantra)
+    test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra):
+def test_events(mantra, connect_mantra, exp_gas_used=914023):
     w3 = connect_mantra.w3
     sender = "community"
     receiver = "signer1"
@@ -80,7 +80,7 @@ def test_events(mantra, connect_mantra):
         w3,
         CONTRACTS["TestERC20A"],
         key=KEYS[sender],
-        exp_gas_used=914023,
+        exp_gas_used=exp_gas_used,
     )
     tx = erc20.functions.transfer(ADDRS[receiver], 10).build_transaction(
         {"from": ADDRS[sender]}
@@ -189,7 +189,7 @@ def test_transaction(mantra):
             },
             KEYS["validator"],
         )["transactionHash"]
-    assert "out of gas" in str(exc)
+    assert "intrinsic gas too low" in str(exc)
 
     # insufficient fee
     with pytest.raises(web3.exceptions.Web3RPCError) as exc:

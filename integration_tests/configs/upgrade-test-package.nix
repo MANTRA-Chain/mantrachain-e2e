@@ -7,107 +7,74 @@ let
     else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "linux-amd64"
     else throw "Unsupported platform";
 
-  genesisSha256 =
-    if pkgs.stdenv.isDarwin then "sha256-mOpp9el+akznUyPgoZSA4j7RRlTtKpFJjH16JZew5+8="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "sha256-gExKEcM9CyUimbuBSCz2YL7YuiFyBUmf3hbYJVfB7XQ="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "sha256-gExKEcM9CyUimbuBSCz2YL7YuiFyBUmf3hbYJVfB7XQ="
-    else throw "Unsupported platform";
-  releasedV5Rc0Sha256 =
-    if pkgs.stdenv.isDarwin then "sha256-FyUgtoQVwsO2q3/3uZ6D+TeVR3DCmqBEubveXtzLkEo="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "sha256-sSXFN2gHWLUb6wn0No9r23ty6bOta2iebrwBnAyGRyM="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "sha256-sSXFN2gHWLUb6wn0No9r23ty6bOta2iebrwBnAyGRyM="
-    else throw "Unsupported platform";
-  releasedV5Rc1Sha256 =
-    if pkgs.stdenv.isDarwin then "sha256-G4JcV4VbKWleGaVlVKkNalbPF6Uoxkv4nsLlCW8nZkE="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "sha256-5m9+fmA+/80SAYwwb9wgB1K5yz3nXcrc2OlYNMmdE/M="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "sha256-5m9+fmA+/80SAYwwb9wgB1K5yz3nXcrc2OlYNMmdE/M="
-    else throw "Unsupported platform";
-  releasedV5Rc2Sha256 =
-    if pkgs.stdenv.isDarwin then "sha256-wiJscoijqIrWb8AMALzj13YN54y62997fXqU8g3BjX0="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw="
-    else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isx86_64 then "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw="
-    else throw "Unsupported platform";
-
-  genesisUrl = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v4.0.1/mantrachaind-4.0.1-${platform}.tar.gz";
-  releasedV5Rc0Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc0/mantrachaind-5.0.0-rc0-${platform}.tar.gz";
-  releasedV5Rc1Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc1/mantrachaind-5.0.0-rc1-${platform}.tar.gz";
-  releasedV5Rc2Url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/v5.0.0-rc2/mantrachaind-5.0.0-rc2-${platform}.tar.gz";
-
-  genesis = pkgs.stdenv.mkDerivation {
-    name = "mantrachaind-v4.0.1";
-    src = pkgs.fetchurl {
-      url = genesisUrl;
-      sha256 = genesisSha256;
+  versionInfo = {
+    "v4.0.1" = {
+      filename = "mantrachaind-4.0.1-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-mOpp9el+akznUyPgoZSA4j7RRlTtKpFJjH16JZew5+8=";
+        linux-arm64 = "sha256-gExKEcM9CyUimbuBSCz2YL7YuiFyBUmf3hbYJVfB7XQ=";
+        linux-amd64 = "sha256-gExKEcM9CyUimbuBSCz2YL7YuiFyBUmf3hbYJVfB7XQ=";
+      };
     };
-    unpackPhase = "tar xzf $src";
-    installPhase = ''
-      mkdir -p $out
-      mkdir -p $out/bin
-      cp mantrachaind $out/bin/
-    '';
+    "v5.0.0-rc0" = {
+      filename = "mantrachaind-5.0.0-rc0-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-FyUgtoQVwsO2q3/3uZ6D+TeVR3DCmqBEubveXtzLkEo=";
+        linux-arm64 = "sha256-sSXFN2gHWLUb6wn0No9r23ty6bOta2iebrwBnAyGRyM=";
+        linux-amd64 = "sha256-sSXFN2gHWLUb6wn0No9r23ty6bOta2iebrwBnAyGRyM=";
+      };
+    };
+    "v5.0.0-rc1" = {
+      filename = "mantrachaind-5.0.0-rc1-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-G4JcV4VbKWleGaVlVKkNalbPF6Uoxkv4nsLlCW8nZkE=";
+        linux-arm64 = "sha256-5m9+fmA+/80SAYwwb9wgB1K5yz3nXcrc2OlYNMmdE/M=";
+        linux-amd64 = "sha256-5m9+fmA+/80SAYwwb9wgB1K5yz3nXcrc2OlYNMmdE/M=";
+      };
+    };
+    "v5.0.0-rc2" = {
+      filename = "mantrachaind-5.0.0-rc2-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-wiJscoijqIrWb8AMALzj13YN54y62997fXqU8g3BjX0=";
+        linux-arm64 = "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw=";
+        linux-amd64 = "sha256-7FqreDBr85vgjCEr8WyCqOoG0Y9SbrVjVF3LCJuMoxw=";
+      };
+    };
+    "v5.0.0-rc3" = {
+      filename = "mantrachaind-5.0.0-rc3-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-aR/eo296lnN2C6RkRlqAP79gVN7nPdM+ad/RTeSFOx0=";
+        linux-arm64 = "sha256-+n212FGcXI7TaBfdF1GyLsYe2Vz48GJ6Pm99K1ffDnc=";
+        linux-amd64 = "sha256-+n212FGcXI7TaBfdF1GyLsYe2Vz48GJ6Pm99K1ffDnc=";
+      };
+    };
   };
 
-  releasedV5Rc0 = pkgs.stdenv.mkDerivation {
-    name = "mantrachaind-v5.0.0-rc0";
-    src = pkgs.fetchurl {
-      url = releasedV5Rc0Url;
-      sha256 = releasedV5Rc0Sha256;
+  mkMantrachain = { version, name ? "mantrachaind-${version}" }: 
+    let info = versionInfo.${version};
+    in pkgs.stdenv.mkDerivation {
+      inherit name;
+      src = pkgs.fetchurl {
+        url = "https://github.com/MANTRA-Chain/mantrachain/releases/download/${version}/${info.filename}";
+        sha256 = info.sha256.${platform};
+      };
+      unpackPhase = "tar xzf $src";
+      installPhase = ''
+        mkdir -p $out/bin
+        cp mantrachaind $out/bin/
+      '';
     };
-    unpackPhase = "tar xzf $src";
-    installPhase = ''
-      mkdir -p $out
-      mkdir -p $out/bin
-      cp mantrachaind $out/bin/
-    '';
+
+  releases = {
+    genesis = mkMantrachain { version = "v4.0.1"; };
+    v5 = mkMantrachain { version = "v5.0.0-rc0"; };
+    "v5.0.0-rc1" = mkMantrachain { version = "v5.0.0-rc1"; };
+    "v5.0.0-rc2" = mkMantrachain { version = "v5.0.0-rc2"; };
+    "v5.0.0-rc3" = mkMantrachain { version = "v5.0.0-rc3"; };
+    "v5.0.0-rc4" = pkgs.callPackage ../../nix/mantrachain { };
   };
 
-  releasedV5Rc1 = pkgs.stdenv.mkDerivation {
-    name = "mantrachaind-v5.0.0-rc1";
-    src = pkgs.fetchurl {
-      url = releasedV5Rc1Url;
-      sha256 = releasedV5Rc1Sha256;
-    };
-    unpackPhase = "tar xzf $src";
-    installPhase = ''
-      mkdir -p $out
-      mkdir -p $out/bin
-      cp mantrachaind $out/bin/
-    '';
-  };
-
-  releasedV5Rc2 = pkgs.stdenv.mkDerivation {
-    name = "mantrachaind-v5.0.0-rc2";
-    src = pkgs.fetchurl {
-      url = releasedV5Rc2Url;
-      sha256 = releasedV5Rc2Sha256;
-    };
-    unpackPhase = "tar xzf $src";
-    installPhase = ''
-      mkdir -p $out
-      mkdir -p $out/bin
-      cp mantrachaind $out/bin/
-    '';
-  };
 in
-pkgs.linkFarm "upgrade-test-package" [
-  {
-    name = "genesis";
-    path = genesis;
-  }
-  {
-    name = "v5";
-    path = releasedV5Rc0;
-  }
-  {
-    name = "v5.0.0-rc1";
-    path = releasedV5Rc1;
-  }
-  {
-    name = "v5.0.0-rc2";
-    path = releasedV5Rc2;
-  }
-  {
-    name = "v5.0.0-rc3";
-    path = pkgs.callPackage ../../nix/mantrachain { };
-  }
-]
+pkgs.linkFarm "upgrade-test-package" (
+  pkgs.lib.mapAttrsToList (name: path: { inherit name path; }) releases
+)

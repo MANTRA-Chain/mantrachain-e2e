@@ -265,6 +265,11 @@ def exec(c, tmp_path):
     allow = cli.get_params("evm").get("params", {}).get("allow_unprotected_txs")
     assert allow is True, "allow_unprotected_txs should be true"
 
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade("v5.0.0-rc4", target_height)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!!!")
+
 
 def make_writable_recursive(path):
     for root, dirs, files in os.walk(path):
