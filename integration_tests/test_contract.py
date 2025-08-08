@@ -18,17 +18,13 @@ from eth_contract.multicall3 import (
     Call3Value,
     multicall,
 )
-from eth_contract.utils import (
-    ZERO_ADDRESS,
-    balance_of,
-    get_initcode,
-)
+from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH
 from web3 import AsyncWeb3
-from web3.types import Wei
+from web3.types import TxParams, Wei
 
 from .network import setup_custom_mantra
-from .utils import ADDRS
+from .utils import ACCOUNTS, ADDRS
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,25 +55,32 @@ MULTICALL3ROUTER = create2_address(
 )
 
 
-async def deploy_weth(w3: AsyncWeb3) -> None:
-    sender = (await w3.eth.accounts)[0]
-    address = await create2_deploy(
-        w3, sender, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
+async def assert_contract_deployed(w3):
+    account = (await w3.eth.accounts)[0]
+    await ensure_create2_deployed(w3, account)
+    await ensure_multicall3_deployed(w3, account)
+    await ensure_deployed_by_create2(
+        w3,
+        account,
+        get_initcode(WETH9_ARTIFACT),
+        salt=WETH_SALT,
     )
-    assert address == WETH_ADDRESS, f"Expected {WETH_ADDRESS}, got {address}"
+    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
+        w3,
+        account,
+        get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS),
+    )
+    assert await w3.eth.get_code(WETH_ADDRESS)
+    assert await w3.eth.get_code(MULTICALL3ROUTER)
+    assert await w3.eth.get_code(MULTICALL3_ADDRESS)
 
 
 async def test_flow(mantra_replay):
     w3 = mantra_replay.async_w3
-    await ensure_create2_deployed(w3)
-    await ensure_multicall3_deployed(w3)
-    await ensure_createx_deployed(w3)
-    await deploy_weth(w3)
-    assert MULTICALL3ROUTER == await ensure_deployed_by_create2(
-        w3, get_initcode(MULTICALL3ROUTER_ARTIFACT, MULTICALL3_ADDRESS)
-    )
-    initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
+    await assert_contract_deployed(w3)
     owner = (await w3.eth.accounts)[0]
+    await ensure_createx_deployed(w3, owner)
+    initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
 
     # test_create2_deploy
     salt = 100
@@ -211,3 +214,44 @@ async def test_flow(mantra_replay):
 
     # user get all funds back other than gas fees
     assert await balance_of(w3, ZERO_ADDRESS, users[0]) == before
+
+
+async def test_7702(mantra_replay):
+    w3: AsyncWeb3 = mantra_replay.async_w3
+    await assert_contract_deployed(w3)
+
+    acct = ACCOUNTS["validator"]
+    multicall3 = MULTICALL3ROUTER
+
+    nonce = await w3.eth.get_transaction_count(acct.address)
+    chain_id = await w3.eth.chain_id
+    auth = acct.sign_authorization(
+        {"chainId": chain_id, "address": multicall3, "nonce": nonce + 1}
+    )
+    amount = 1000
+    calls = [
+        Call3Value(WETH_ADDRESS, False, amount, WETH.fns.deposit().data),
+        Call3Value(WETH_ADDRESS, False, 0, WETH.fns.withdraw(amount).data),
+    ]
+    tx: TxParams = {
+        "from": acct.address,
+        "chainId": chain_id,
+        "to": acct.address,
+        "value": amount,
+        "nonce": nonce,
+        "authorizationList": [auth],
+        "data": MULTICALL3.fns.aggregate3Value(calls).data,
+    }
+
+    before = await w3.eth.get_balance(acct.address)
+    receipt = await send_transaction(w3, acct, **tx)
+    after = await w3.eth.get_balance(acct.address)
+    assert before - after == receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    assert len(receipt["logs"]) > 0
+    assert await w3.eth.get_code(acct.address)
+    block = await w3.eth.get_block(receipt["blockNumber"], True)
+    assert block["transactions"][0] == await w3.eth.get_transaction(
+        receipt["transactionHash"]
+    )
+    receipts = await w3.eth.get_block_receipts(receipt["blockNumber"])
+    assert receipts[0] == receipt

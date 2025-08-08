@@ -189,7 +189,7 @@ def test_transaction(mantra):
             },
             KEYS["validator"],
         )["transactionHash"]
-    assert "out of gas" in str(exc)
+    assert "intrinsic gas too low" in str(exc)
 
     # insufficient fee
     with pytest.raises(web3.exceptions.Web3RPCError) as exc:

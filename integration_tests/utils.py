@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import binascii
 import configparser
 import hashlib
 import json
@@ -9,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import takewhile
 from pathlib import Path
@@ -296,6 +299,21 @@ def find_log_event_attrs(events, ev_type, cond=None):
     return None
 
 
+def find_duplicate(attributes):
+    res = set()
+    key = attributes[0]["key"]
+    for attribute in attributes:
+        if attribute["key"] == key:
+            value0 = attribute["value"]
+        elif attribute["key"] == "amount":
+            amount = attribute["value"]
+            value_pair = f"{value0}:{amount}"
+            if value_pair in res:
+                return value_pair
+            res.add(value_pair)
+    return None
+
+
 def sign_transaction(w3, tx, key=KEYS["validator"]):
     "fill default fields and sign"
     acct = Account.from_key(key)
@@ -475,17 +493,34 @@ def denom_to_erc20_address(denom):
     return to_checksum_address("0x" + denom_hash[-20:].hex())
 
 
+def escrow_address(port, channel):
+    escrow_addr_version = "ics20-1"
+    pre_image = f"{escrow_addr_version}\x00{port}/{channel}"
+    return eth_to_bech32(hashlib.sha256(pre_image.encode()).digest()[:20].hex())
+
+
+def ibc_denom_address(denom):
+    if not denom.startswith("ibc/"):
+        raise ValueError(f"coin {denom} does not have 'ibc/' prefix")
+    if len(denom) < 5 or denom[4:].strip() == "":
+        raise ValueError(f"coin {denom} is not a valid IBC voucher hash")
+    hash_part = denom[4:]  # remove "ibc/" prefix
+    hash_bytes = binascii.unhexlify(hash_part)
+    return to_checksum_address("0x" + hash_bytes[-20:].hex())
+
+
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
+    # check create tokenfactory denom
     rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     event = find_log_event_attrs(
         rsp["events"], "create_denom", lambda attrs: "creator" in attrs
     )
-    addr_a = kwargs.get("_from")
-    rsp = cli.query_tokenfactory_denoms(addr_a)
-    denom = f"factory/{addr_a}/{subdenom}"
+    sender = kwargs.get("_from")
+    rsp = cli.query_tokenfactory_denoms(sender)
+    denom = f"factory/{sender}/{subdenom}"
     assert denom in rsp.get("denoms"), rsp
-    expected = {"creator": addr_a, "new_token_denom": denom}
+    expected = {"creator": sender, "new_token_denom": denom}
     erc20_address = None
     if not is_legacy:
         erc20_address = denom_to_erc20_address(denom)
@@ -505,10 +540,61 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
         meta["display"] = denom
         meta["symbol"] = denom
     assert meta.items() <= cli.query_bank_denom_metadata(denom).items()
-    _from = None if is_legacy else addr_a
+    _from = None if is_legacy else sender
     rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
-    assert rsp == addr_a, rsp
+    assert rsp == sender, rsp
     return denom
+
+
+def assert_mint_tokenfactory_denom(cli, denom, amt, **kwargs):
+    # check mint tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    coin = f"{amt}{denom}"
+    rsp = cli.mint_tokenfactory_denom(coin, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
+    )
+    expected = {
+        "mint_to_address": sender,
+        "amount": coin,
+    }
+    assert expected.items() <= event.items()
+    current = cli.balance(sender, denom)
+    assert current == balance + amt
+    return current
+
+
+def assert_transfer_tokenfactory_denom(cli, denom, receiver, amt, **kwargs):
+    # check transfer tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    rsp = cli.transfer(sender, receiver, f"{amt}{denom}")
+    assert rsp["code"] == 0, rsp["raw_log"]
+    current = cli.balance(sender, denom)
+    assert current == balance - amt
+    return current
+
+
+def assert_burn_tokenfactory_denom(cli, denom, amt, **kwargs):
+    # check burn tokenfactory denom
+    sender = kwargs.get("_from")
+    balance = cli.balance(sender, denom)
+    coin = f"{amt}{denom}"
+    rsp = cli.burn_tokenfactory_denom(coin, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    event = find_log_event_attrs(
+        rsp["events"], "tf_burn", lambda attrs: "burn_from_address" in attrs
+    )
+    expected = {
+        "burn_from_address": sender,
+        "amount": coin,
+    }
+    assert expected.items() <= event.items()
+    current = cli.balance(sender, denom)
+    assert current == balance - amt
+    return current
 
 
 def recover_community(cli, tmp_path):
@@ -766,3 +852,25 @@ def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     rsp = cli.broadcast_tx(tx_txt)
     assert rsp["code"] == 0, rsp["raw_log"]
     assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
+
+
+def decode_base64(raw):
+    try:
+        return base64.b64decode(raw.encode()).decode()
+    except Exception:
+        return raw
+
+
+def parse_events_rpc(events):
+    result = defaultdict(dict)
+    for ev in events:
+        for attr in ev["attributes"]:
+            if attr["key"] is None:
+                continue
+            key = decode_base64(attr["key"])
+            if attr["value"] is not None:
+                value = decode_base64(attr["value"])
+            else:
+                value = None
+            result[ev["type"]][key] = value
+    return result

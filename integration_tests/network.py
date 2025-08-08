@@ -4,6 +4,7 @@ import signal
 import subprocess
 from pathlib import Path
 
+import tomlkit
 import web3
 from pystarport import cluster, ports
 from web3 import AsyncHTTPProvider, AsyncWeb3
@@ -79,6 +80,13 @@ class Mantra:
 
     def supervisorctl(self, *args):
         return supervisorctl(self.base_dir / "../tasks.ini", *args)
+
+
+class Hermes:
+    def __init__(self, config: Path):
+        self.configpath = config
+        self.config = tomlkit.loads(config.read_text())
+        self.port = 3000
 
 
 class ConnectMantra:

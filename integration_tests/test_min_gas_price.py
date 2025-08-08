@@ -13,8 +13,6 @@ from .utils import (
     wait_for_new_blocks,
 )
 
-pytest.skip("skipping min gas test", allow_module_level=True)
-
 
 @pytest.fixture(scope="module")
 def custom_mantra_eq(tmp_path_factory):

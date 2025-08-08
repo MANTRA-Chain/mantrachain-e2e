@@ -46,5 +46,17 @@
         "type": "tarball",
         "url": "https://github.com/nix-community/poetry2nix/archive/d90f9db68a4bda31c346be16dfd8d3263be4547e.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "hermes": {
+        "branch": "v1.10.5",
+        "description": "Rust implementation of an Inter-Blockchain Communication (IBC) relayer",
+        "homepage": "",
+        "owner": "mmsqe",
+        "repo": "ibc-rs",
+        "rev": "4d0ca778b8ad6610203a0635ecaff354f620fa3c",
+        "sha256": "005nasjz4bghsm85i01vpldfrs5883symh6r7imgqx7inxkn3gpn",
+        "type": "tarball",
+        "url": "https://github.com/mmsqe/ibc-rs/archive/4d0ca778b8ad6610203a0635ecaff354f620fa3c.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

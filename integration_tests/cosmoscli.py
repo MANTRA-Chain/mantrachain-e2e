@@ -494,6 +494,13 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def tx_search(self, events: str):
+        return json.loads(
+            self.raw(
+                "query", "txs", query=f'"{events}"', output="json", node=self.node_rpc
+            )
+        )
+
     def tx_search_rpc(self, events: str):
         rsp = requests.get(
             f"{self.node_rpc_http}/tx_search",
@@ -713,3 +720,14 @@ class CosmosCLI:
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("blacklisted_accounts", [])
+
+    def ibc_denom_hash(self, path, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "ibc-transfer",
+                "denom-hash",
+                path,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("hash")
