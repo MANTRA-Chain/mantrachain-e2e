@@ -64,6 +64,7 @@ jobs:
       - name: test connection from warp
         run: |
           source ./scripts/network.env
+          sleep 20 # wait for warp to connect
           curl -sS --fail --connect-timeout 10 --max-time 30 \
             "${RPC}/abci_info"
       - name: Run integration tests
