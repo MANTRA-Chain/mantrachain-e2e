@@ -68,6 +68,7 @@ TEST_CONTRACTS = {
     "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
+    "CounterWithCallbacks": "CounterWithCallbacks.sol",
 }
 
 WETH_SALT = 999
@@ -448,9 +449,43 @@ def bech32_to_eth(addr):
     return to_checksum_address(decode_bech32(addr).hex())
 
 
+def hash_func(address_type_bytes, key):
+    hasher = hashlib.sha256()
+    hasher.update(address_type_bytes)
+    th = hasher.digest()
+    hasher = hashlib.sha256()
+    hasher.update(th)
+    hasher.update(key)
+    return hasher.digest()
+
+
+def derive(address_type_bytes, key):
+    return hash_func(address_type_bytes, key)
+
+
 def module_address(name):
     data = hashlib.sha256(name.encode()).digest()[:20]
     return to_checksum_address(decode_bech32(eth_to_bech32(data)).hex())
+
+
+def module_address_extended(name, *derivation_keys):
+    m_key = name.encode()
+    if len(derivation_keys) == 0:
+        address_bytes = hashlib.sha256(m_key).digest()[:20]
+    else:
+        m_key = m_key + b"\x00"
+        first_key = m_key + derivation_keys[0]
+        addr = hash_func("module".encode("utf-8"), first_key)
+        for k in derivation_keys[1:]:
+            addr = derive(addr, k)
+        address_bytes = addr[:20]
+    eth_address = "0x" + address_bytes.hex()
+    return eth_to_bech32(eth_address)
+
+
+def generate_isolated_address(channel_id, sender):
+    name = "ibc-callbacks"
+    return module_address_extended(name, channel_id.encode(), sender.encode())
 
 
 def get_balance(cli, name):
