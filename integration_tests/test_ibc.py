@@ -88,8 +88,7 @@ async def test_ibc_transfer(ibc):
     ibc_erc20_addr = ibc_denom_address(dst_denom)
     w3 = ibc.ibc1.async_w3
 
-    # TODO: fix after display align with unit https://github.com/cosmos/evm/issues/396
-    # assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
+    assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     sender = ADDRS[community]
     receiver = derive_new_account(2).address
