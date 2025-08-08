@@ -55,6 +55,7 @@ jobs:
           organization: ${{ secrets.CLOUDFLARE_ORGANIZATION }}
           auth_client_id: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_ID }}
           auth_client_secret: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_SECRET }}
+          vnet: ${{ secrets.CLOUDFLARE_VNET_ID }}
       - name: Restore network.env
         env:
           NETWORK_ENV: ${{ secrets.NETWORK_ENV }}
