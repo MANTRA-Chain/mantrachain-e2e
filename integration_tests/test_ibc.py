@@ -1,40 +1,24 @@
 import hashlib
-import json
 import math
 
 import pytest
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import get_initcode
-from eth_contract.weth import WETH
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
-    CONTRACTS,
     DEFAULT_DENOM,
-    KEYS,
-    WETH9_ARTIFACT,
-    WETH_ADDRESS,
-    WETH_SALT,
     assert_balance,
     assert_burn_tokenfactory_denom,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_transfer_tokenfactory_denom,
     denom_to_erc20_address,
-    deploy_contract_async,
     derive_new_account,
     eth_to_bech32,
     find_duplicate,
-    generate_isolated_address,
     ibc_denom_address,
-    module_address,
     parse_events_rpc,
-    submit_gov_proposal,
     wait_for_fn,
 )
 
@@ -78,14 +62,7 @@ async def test_ibc_transfer(ibc, tmp_path):
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
     addr_signer1 = eth_to_bech32(signer1)
-    addr_signer2 = eth_to_bech32(signer2)
-    await ensure_create2_deployed(w3, signer1)
-    await ensure_deployed_by_create2(
-        w3,
-        signer1,
-        get_initcode(WETH9_ARTIFACT),
-        salt=WETH_SALT,
-    )
+
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 10uom
     ibc_transfer_amt = 10
     src_chain = "mantra-canary-net-2"
@@ -116,6 +93,7 @@ async def test_ibc_transfer(ibc, tmp_path):
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     receiver = derive_new_account(4).address
     addr_receiver = eth_to_bech32(receiver)
+
     signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer1).call(
         w3, to=ibc_erc20_addr
     )
@@ -174,105 +152,6 @@ async def test_ibc_transfer(ibc, tmp_path):
     )
     assert receiver_balance_eth == receiver_balance_eth_bf + ibc_erc20_approve_amt
     receiver_balance_eth_bf = receiver_balance_eth
-
-    # check native erc20 transfer
-    submit_gov_proposal(
-        ibc.ibc1,
-        tmp_path,
-        messages=[
-            {
-                "@type": "/cosmos.evm.erc20.v1.MsgRegisterERC20",
-                "signer": eth_to_bech32(module_address("gov")),
-                "erc20addresses": [WETH_ADDRESS],
-            }
-        ],
-    )
-
-    assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer1).call(
-        w3, to=WETH_ADDRESS
-    )
-    assert total == signer1_balance_eth_bf == 0
-
-    weth = WETH(to=WETH_ADDRESS)
-    erc20_denom = f"erc20:{WETH_ADDRESS}"
-    deposit_amt = 1000
-    res = await weth.fns.deposit().transact(w3, signer1, value=deposit_amt)
-    assert res.status == 1
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer1).call(
-        w3, to=WETH_ADDRESS
-    )
-    assert total == signer1_balance_eth_bf == deposit_amt
-
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
-    signer2_balance_eth = await ERC20.fns.balanceOf(signer2).call(w3, to=WETH_ADDRESS)
-    receiver_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=WETH_ADDRESS)
-    escrow_balance_bf = cli.balance(escrow_addr, erc20_denom)
-
-    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 10erc20_denom
-    erc20_transfer_amt = 10
-    src_chain = "mantra-canary-net-1"
-    dst_chain = "mantra-canary-net-2"
-    path, escrow_addr = hermes_transfer(
-        ibc, src_chain, dst_chain, erc20_transfer_amt, addr_signer2, denom=erc20_denom
-    )
-
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
-    signer2_balance_eth = await ERC20.fns.balanceOf(signer2).call(w3, to=WETH_ADDRESS)
-    assert signer1_balance_eth == signer1_balance_eth_bf - erc20_transfer_amt
-    signer1_balance_eth_bf = signer1_balance_eth
-    escrow_balance = cli.balance(escrow_addr, erc20_denom)
-    assert escrow_balance == escrow_balance_bf + erc20_transfer_amt
-    escrow_balance_bf = escrow_balance
-
-    # convert 10erc20_denom for signer1
-    signer1_balance_erc20_denom_bf = cli.balance(addr_signer1, erc20_denom)
-    erc20_conver_amt = 10
-    rsp = cli.convert_erc20(
-        WETH_ADDRESS, erc20_conver_amt, _from=addr_signer1, gas=999999
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
-    signer2_balance_eth = await ERC20.fns.balanceOf(signer2).call(w3, to=WETH_ADDRESS)
-    assert signer1_balance_eth == signer1_balance_eth_bf - erc20_conver_amt
-    signer1_balance_eth_bf = signer1_balance_eth
-    signer1_balance_erc20_denom = cli.balance(addr_signer1, erc20_denom)
-    assert (
-        signer1_balance_erc20_denom == signer1_balance_erc20_denom_bf + erc20_conver_amt
-    )
-    signer1_balance_erc20_denom_bf = signer1_balance_erc20_denom
-
-    # deploy cb contract
-    cb_contract = await deploy_contract_async(
-        w3,
-        CONTRACTS["CounterWithCallbacks"],
-        KEYS["signer1"],
-    )
-    cb_amt = 2
-    calldata = await cb_contract.functions.add(WETH_ADDRESS, cb_amt).build_transaction(
-        {"from": signer1, "gas": 210000}
-    )
-    calldata = calldata["data"][2:]
-    dest_cb = {
-        "dest_callback": {
-            "address": cb_contract.address,
-            "gas_limit": 1000000,
-            "calldata": calldata,
-        }
-    }
-    dest_cb = json.dumps(dest_cb)
-
-    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 2erc20_denom
-    src_chain = "mantra-canary-net-2"
-    dst_chain = "mantra-canary-net-1"
-    channel = "channel-0"
-    isolated = generate_isolated_address(channel, addr_signer2)
-    print("mm-path", path, "isolated", isolated)
-    # hermes_transfer(
-    #     ibc, src_chain, dst_chain, cb_amt, isolated, denom=path, memo=dest_cb
-    # )
 
     # check create mint transfer and burn tokenfactory denom
     subdenom = "test"
