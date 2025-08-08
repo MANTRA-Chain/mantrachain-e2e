@@ -143,7 +143,7 @@ async def test_ibc_transfer(ibc, tmp_path):
     dest_cb = {
         "dest_callback": {
             "address": cb_contract.address,
-            "gas_limit": 1000000,
+            "gas_limit": "1000000",
             "calldata": calldata,
         }
     }
