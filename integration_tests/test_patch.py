@@ -1,6 +1,6 @@
 import pytest
 
-from .utils import eth_to_bech32, module_address, submit_gov_proposal
+from .utils import module_address, submit_gov_proposal
 
 pytestmark = pytest.mark.slow
 
@@ -20,7 +20,7 @@ def test_int_overflow(mantra, tmp_path):
         messages=[
             {
                 "@type": "/cosmos.circuit.v1.MsgTripCircuitBreaker",
-                "authority": eth_to_bech32(module_address("gov")),
+                "authority": module_address("gov"),
                 "msg_type_urls": msg_type_urls,
             }
         ],

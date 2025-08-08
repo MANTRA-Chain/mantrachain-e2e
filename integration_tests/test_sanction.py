@@ -8,7 +8,6 @@ from .utils import (
     approve_proposal,
     assert_transfer,
     bech32_to_eth,
-    eth_to_bech32,
     find_fee,
     module_address,
     submit_gov_proposal,
@@ -55,7 +54,7 @@ def test_blacklist(mantra, tmp_path):
     assert_transfer(cli, community, granter, amt=20000)
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
-        "authority": eth_to_bech32(module_address("gov")),
+        "authority": module_address("gov"),
         "blacklist_accounts": [granter],
     }
     proposal_src = {

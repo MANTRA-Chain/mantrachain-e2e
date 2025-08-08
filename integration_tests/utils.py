@@ -167,6 +167,16 @@ def wait_for_fn(name, fn, *, timeout=240, interval=1):
         raise TimeoutError(f"wait for {name} timeout")
 
 
+async def wait_for_fn_async(name, fn, *, timeout=240, interval=1):
+    for i in range(int(timeout / interval)):
+        result = await fn()
+        if result:
+            return result
+        await asyncio.sleep(interval)
+    else:
+        raise TimeoutError(f"wait for {name} timeout")
+
+
 def wait_for_block_time(cli, t):
     print("wait for block time", t)
     while True:
@@ -192,7 +202,7 @@ def w3_wait_for_block(w3, height, timeout=240):
         raise TimeoutError(f"wait for block {height} timeout")
 
 
-async def w3_wait_for_block_sync(w3, height, timeout=240):
+async def w3_wait_for_block_async(w3, height, timeout=240):
     for _ in range(timeout * 2):
         try:
             current_height = await w3.eth.block_number
@@ -463,19 +473,14 @@ def derive(address_type_bytes, key):
     return hash_func(address_type_bytes, key)
 
 
-def module_address(name):
-    data = hashlib.sha256(name.encode()).digest()[:20]
-    return to_checksum_address(decode_bech32(eth_to_bech32(data)).hex())
-
-
-def module_address_extended(name, *derivation_keys):
+def module_address(name, *derivation_keys):
     m_key = name.encode()
     if len(derivation_keys) == 0:
         address_bytes = hashlib.sha256(m_key).digest()[:20]
     else:
         m_key = m_key + b"\x00"
         first_key = m_key + derivation_keys[0]
-        addr = hash_func("module".encode("utf-8"), first_key)
+        addr = hash_func("module".encode(), first_key)
         for k in derivation_keys[1:]:
             addr = derive(addr, k)
         address_bytes = addr[:20]
@@ -485,7 +490,7 @@ def module_address_extended(name, *derivation_keys):
 
 def generate_isolated_address(channel_id, sender):
     name = "ibc-callbacks"
-    return module_address_extended(name, channel_id.encode(), sender.encode())
+    return module_address(name, channel_id.encode(), sender.encode())
 
 
 def get_balance(cli, name):
@@ -749,7 +754,7 @@ def approve_proposal(n, events, event_query_tx=False):
 def submit_any_proposal(mantra, tmp_path):
     # governance module account as granter
     cli = mantra.cosmos_cli()
-    granter_addr = eth_to_bech32(module_address("gov"))
+    granter_addr = module_address("gov")
     grantee_addr = cli.address("signer1")
 
     # this json can be obtained with `--generate-only` flag for respective cli calls

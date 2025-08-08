@@ -4,7 +4,7 @@ from eth_contract.utils import send_transaction
 from .utils import (
     ADDRS,
     adjust_base_fee,
-    w3_wait_for_block_sync,
+    w3_wait_for_block_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -40,7 +40,7 @@ async def test_dynamic_fee_tx(mantra):
     assert blk.gasUsed == txreceipt.gasUsed  # we are the only tx in the block
 
     # check the next block's base fee is adjusted accordingly
-    await w3_wait_for_block_sync(w3, txreceipt.blockNumber + 1)
+    await w3_wait_for_block_async(w3, txreceipt.blockNumber + 1)
     next_base_price = (await w3.eth.get_block(txreceipt.blockNumber + 1)).baseFeePerGas
     params = mantra.cosmos_cli().get_params("feemarket")["params"]
     assert (
@@ -58,7 +58,7 @@ async def test_base_fee_adjustment(mantra):
     """
     w3 = mantra.async_w3
     begin = await w3.eth.block_number
-    await w3_wait_for_block_sync(w3, begin + 3)
+    await w3_wait_for_block_async(w3, begin + 3)
 
     blk = await w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
@@ -98,7 +98,7 @@ async def test_current_fee_per_gas_should_not_be_smaller_than_next_block_base_fe
     base_block = await w3.eth.block_number
     recommended_base_fee = await w3.eth.gas_price
 
-    await w3_wait_for_block_sync(w3, base_block + 1)
+    await w3_wait_for_block_async(w3, base_block + 1)
     next_block = await w3.eth.get_block(base_block + 1)
     assert recommended_base_fee >= next_block["baseFeePerGas"], (
         f"recommended base fee: {recommended_base_fee} is smaller than "

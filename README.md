@@ -65,7 +65,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 - `test_upgrade.py`: Tests cosmovisor-based binary upgrades and verifies chain functionality before and after upgrade.
 - `test_fee_history.py`: Tests eth_feeHistory with various scenarios including concurrent requests, parameter changes, and edge cases like beyond-head blocks and invalid percentiles.
 - `test_contract.py`: Tests deploy contract with create2 create3 and multicall.
-- `test_ibc.py`: Tests cross-chain transaction in IBC.
+- `test_ibc.py` Tests IBC cross-chain transactions covering OnRecvPacket packet handling (unregistered token pairs with IBC coins, tokenfactory coins, native ERC20 tokens) and callback contract interactions.
 
 ## Configuration
 
