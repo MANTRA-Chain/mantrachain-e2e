@@ -25,7 +25,9 @@ from .utils import (
     edit_ini_sections,
     eth_to_bech32,
     get_balance,
+    module_address,
     send_transaction,
+    submit_gov_proposal,
     wait_for_block,
     wait_for_new_blocks,
     wait_for_port,
@@ -181,12 +183,33 @@ def exec(c, tmp_path):
         wait_for_port(ports.rpc_port(base_port))
         return c.cosmos_cli()
 
-    height = cli.block_height()
-    target_height = height + 15
     addr_a = cli.address(community)
 
     subdenom = f"admin{time.time()}"
     gas_prices = "1uom"
+
+    p = cli.get_params("feemarket")
+    p["min_base_gas_price"] = "0.010000000000000000"
+    submit_gov_proposal(
+        c,
+        tmp_path,
+        messages=[
+            {
+                "@type": "/feemarket.feemarket.v1.MsgParams",
+                "authority": eth_to_bech32(module_address("gov")),
+                "params": p,
+            }
+        ],
+        gas=250000,
+        gas_prices=gas_prices,
+    )
+    assert cli.get_params("feemarket") == p
+    res = cli.query_proposals()
+    assert len(res) > 0, res
+
+    height = cli.block_height()
+    target_height = height + 15
+
     denom = assert_create_tokenfactory_denom(
         cli, subdenom, is_legacy=True, _from=addr_a, gas_prices=gas_prices
     )
@@ -225,6 +248,9 @@ def exec(c, tmp_path):
     height = cli.block_height()
     target_height = height + 15
     cli = do_upgrade("v5.0.0-rc1", target_height)
+
+    with pytest.raises(AssertionError, match="no concrete type registered"):
+        cli.query_proposals()
 
     print(c.supervisorctl("stop", "mantra-canary-net-1-node1"))
     # TODO: remove after https://github.com/cosmos/evm/pull/313 backport to v5.0.0-rc1
@@ -269,6 +295,9 @@ def exec(c, tmp_path):
     target_height = height + 15
     cli = do_upgrade("v5.0.0-rc4", target_height)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!!!")
+
+    res = cli.query_proposals()
+    assert len(res) > 0, res
 
 
 def make_writable_recursive(path):
