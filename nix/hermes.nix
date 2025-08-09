@@ -36,7 +36,6 @@ rustPackages_1_83.rustPlatform.buildRustPackage rec {
   env = {
     RUSTFLAGS = "--cfg ossl111 --cfg ossl110 --cfg ossl101";
     OPENSSL_NO_VENDOR = "1";
-    RUST_BACKTRACE = "1";
     PROTOC = "${protobuf}/bin/protoc";
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
     OPENSSL_DIR = symlinkJoin {
