@@ -280,6 +280,17 @@ class CosmosCLI:
         )
         return res.get("proposal") or res
 
+    def query_proposals(self, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "gov",
+                "proposals",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("proposals") or res
+
     def staking_pool(self, bonded=True, **kwargs):
         res = self.raw("q", "staking", "pool", **(self.get_base_kwargs() | kwargs))
         res = json.loads(res)
@@ -424,7 +435,7 @@ class CosmosCLI:
         return rsp
 
     def get_params(self, module, **kwargs):
-        default_kwargs = self.get_kwargs()
+        default_kwargs = self.get_base_kwargs()
         return json.loads(self.raw("q", module, "params", **(default_kwargs | kwargs)))
 
     def query_base_fee(self, **kwargs):

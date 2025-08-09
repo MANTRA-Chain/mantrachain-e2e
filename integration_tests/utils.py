@@ -746,7 +746,9 @@ def submit_gov_proposal(mantra, tmp_path, **kwargs):
         **kwargs,
     }
     proposal.write_text(json.dumps(proposal_src))
-    rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community")
+    if "messages" in kwargs:
+        del kwargs["messages"]
+    rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     approve_proposal(mantra, rsp["events"])
     print("check params have been updated now")
