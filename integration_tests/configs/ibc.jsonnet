@@ -5,13 +5,22 @@ local common = {
   'coin-type': 60,
   'app-config'+: {
     'index-events': super['index-events'] + ['message.action'],
+    'json-rpc'+: {
+      'allow-unprotected-txs': true,
+    },
   },
   genesis+: {
     app_state+: {
+      evm+: {
+        params+: {
+          allow_unprotected_txs: true,
+        },
+      },
       feemarket+: {
         params+: {
           no_base_fee: true,
           base_fee: '0',
+          min_gas_price: '0',
         },
       },
     },

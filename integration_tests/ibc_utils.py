@@ -9,6 +9,7 @@ from pystarport import cluster, ports
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
+    escrow_address,
     wait_for_new_blocks,
     wait_for_port,
 )
@@ -74,21 +75,24 @@ def prepare_network(tmp_path, name):
         wait_for_port(hermes.port)
 
 
-def hermes_transfer(ibc, port, channel, src_amount, dst_addr):
+def hermes_transfer(
+    ibc, src_chain, dst_chain, src_amount, dst_addr, denom=DEFAULT_DENOM, memo=None
+):
+    port = "transfer"
+    channel = "channel-0"
     # wait for hermes
     output = subprocess.getoutput(
         f"curl -s -X GET 'http://127.0.0.1:{ibc.hermes.port}/state' | jq"
     )
     assert json.loads(output)["status"] == "success"
-    # mantra-canary-net-2 -> mantra-canary-net-1
-    ibc2 = "mantra-canary-net-2"
-    ibc1 = "mantra-canary-net-1"
-    # dstchainid srcchainid srcportid srchannelid
     cmd = (
         f"hermes --config {ibc.hermes.configpath} tx ft-transfer "
-        f"--dst-chain {ibc1} --src-chain {ibc2} --src-port {port} "
+        f"--dst-chain {dst_chain} --src-chain {src_chain} --src-port {port} "
         f"--src-channel {channel} --amount {src_amount} "
         f"--timeout-height-offset 1000 --number-msgs 1 "
-        f"--denom {DEFAULT_DENOM} --receiver {dst_addr} --key-name relayer"
+        f"--denom {denom} --receiver {dst_addr} --key-name relayer"
     )
+    if memo:
+        cmd += f" --memo '{memo}'"
     subprocess.run(cmd, check=True, shell=True)
+    return f"{port}/{channel}/{denom}", escrow_address(port, channel)

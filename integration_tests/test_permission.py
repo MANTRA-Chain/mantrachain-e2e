@@ -9,7 +9,6 @@ from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
     assert_transfer,
-    eth_to_bech32,
     module_address,
 )
 
@@ -39,7 +38,7 @@ async def transfer(cli, user, addr_b):
 async def execute_user_transfers(cli, user_modules):
     results = []
     for user_name, module in user_modules:
-        addr_b = eth_to_bech32(module_address(module))
+        addr_b = module_address(module)
         result = await transfer(cli, user_name, addr_b)
         results.append(result)
     return results

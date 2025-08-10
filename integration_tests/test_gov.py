@@ -6,7 +6,6 @@ from .utils import (
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_transfer_tokenfactory_denom,
-    eth_to_bech32,
     module_address,
     submit_any_proposal,
     submit_gov_proposal,
@@ -49,7 +48,7 @@ def test_submit_send_enabled(mantra, tmp_path):
         messages=[
             {
                 "@type": "/cosmos.bank.v1beta1.MsgSetSendEnabled",
-                "authority": eth_to_bech32(module_address("gov")),
+                "authority": module_address("gov"),
                 "sendEnabled": send_enable,
             }
         ],

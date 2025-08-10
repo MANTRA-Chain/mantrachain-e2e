@@ -24,6 +24,8 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_contract.create2 import create2_address
+from eth_contract.utils import get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
@@ -66,7 +68,14 @@ TEST_CONTRACTS = {
     "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
+    "CounterWithCallbacks": "CounterWithCallbacks.sol",
 }
+
+WETH_SALT = 999
+WETH9_ARTIFACT = json.loads(
+    Path(__file__).parent.joinpath("contracts/contracts/WETH9.json").read_text()
+)
+WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 
 
 def contract_path(name, filename):
@@ -158,6 +167,16 @@ def wait_for_fn(name, fn, *, timeout=240, interval=1):
         raise TimeoutError(f"wait for {name} timeout")
 
 
+async def wait_for_fn_async(name, fn, *, timeout=240, interval=1):
+    for i in range(int(timeout / interval)):
+        result = await fn()
+        if result:
+            return result
+        await asyncio.sleep(interval)
+    else:
+        raise TimeoutError(f"wait for {name} timeout")
+
+
 def wait_for_block_time(cli, t):
     print("wait for block time", t)
     while True:
@@ -183,7 +202,7 @@ def w3_wait_for_block(w3, height, timeout=240):
         raise TimeoutError(f"wait for block {height} timeout")
 
 
-async def w3_wait_for_block_sync(w3, height, timeout=240):
+async def w3_wait_for_block_async(w3, height, timeout=240):
     for _ in range(timeout * 2):
         try:
             current_height = await w3.eth.block_number
@@ -440,9 +459,38 @@ def bech32_to_eth(addr):
     return to_checksum_address(decode_bech32(addr).hex())
 
 
-def module_address(name):
-    data = hashlib.sha256(name.encode()).digest()[:20]
-    return to_checksum_address(decode_bech32(eth_to_bech32(data)).hex())
+def hash_func(address_type_bytes, key):
+    hasher = hashlib.sha256()
+    hasher.update(address_type_bytes)
+    th = hasher.digest()
+    hasher = hashlib.sha256()
+    hasher.update(th)
+    hasher.update(key)
+    return hasher.digest()
+
+
+def derive(address_type_bytes, key):
+    return hash_func(address_type_bytes, key)
+
+
+def module_address(name, *derivation_keys):
+    m_key = name.encode()
+    if len(derivation_keys) == 0:
+        address_bytes = hashlib.sha256(m_key).digest()[:20]
+    else:
+        m_key = m_key + b"\x00"
+        first_key = m_key + derivation_keys[0]
+        addr = hash_func("module".encode(), first_key)
+        for k in derivation_keys[1:]:
+            addr = derive(addr, k)
+        address_bytes = addr[:20]
+    eth_address = "0x" + address_bytes.hex()
+    return eth_to_bech32(eth_address)
+
+
+def generate_isolated_address(channel_id, sender):
+    name = "ibc-callbacks"
+    return module_address(name, channel_id.encode(), sender.encode())
 
 
 def get_balance(cli, name):
@@ -706,7 +754,7 @@ def approve_proposal(n, events, event_query_tx=False):
 def submit_any_proposal(mantra, tmp_path):
     # governance module account as granter
     cli = mantra.cosmos_cli()
-    granter_addr = eth_to_bech32(module_address("gov"))
+    granter_addr = module_address("gov")
     grantee_addr = cli.address("signer1")
 
     # this json can be obtained with `--generate-only` flag for respective cli calls

@@ -9,7 +9,6 @@ from .utils import (
     ADDRS,
     WEI_PER_UOM,
     adjust_base_fee,
-    eth_to_bech32,
     module_address,
     send_transaction,
     submit_gov_proposal,
@@ -139,7 +138,7 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
         messages=[
             {
                 "@type": "/cosmos.evm.feemarket.v1.MsgUpdateParams",
-                "authority": eth_to_bech32(module_address("gov")),
+                "authority": module_address("gov"),
                 "params": p,
             }
         ],
