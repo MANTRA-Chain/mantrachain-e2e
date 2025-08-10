@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+import requests
 import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
@@ -138,6 +139,24 @@ def check_basic_eth_tx(w3, contract, from_acc, to, msg):
     assert receipt.status == 1
 
 
+def get_tx(base_port, hash):
+    p = ports.api_port(base_port)
+    url = f"http://127.0.0.1:{p}/cosmos/tx/v1beta1/txs/{hash}"
+    return requests.get(url).json()
+
+
+def is_subset(small, big):
+    if isinstance(small, dict) and isinstance(big, dict):
+        for k, v in small.items():
+            if k not in big or not is_subset(v, big[k]):
+                return False
+        return True
+    elif isinstance(small, list) and isinstance(big, list):
+        return all(any(is_subset(sv, bv) for bv in big) for sv in small)
+    else:
+        return small == big
+
+
 def exec(c, tmp_path):
     """
     - propose an upgrade and pass it
@@ -190,19 +209,20 @@ def exec(c, tmp_path):
 
     p = cli.get_params("feemarket")
     p["min_base_gas_price"] = "0.010000000000000000"
-    submit_gov_proposal(
+    gov_txhash = submit_gov_proposal(
         c,
         tmp_path,
         messages=[
             {
                 "@type": "/feemarket.feemarket.v1.MsgParams",
-                "authority": eth_to_bech32(module_address("gov")),
+                "authority": module_address("gov"),
                 "params": p,
             }
         ],
         gas=250000,
         gas_prices=gas_prices,
-    )
+    )["txhash"]
+    gov_tx_bf = get_tx(base_port, gov_txhash)
     assert cli.get_params("feemarket") == p
     res = cli.query_proposals()
     assert len(res) > 0, res
@@ -298,6 +318,8 @@ def exec(c, tmp_path):
 
     res = cli.query_proposals()
     assert len(res) > 0, res
+    gov_tx_af = get_tx(base_port, gov_txhash)
+    assert is_subset(gov_tx_bf, gov_tx_af)
 
 
 def make_writable_recursive(path):

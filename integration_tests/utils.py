@@ -800,6 +800,7 @@ def submit_gov_proposal(mantra, tmp_path, **kwargs):
     assert rsp["code"] == 0, rsp["raw_log"]
     approve_proposal(mantra, rsp["events"])
     print("check params have been updated now")
+    return rsp
 
 
 def derive_new_account(n=1):
