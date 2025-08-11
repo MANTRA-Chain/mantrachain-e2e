@@ -25,8 +25,14 @@ from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
 from eth_contract.create2 import create2_address
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_deployed_by_create2,
+)
+from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
+from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
@@ -751,51 +757,15 @@ def approve_proposal(n, events, event_query_tx=False):
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
 
 
-def submit_any_proposal(mantra, tmp_path):
-    # governance module account as granter
-    cli = mantra.cosmos_cli()
-    granter_addr = module_address("gov")
-    grantee_addr = cli.address("signer1")
-
-    # this json can be obtained with `--generate-only` flag for respective cli calls
-    proposal_json = {
-        "messages": [
-            {
-                "@type": "/cosmos.feegrant.v1beta1.MsgGrantAllowance",
-                "granter": granter_addr,
-                "grantee": grantee_addr,
-                "allowance": {
-                    "@type": "/cosmos.feegrant.v1beta1.BasicAllowance",
-                    "spend_limit": [],
-                    "expiration": None,
-                },
-            }
-        ],
-        "deposit": f"1{DEFAULT_DENOM}",
-        "title": "title",
-        "summary": "summary",
-    }
-    proposal_file = tmp_path / "proposal.json"
-    proposal_file.write_text(json.dumps(proposal_json))
-    rsp = cli.submit_gov_proposal(proposal_file, from_="community")
-    assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"])
-    grant_detail = cli.query_grant(granter_addr, grantee_addr)
-    assert grant_detail["granter"] == granter_addr
-    assert grant_detail["grantee"] == grantee_addr
-
-
-def submit_gov_proposal(mantra, tmp_path, **kwargs):
+def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
     proposal = tmp_path / "proposal.json"
     proposal_src = {
         "title": "title",
         "summary": "summary",
         "deposit": f"1{DEFAULT_DENOM}",
-        **kwargs,
+        "messages": messages,
     }
     proposal.write_text(json.dumps(proposal_src))
-    if "messages" in kwargs:
-        del kwargs["messages"]
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     approve_proposal(mantra, rsp["events"])
@@ -925,3 +895,25 @@ def parse_events_rpc(events):
                 value = None
             result[ev["type"]][key] = value
     return result
+
+
+async def assert_create_erc20_denom(w3, signer):
+    await ensure_create2_deployed(w3, signer)
+    await ensure_deployed_by_create2(
+        w3, signer, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
+    )
+    assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
+    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total == signer1_balance_eth_bf == 0
+
+    weth = WETH(to=WETH_ADDRESS)
+    erc20_denom = f"erc20:{WETH_ADDRESS}"
+    deposit_amt = 100
+    res = await weth.fns.deposit().transact(w3, signer, value=deposit_amt)
+    assert res.status == 1
+    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    signer1_balance_eth = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total == signer1_balance_eth == deposit_amt
+    signer1_balance_eth_bf = signer1_balance_eth
+    return erc20_denom, total

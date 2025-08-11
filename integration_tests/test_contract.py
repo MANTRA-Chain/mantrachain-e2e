@@ -23,18 +23,9 @@ from eth_contract.weth import WETH
 from web3 import AsyncWeb3
 from web3.types import TxParams, Wei
 
-from .network import setup_custom_mantra
 from .utils import ACCOUNTS, ADDRS, WETH9_ARTIFACT, WETH_ADDRESS, WETH_SALT
 
 pytestmark = pytest.mark.asyncio
-
-
-@pytest.fixture(scope="module")
-def mantra_replay(tmp_path_factory):
-    path = tmp_path_factory.mktemp("mantra-replay")
-    yield from setup_custom_mantra(
-        path, 26600, Path(__file__).parent / "configs/allow_replay.jsonnet"
-    )
 
 
 MockERC20_ARTIFACT = json.loads(
@@ -71,8 +62,8 @@ async def assert_contract_deployed(w3):
     assert await w3.eth.get_code(MULTICALL3_ADDRESS)
 
 
-async def test_flow(mantra_replay):
-    w3 = mantra_replay.async_w3
+async def test_flow(mantra):
+    w3 = mantra.async_w3
     await assert_contract_deployed(w3)
     owner = (await w3.eth.accounts)[0]
     await ensure_createx_deployed(w3, owner)
@@ -212,8 +203,8 @@ async def test_flow(mantra_replay):
     assert await balance_of(w3, ZERO_ADDRESS, users[0]) == before
 
 
-async def test_7702(mantra_replay):
-    w3: AsyncWeb3 = mantra_replay.async_w3
+async def test_7702(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
     await assert_contract_deployed(w3)
 
     acct = ACCOUNTS["validator"]

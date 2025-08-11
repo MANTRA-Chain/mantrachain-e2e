@@ -14,7 +14,7 @@ from .utils import send_transaction
 def mantra_replay(tmp_path_factory):
     path = tmp_path_factory.mktemp("mantra-replay")
     yield from setup_custom_mantra(
-        path, 26400, Path(__file__).parent / "configs/allow_replay.jsonnet"
+        path, 26400, Path(__file__).parent / "configs/default.jsonnet"
     )
 
 

@@ -3,13 +3,7 @@ import json
 import math
 
 import pytest
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import get_initcode
-from eth_contract.weth import WETH
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
@@ -17,11 +11,10 @@ from .utils import (
     CONTRACTS,
     DEFAULT_DENOM,
     KEYS,
-    WETH9_ARTIFACT,
     WETH_ADDRESS,
-    WETH_SALT,
     assert_balance,
     assert_burn_tokenfactory_denom,
+    assert_create_erc20_denom,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_transfer_tokenfactory_denom,
@@ -238,10 +231,7 @@ async def test_ibc_cb(ibc, tmp_path):
     signer2 = ADDRS["signer2"]
     addr_signer1 = eth_to_bech32(signer1)
     addr_signer2 = eth_to_bech32(signer2)
-    await ensure_create2_deployed(w3, signer1)
-    await ensure_deployed_by_create2(
-        w3, signer1, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
-    )
+    erc20_denom, total = await assert_create_erc20_denom(w3, signer1)
 
     # check native erc20 transfer
     submit_gov_proposal(
@@ -256,25 +246,8 @@ async def test_ibc_cb(ibc, tmp_path):
         ],
     )
 
-    assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer1).call(
-        w3, to=WETH_ADDRESS
-    )
-    assert total == signer1_balance_eth_bf == 0
-
-    weth = WETH(to=WETH_ADDRESS)
-    erc20_denom = f"erc20:{WETH_ADDRESS}"
-    deposit_amt = 100
-    res = await weth.fns.deposit().transact(w3, signer1, value=deposit_amt)
-    assert res.status == 1
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth == deposit_amt
-    signer1_balance_eth_bf = signer1_balance_eth
-
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50erc20_denom
-    transfer_amt = deposit_amt // 2
+    transfer_amt = total // 2
     src_chain = "mantra-canary-net-1"
     dst_chain = "mantra-canary-net-2"
     channel = "channel-0"
@@ -296,7 +269,7 @@ async def test_ibc_cb(ibc, tmp_path):
 
     assert cli.balance(escrow_addr, erc20_denom) == transfer_amt
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
-    assert signer1_balance_eth == signer1_balance_eth_bf - transfer_amt
+    assert signer1_balance_eth == total - transfer_amt
 
     # convert all erc20 for signer1
     signer1_balance_erc20_denom_bf = cli.balance(addr_signer1, erc20_denom)
@@ -312,7 +285,7 @@ async def test_ibc_cb(ibc, tmp_path):
     assert cli.balance(escrow_addr, erc20_denom) == transfer_amt
 
     # deploy cb contract
-    transfer_amt = deposit_amt // 2
+    transfer_amt = total // 2
     cb_contract, dest_cb = await prepare_dest_callback(w3, signer1, transfer_amt)
     cb_balance_bf = await ERC20.fns.balanceOf(cb_contract).call(w3, to=WETH_ADDRESS)
 
