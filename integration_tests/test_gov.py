@@ -1,22 +1,15 @@
 import json
 
 import pytest
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import get_initcode
-from eth_contract.weth import WETH
 
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
-    WETH9_ARTIFACT,
     WETH_ADDRESS,
-    WETH_SALT,
     approve_proposal,
     assert_burn_tokenfactory_denom,
+    assert_create_erc20_denom,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_transfer_tokenfactory_denom,
@@ -69,11 +62,7 @@ async def test_submit_send_enabled(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     community = ADDRS["community"]
     w3 = mantra.async_w3
-    await ensure_create2_deployed(w3, community)
-    await ensure_deployed_by_create2(
-        w3, community, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
-    )
-    erc20_denom = f"erc20:{WETH_ADDRESS}"
+    erc20_denom, total = await assert_create_erc20_denom(w3, community)
     # check create mint transfer and burn tokenfactory denom
     sender = cli.address("community")
     receiver = cli.address("reserve")
@@ -114,19 +103,9 @@ async def test_submit_send_enabled(mantra, tmp_path):
         gas=gas,
     )
     assert normalize(cli.query_bank_send()) == normalize(send_enable)
-
-    weth = WETH(to=WETH_ADDRESS)
-    deposit_amt = 100
-    res = await weth.fns.deposit().transact(w3, community, value=deposit_amt)
-    assert res.status == 1
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth = await ERC20.fns.balanceOf(community).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth == deposit_amt
-    assert cli.balance(sender, erc20_denom) == 0
-
-    rsp = cli.convert_erc20(WETH_ADDRESS, signer1_balance_eth, _from=sender, gas=999999)
+    rsp = cli.convert_erc20(WETH_ADDRESS, total, _from=sender, gas=999999)
     assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.balance(sender, erc20_denom) == deposit_amt
+    assert cli.balance(sender, erc20_denom) == total
     assert await ERC20.fns.balanceOf(community).call(w3, to=WETH_ADDRESS) == 0
 
     rsp = cli.transfer(sender, receiver, f"1{erc20_denom}")
