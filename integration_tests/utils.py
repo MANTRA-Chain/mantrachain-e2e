@@ -751,53 +751,20 @@ def approve_proposal(n, events, event_query_tx=False):
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
 
 
-def submit_any_proposal(mantra, tmp_path):
-    # governance module account as granter
-    cli = mantra.cosmos_cli()
-    granter_addr = module_address("gov")
-    grantee_addr = cli.address("signer1")
-
-    # this json can be obtained with `--generate-only` flag for respective cli calls
-    proposal_json = {
-        "messages": [
-            {
-                "@type": "/cosmos.feegrant.v1beta1.MsgGrantAllowance",
-                "granter": granter_addr,
-                "grantee": grantee_addr,
-                "allowance": {
-                    "@type": "/cosmos.feegrant.v1beta1.BasicAllowance",
-                    "spend_limit": [],
-                    "expiration": None,
-                },
-            }
-        ],
-        "deposit": f"1{DEFAULT_DENOM}",
-        "title": "title",
-        "summary": "summary",
-    }
-    proposal_file = tmp_path / "proposal.json"
-    proposal_file.write_text(json.dumps(proposal_json))
-    rsp = cli.submit_gov_proposal(proposal_file, from_="community")
-    assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"])
-    grant_detail = cli.query_grant(granter_addr, grantee_addr)
-    assert grant_detail["granter"] == granter_addr
-    assert grant_detail["grantee"] == grantee_addr
-
-
-def submit_gov_proposal(mantra, tmp_path, **kwargs):
+def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
     proposal = tmp_path / "proposal.json"
     proposal_src = {
         "title": "title",
         "summary": "summary",
         "deposit": f"1{DEFAULT_DENOM}",
-        **kwargs,
+        "messages": messages,
     }
     proposal.write_text(json.dumps(proposal_src))
-    rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community")
+    rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     approve_proposal(mantra, rsp["events"])
     print("check params have been updated now")
+    return rsp
 
 
 def derive_new_account(n=1):
