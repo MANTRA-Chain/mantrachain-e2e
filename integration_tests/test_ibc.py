@@ -76,7 +76,7 @@ def wait_for_balance_change(cli, addr, denom, init_balance):
 async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     subdenom = "test"
     gas = 300000
-    ibc_erc20_transfer_amt = 10**6
+    tf_amt = 10**6
     transfer_amt = 1
     burn_amt = 10**3
     addr_signer1 = eth_to_bech32(signer1)
@@ -92,27 +92,23 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     assert total == balance == signer1_balance_eth == 0
 
     balance = assert_mint_tokenfactory_denom(
-        cli, denom, ibc_erc20_transfer_amt, _from=addr_signer1, gas=gas
+        cli, denom, tf_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
-    assert total == balance == signer1_balance_eth == ibc_erc20_transfer_amt
+    assert total == balance == signer1_balance_eth == tf_amt
 
     balance = assert_transfer_tokenfactory_denom(
         cli, denom, addr_receiver, transfer_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    assert balance == signer1_balance_eth == ibc_erc20_transfer_amt - transfer_amt
+    assert balance == signer1_balance_eth == tf_amt - transfer_amt
 
     balance = assert_burn_tokenfactory_denom(
         cli, denom, burn_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    assert (
-        balance
-        == signer1_balance_eth
-        == ibc_erc20_transfer_amt - transfer_amt - burn_amt
-    )
+    assert balance == signer1_balance_eth == tf_amt - transfer_amt - burn_amt
 
     balance = cli.balance(addr_receiver, denom)
     signer1_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)

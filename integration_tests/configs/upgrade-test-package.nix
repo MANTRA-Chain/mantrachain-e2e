@@ -48,6 +48,14 @@ let
         linux-amd64 = "sha256-+n212FGcXI7TaBfdF1GyLsYe2Vz48GJ6Pm99K1ffDnc=";
       };
     };
+    "v5.0.0-rc4" = {
+      filename = "mantrachaind-5.0.0-rc4-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-Tj0XrC/ncGnO0jK2f13TFPO11UxndSKqMe/9iNXJy34=";
+        linux-arm64 = "sha256-z98DR0hYLyR5HfzyMZREiYMS8eq0/8rrQjB53/KHnSQ=";
+        linux-amd64 = "sha256-z98DR0hYLyR5HfzyMZREiYMS8eq0/8rrQjB53/KHnSQ=";
+      };
+    };
   };
 
   mkMantrachain = { version, name ? "mantrachaind-${version}" }: 
@@ -71,7 +79,7 @@ let
     "v5.0.0-rc1" = mkMantrachain { version = "v5.0.0-rc1"; };
     "v5.0.0-rc2" = mkMantrachain { version = "v5.0.0-rc2"; };
     "v5.0.0-rc3" = mkMantrachain { version = "v5.0.0-rc3"; };
-    "v5.0.0-rc4" = pkgs.callPackage ../../nix/mantrachain { };
+    "v5.0.0-rc4" = mkMantrachain { version = "v5.0.0-rc4"; };
   };
 
 in
