@@ -182,6 +182,10 @@ async def exec(c):
     assert total == balance == signer1_balance_eth == tf_amt
     print("mm-signer1_balance_eth2", signer1_balance_eth, total, balance)
 
+    c.supervisorctl("stop", "all")
+    state = cli.export()["app_state"]
+    assert state["erc20"]["native_precompiles"] == ["0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"]
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     await exec(custom_mantra)

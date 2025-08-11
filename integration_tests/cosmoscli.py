@@ -758,3 +758,13 @@ class CosmosCLI:
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("hash")
+
+    def export(self, **kwargs):
+        raw = self.raw("export", home=self.data_dir, **kwargs)
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        # skip oracle client log
+        idx = raw.find("{")
+        if idx == -1:
+            raise ValueError("No JSON object found in export output")
+        return json.loads(raw[idx:])
