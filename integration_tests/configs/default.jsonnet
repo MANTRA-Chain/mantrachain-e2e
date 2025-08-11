@@ -28,6 +28,7 @@
         'block-range-cap': 10000,
         'logs-cap': 10000,
         'gas-cap': 30000000,
+        'allow-unprotected-txs': true,
       },
       mempool: {
         'max-txs': 5000,
@@ -101,6 +102,7 @@
         evm: {
           params: {
             evm_denom: 'uom',
+            allow_unprotected_txs: true,
           },
         },
         feemarket: {

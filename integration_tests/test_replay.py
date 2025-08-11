@@ -1,25 +1,14 @@
-from pathlib import Path
-
 import pytest
 from eth_contract.create2 import CREATE2_FACTORY
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3.exceptions import Web3RPCError
 
-from .network import setup_custom_mantra
 from .utils import send_transaction
 
 
-@pytest.fixture(scope="module")
-def mantra_replay(tmp_path_factory):
-    path = tmp_path_factory.mktemp("mantra-replay")
-    yield from setup_custom_mantra(
-        path, 26400, Path(__file__).parent / "configs/allow_replay.jsonnet"
-    )
-
-
-def test_replay_tx(mantra_replay):
-    w3 = mantra_replay.w3
+def test_replay_tx(mantra):
+    w3 = mantra.w3
     tx = HexBytes(
         "0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7"
         "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -39,8 +28,8 @@ def test_replay_tx(mantra_replay):
     assert to_checksum_address(receipt["contractAddress"]) == CREATE2_FACTORY
 
 
-def test_wrong_chain_id(mantra_replay):
-    w3 = mantra_replay.w3
+def test_wrong_chain_id(mantra):
+    w3 = mantra.w3
     recipient = to_checksum_address("0x3fab184622dc19b6109349b94811493bf2a45362")
     with pytest.raises(Web3RPCError, match="invalid chain id"):
         send_transaction(
