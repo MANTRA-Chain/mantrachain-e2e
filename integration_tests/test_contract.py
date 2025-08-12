@@ -221,7 +221,7 @@ async def test_7702(mantra):
     nonce = await w3.eth.get_transaction_count(acct.address)
     chain_id = await w3.eth.chain_id
     auth = acct.sign_authorization(
-        {"chainId": chain_id, "address": multicall3, "nonce": nonce + 1}
+        {"chainId": chain_id, "address": multicall3, "nonce": nonce}
     )
     amount = 1000
     calls = [
@@ -232,7 +232,6 @@ async def test_7702(mantra):
         "chainId": chain_id,
         "to": acct.address,
         "value": amount,
-        "nonce": nonce,
         "authorizationList": [auth],
         "data": MULTICALL3.fns.aggregate3Value(calls).data,
     }
@@ -240,11 +239,19 @@ async def test_7702(mantra):
     before = await w3.eth.get_balance(acct.address)
     receipt = await send_transaction(w3, sponsor, **tx)
     after = await w3.eth.get_balance(acct.address)
-    assert before == after
+    assert before + amount == after
+
+    assert await w3.eth.get_transaction_count(acct.address) == nonce + 1
 
     logs = receipt["logs"]
-    assert logs[0]['topics'] == [WETH.events.Deposit.topic, address_to_bytes32(acct.address)]
-    assert logs[1]['topics'] == [WETH.events.Withdrawal.topic, address_to_bytes32(acct.address)]
+    assert logs[0]["topics"] == [
+        WETH.events.Deposit.topic,
+        address_to_bytes32(acct.address),
+    ]
+    assert logs[1]["topics"] == [
+        WETH.events.Withdrawal.topic,
+        address_to_bytes32(acct.address),
+    ]
 
     assert await w3.eth.get_code(acct.address)
     block = await w3.eth.get_block(receipt["blockNumber"], True)
