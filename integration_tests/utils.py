@@ -33,7 +33,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH
-from eth_utils import to_checksum_address
+from eth_utils import to_checksum_address, to_hex
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
@@ -917,3 +917,7 @@ async def assert_create_erc20_denom(w3, signer):
     assert total == signer1_balance_eth == deposit_amt
     signer1_balance_eth_bf = signer1_balance_eth
     return erc20_denom, total
+
+
+def address_to_bytes32(addr) -> HexBytes:
+    return HexBytes(addr).rjust(32, b"\x00")
