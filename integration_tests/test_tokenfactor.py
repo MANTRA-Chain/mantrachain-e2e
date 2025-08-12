@@ -39,8 +39,9 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     }
     file_meta = Path(tmp_path) / "meta.json"
     file_meta.write_text(json.dumps(meta))
-    rsp = cli.set_tokenfactory_denom(file_meta, _from=addr_a, sign_mode="amino-json")
-    assert rsp["code"] == 0, rsp["raw_log"]
+    for kwargs in [{"_from": addr_a, "sign_mode": "amino-json"}, {"_from": addr_a}]:
+        rsp = cli.set_tokenfactory_denom(file_meta, **kwargs)
+        assert rsp["code"] == 0, rsp["raw_log"]
     assert cli.query_bank_denom_metadata(denom) == meta
 
     rsp = cli.update_tokenfactory_admin(denom, addr_b, _from=addr_a)

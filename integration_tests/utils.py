@@ -33,7 +33,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH
-from eth_utils import to_checksum_address, to_hex
+from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
