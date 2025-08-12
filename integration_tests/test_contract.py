@@ -23,7 +23,14 @@ from eth_contract.weth import WETH
 from web3 import AsyncWeb3
 from web3.types import TxParams, Wei
 
-from .utils import ACCOUNTS, ADDRS, WETH9_ARTIFACT, WETH_ADDRESS, WETH_SALT
+from .utils import (
+    ACCOUNTS,
+    ADDRS,
+    WETH9_ARTIFACT,
+    WETH_ADDRESS,
+    WETH_SALT,
+    address_to_bytes32,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -208,6 +215,7 @@ async def test_7702(mantra):
     await assert_contract_deployed(w3)
 
     acct = ACCOUNTS["validator"]
+    sponsor = ACCOUNTS["community"]
     multicall3 = MULTICALL3ROUTER
 
     nonce = await w3.eth.get_transaction_count(acct.address)
@@ -221,7 +229,6 @@ async def test_7702(mantra):
         Call3Value(WETH_ADDRESS, False, 0, WETH.fns.withdraw(amount).data),
     ]
     tx: TxParams = {
-        "from": acct.address,
         "chainId": chain_id,
         "to": acct.address,
         "value": amount,
@@ -231,10 +238,14 @@ async def test_7702(mantra):
     }
 
     before = await w3.eth.get_balance(acct.address)
-    receipt = await send_transaction(w3, acct, **tx)
+    receipt = await send_transaction(w3, sponsor, **tx)
     after = await w3.eth.get_balance(acct.address)
-    assert before - after == receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    assert len(receipt["logs"]) > 0
+    assert before == after
+
+    logs = receipt["logs"]
+    assert logs[0]['topics'] == [WETH.events.Deposit.topic, address_to_bytes32(acct.address)]
+    assert logs[1]['topics'] == [WETH.events.Withdrawal.topic, address_to_bytes32(acct.address)]
+
     assert await w3.eth.get_code(acct.address)
     block = await w3.eth.get_block(receipt["blockNumber"], True)
     assert block["transactions"][0] == await w3.eth.get_transaction(
