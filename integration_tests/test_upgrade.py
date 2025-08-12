@@ -193,11 +193,10 @@ def exec(c, tmp_path):
     cli = do_upgrade(c, "v5.0.0-rc4", target_height)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world!!!")
 
-    # TODO: check after legacy codec support
-    # res = cli.query_proposals()
-    # assert len(res) > 0, res
-    # gov_tx_af = get_tx(base_port, gov_txhash)
-    # assert is_subset(gov_tx_bf, gov_tx_af)
+    res = cli.query_proposals()
+    assert len(res) > 0, res
+    gov_tx_af = get_tx(base_port, gov_txhash)
+    assert is_subset(gov_tx_bf, gov_tx_af)
 
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
