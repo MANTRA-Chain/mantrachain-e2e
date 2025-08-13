@@ -1,8 +1,21 @@
+import pytest
+
 from .utils import send_transaction, wait_for_fn
 
 
-def test_eoa(mantra):
-    w3 = mantra.w3
+@pytest.fixture(scope="session", params=["mantra", "geth"])
+def cluster(request, mantra, geth):
+    provider = request.param
+    if provider == "mantra":
+        yield mantra
+    elif provider == "geth":
+        yield geth
+    else:
+        raise NotImplementedError
+
+
+def test_eoa(cluster):
+    w3 = cluster.w3
     # fund new acct
     acct = w3.eth.account.create()
     value = 10**18
@@ -47,8 +60,7 @@ def test_eoa(mantra):
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     res = w3.eth.wait_for_transaction_receipt(tx_hash)
     assert res.status == 1
-    # TODO: db sync fix release https://github.com/ethereum/go-ethereum/pull/31703
-    code = w3.eth.get_code(acct.address, block_identifier=res["blockNumber"])
+    code = w3.eth.get_code(acct.address)
     assert code.hex().startswith("ef0100deadbeef"), "Code was not set!"
 
     # clear code
