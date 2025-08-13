@@ -3,7 +3,7 @@ import pytest
 from .utils import ADDRS, send_transaction_async, wait_for_fn_async
 
 
-@pytest.fixture(scope="session", params=["mantra", "geth"])
+@pytest.fixture(scope="module", params=["mantra", "geth"])
 def cluster(request, mantra, geth):
     provider = request.param
     if provider == "mantra":
