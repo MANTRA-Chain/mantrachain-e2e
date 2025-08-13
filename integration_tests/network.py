@@ -162,7 +162,7 @@ def setup_custom_mantra(
         c = Mantra(
             path / "mantra-canary-net-1", chain_binary=chain_binary or "mantrachaind"
         )
-        wait_for_block(c.cosmos_cli(), 1)
+        wait_for_block(c.cosmos_cli(), 2)
         yield c
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -218,46 +218,4 @@ def setup_geth(path, base_port):
         finally:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             # proc.terminate()
-            proc.wait()
-
-
-def setup_beacon(path, base_port):
-    with (path / "beacon.log").open("w") as logfile:
-        cmd = [
-            "start-beacon",
-            path,
-        ]
-        print(*cmd)
-        proc = subprocess.Popen(
-            cmd,
-            preexec_fn=os.setsid,
-            stdout=logfile,
-            stderr=subprocess.STDOUT,
-        )
-        try:
-            wait_for_port(base_port)
-            yield proc
-        finally:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            proc.wait()
-
-
-def setup_validator(path, base_port):
-    with (path / "validator.log").open("w") as logfile:
-        cmd = [
-            "start-validator",
-            path,
-        ]
-        print(*cmd)
-        proc = subprocess.Popen(
-            cmd,
-            preexec_fn=os.setsid,
-            stdout=logfile,
-            stderr=subprocess.STDOUT,
-        )
-        try:
-            wait_for_port(base_port)
-            yield proc
-        finally:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             proc.wait()

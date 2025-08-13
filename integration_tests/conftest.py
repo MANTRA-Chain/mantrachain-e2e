@@ -1,13 +1,9 @@
-from contextlib import contextmanager
-
 import pytest
 
 from .network import (
     connect_custom_mantra,
-    setup_beacon,
     setup_geth,
     setup_mantra,
-    setup_validator,
 )
 
 
@@ -74,23 +70,7 @@ def connect_mantra():
     yield from connect_custom_mantra()
 
 
-@contextmanager
-def setup_all(path, base_port):
-    geth_gen = setup_geth(path, base_port)
-    beacon_gen = setup_beacon(path, base_port)
-    validator_gen = setup_validator(path, base_port)
-    geth_instance = next(geth_gen)
-    next(beacon_gen)
-    next(validator_gen)
-
-    try:
-        yield geth_instance
-    finally:
-        pass
-
-
 @pytest.fixture(scope="session")
 def geth(tmp_path_factory):
     path = tmp_path_factory.mktemp("geth")
-    with setup_all(path, 8545) as geth_instance:
-        yield geth_instance
+    yield from setup_geth(path, 8545)

@@ -2,6 +2,9 @@ import sys
 
 import pytest
 import web3
+from eth_account import Account
+from eth_contract.utils import send_transaction as send_transaction_async
+from eth_contract.utils import sign_transaction as sign_transaction_async
 
 from .utils import (
     ADDRS,
@@ -225,3 +228,34 @@ def test_validate(mantra):
     with pytest.raises(web3.exceptions.Web3RPCError) as exc:
         send_transaction(w3, tx)
     assert "max priority fee per gas higher than max fee per gas" in str(exc)
+
+
+@pytest.mark.asyncio
+async def test_replace_transaction(geth):
+    w3 = geth.async_w3
+    price = await w3.eth.gas_price
+    amt = 1
+    receiver = ADDRS["signer1"]
+    sender = ADDRS["validator"]
+    nonce = await w3.eth.get_transaction_count(sender)
+    balance = await w3.eth.get_balance(receiver)
+    tx = {
+        "to": receiver,
+        "value": amt,
+        "gas": 21000,
+        "gasPrice": price,
+        "nonce": nonce,
+        "from": sender,
+    }
+    acct = Account.from_key(KEYS["validator"])
+    signed = await sign_transaction_async(w3, acct, **tx)
+    hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+    tx["gasPrice"] = price * 2
+    hash = await w3.eth.replace_transaction(hash, tx)
+    res = await w3.eth.wait_for_transaction_receipt(hash)
+    assert res.status == 1
+    assert await w3.eth.get_balance(receiver) == balance + amt
+    tx["nonce"] = nonce + 1
+    hash = (await send_transaction_async(w3, sender, **tx))["transactionHash"]
+    with pytest.raises(web3.exceptions.Web3ValueError, match="has already been mined"):
+        await w3.eth.replace_transaction(hash, tx)

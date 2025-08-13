@@ -21,15 +21,9 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    nix-shell integration_tests/shell.nix 
    ```
 
-2. **Generate genesis files (if needed):**
+2. **Configuration (config to set up local nodes):**
    ```sh
-    prysmctl testnet generate-genesis \
-    --num-validators=1 \
-    --chain-config-file=config.yaml \
-    --geth-genesis-json-in=../scripts/geth-genesis.json \
-    --geth-genesis-json-out=../scripts/geth-genesis.json \
-    --fork=electra \
-    --output-ssz=genesis.ssz
+   jsonnet integration_tests/configs/default.jsonnet | jq
    ```
 
 3. **Run tests:**
@@ -65,11 +59,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 - `test_upgrade.py`: Tests cosmovisor-based binary upgrades and verifies chain functionality before and after upgrade.
 - `test_fee_history.py`: Tests eth_feeHistory with various scenarios including concurrent requests, parameter changes, and edge cases like beyond-head blocks and invalid percentiles.
 - `test_contract.py`: Tests deploy contract with create2 create3 and multicall.
-- `test_ibc.py` Tests IBC cross-chain transactions covering OnRecvPacket packet handling (unregistered token pairs with IBC coins, tokenfactory coins, native ERC20 tokens) and callback contract interactions.
-
-## Configuration
-
-- `integration_tests/config.yaml`: Beacon chain and fork configuration.
+- `test_ibc.py` Tests IBC cross-chain transactions covering OnRecvPacket packet handling (token pairs with IBC coins, tokenfactory coins, native ERC20 tokens) and callback contract interactions.
 
 ## Notes
 

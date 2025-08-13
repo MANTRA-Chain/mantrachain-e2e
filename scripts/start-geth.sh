@@ -50,12 +50,9 @@ geth --datadir $DATA --password $pwdfile account import $tmpfile
 rm $tmpfile
 
 # start up
-geth --networkid 9000 --datadir $DATA --http --http.addr localhost --http.api 'eth,net,web3,debug,txpool' \
+geth --networkid 9000 --dev --dev.period 1 --datadir $DATA --http --http.addr localhost --http.api 'personal,eth,net,web3,txpool,miner,debug' \
 -unlock '0x57f96e6b86cdefdb3d412547816a82e3e0ebf9d2' --password $pwdfile \
---mine --allow-insecure-unlock --ipcdisable \
---authrpc.jwtsecret=jwt.hex \
---authrpc.vhosts=* \
---authrpc.addr=0.0.0.0 \
+--allow-insecure-unlock --ipcdisable
 $@
 
 rm $pwdfile
