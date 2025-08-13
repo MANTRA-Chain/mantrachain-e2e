@@ -1,6 +1,6 @@
 import pytest
 
-from .utils import send_transaction, wait_for_fn
+from .utils import ADDRS, send_transaction_async, wait_for_fn_async
 
 
 @pytest.fixture(scope="session", params=["mantra", "geth"])
@@ -14,28 +14,27 @@ def cluster(request, mantra, geth):
         raise NotImplementedError
 
 
-def test_eoa(cluster):
-    w3 = cluster.w3
-    # fund new acct
+@pytest.mark.asyncio
+async def test_eoa(cluster):
+    w3 = cluster.async_w3
     acct = w3.eth.account.create()
     value = 10**18
     tx = {
         "to": acct.address,
         "value": value,
     }
-    tx_hash = send_transaction(w3, tx)
-    # send 7702 tx
-    chain_id = w3.eth.chain_id
-    nonce = w3.eth.get_transaction_count(acct.address)
+    tx_hash = await send_transaction_async(w3, ADDRS["validator"], **tx)
+    chain_id = await w3.eth.chain_id
+    nonce = await w3.eth.get_transaction_count(acct.address)
     new_dst_balance = 0
 
-    def check_balance_change():
+    async def check_balance_change():
         nonlocal new_dst_balance
-        new_dst_balance = w3.eth.get_balance(acct.address)
+        new_dst_balance = await w3.eth.get_balance(acct.address)
         return new_dst_balance != 0
 
-    wait_for_fn("balance change", check_balance_change)
-    assert w3.eth.get_balance(acct.address) == value
+    await wait_for_fn_async("balance change", check_balance_change)
+    assert await w3.eth.get_balance(acct.address) == value
 
     authz = acct.sign_authorization(
         {
@@ -57,14 +56,14 @@ def test_eoa(cluster):
         "data": "0x",
     }
     signed = acct.sign_transaction(tx)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    res = w3.eth.wait_for_transaction_receipt(tx_hash)
+    tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+    res = await w3.eth.wait_for_transaction_receipt(tx_hash)
     assert res.status == 1
-    code = w3.eth.get_code(acct.address)
+    code = await w3.eth.get_code(acct.address)
     assert code.hex().startswith("ef0100deadbeef"), "Code was not set!"
 
     # clear code
-    clear_tx = dict(tx)  # copy tx and replace relevant fields
+    clear_tx = dict(tx)
     clear_tx["nonce"] = nonce + 2
     clear_tx["authorizationList"] = [
         acct.sign_authorization(
@@ -76,8 +75,8 @@ def test_eoa(cluster):
         )
     ]
     signed_reset = acct.sign_transaction(clear_tx)
-    clear_tx_hash = w3.eth.send_raw_transaction(signed_reset.raw_transaction)
-    res = w3.eth.wait_for_transaction_receipt(clear_tx_hash)
+    clear_tx_hash = await w3.eth.send_raw_transaction(signed_reset.raw_transaction)
+    res = await w3.eth.wait_for_transaction_receipt(clear_tx_hash)
     assert res.status == 1
-    reset_code = w3.eth.get_code(acct.address)
+    reset_code = await w3.eth.get_code(acct.address)
     assert reset_code.hex().startswith(""), "Code was not clear!"
