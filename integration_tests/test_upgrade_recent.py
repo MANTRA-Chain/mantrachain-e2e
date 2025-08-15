@@ -10,6 +10,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    ADDRS,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     bech32_to_eth,
@@ -93,17 +94,20 @@ async def exec(c):
 
     # test approve
     approve_amt = 10
-    await ERC20.fns.approve(receiver, approve_amt).transact(
+    signer2 = ADDRS["signer2"]
+    await ERC20.fns.approve(signer2, approve_amt).transact(
         w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
-    allowance = await ERC20.fns.allowance(signer1, receiver).call(w3, to=tf_erc20_addr)
+    allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
     assert allowance == approve_amt
 
-    # transferFrom signer1 to receiver via receiver with tf_erc20
+    # transferFrom signer1 to receiver via signer2 with tf_erc20
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    receiver_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
+    receiver_balance_eth = await ERC20.fns.balanceOf(receiver).call(
+        w3, to=tf_erc20_addr
+    )
     await ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact(
-        w3, receiver, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+        w3, signer2, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
     balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth - approve_amt
