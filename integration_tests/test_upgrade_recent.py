@@ -13,10 +13,10 @@ from .utils import (
     ADDRS,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
+    assert_tf_flow,
     bech32_to_eth,
     denom_to_erc20_address,
     derive_new_account,
-    eth_to_bech32,
     wait_for_new_blocks,
 )
 
@@ -79,40 +79,7 @@ async def exec(c):
     assert total == balance == balance_eth == tf_amt
 
     receiver = derive_new_account(5).address
-    transfer_amt = 5
-    await ERC20.fns.transfer(receiver, transfer_amt).transact(
-        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
-
-    balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    balance = cli.balance(addr_a, denom)
-    assert balance == balance_eth == total - transfer_amt
-
-    balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    balance = cli.balance(eth_to_bech32(receiver), denom)
-    assert balance == balance_eth == transfer_amt
-
-    # test approve
-    approve_amt = 10
-    signer2 = ADDRS["signer2"]
-    await ERC20.fns.approve(signer2, approve_amt).transact(
-        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
-    allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
-    assert allowance == approve_amt
-
-    # transferFrom signer1 to receiver via signer2 with tf_erc20
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    receiver_balance_eth = await ERC20.fns.balanceOf(receiver).call(
-        w3, to=tf_erc20_addr
-    )
-    await ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact(
-        w3, signer2, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
-    balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    assert balance == signer1_balance_eth - approve_amt
-    balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    assert balance == receiver_balance_eth + approve_amt
+    await assert_tf_flow(w3, receiver, signer1, ADDRS["signer2"], tf_erc20_addr)
 
     c.supervisorctl("stop", "all")
     state = cli.export()["app_state"]
