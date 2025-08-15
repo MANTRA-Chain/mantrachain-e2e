@@ -651,6 +651,27 @@ def assert_burn_tokenfactory_denom(cli, denom, amt, **kwargs):
     return current
 
 
+def assert_set_tokenfactory_denom(cli, tmp_path, denom, **kwargs):
+    sender = kwargs.get("_from")
+    name = "Dubai"
+    symbol = "DLD"
+    meta = {
+        "description": name,
+        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
+        "base": denom,
+        "display": symbol,
+        "name": name,
+        "symbol": symbol,
+    }
+    file_meta = Path(tmp_path) / "meta.json"
+    file_meta.write_text(json.dumps(meta))
+    rsp = cli.set_tokenfactory_denom(file_meta, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.query_bank_denom_metadata(denom) == meta
+    rsp = cli.query_denom_authority_metadata(denom).get("Admin")
+    assert rsp == sender, rsp
+
+
 def recover_community(cli, tmp_path):
     return cli.create_account(
         "community",

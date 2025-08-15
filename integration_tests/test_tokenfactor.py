@@ -1,12 +1,11 @@
-import json
 import os
 import time
-from pathlib import Path
 
 import pytest
 
 from .utils import (
     assert_create_tokenfactory_denom,
+    assert_set_tokenfactory_denom,
     assert_transfer,
     get_balance,
     wait_for_new_blocks,
@@ -27,23 +26,7 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     with pytest.raises(AssertionError, match=msg):
         cli.query_denom_authority_metadata(f"invalid{denom}", _from=addr_a).get("Admin")
 
-    name = "Dubai"
-    symbol = "DLD"
-    meta = {
-        "description": name,
-        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
-        "base": denom,
-        "display": symbol,
-        "name": name,
-        "symbol": symbol,
-    }
-    file_meta = Path(tmp_path) / "meta.json"
-    file_meta.write_text(json.dumps(meta))
-    for kwargs in [{"_from": addr_a, "sign_mode": "amino-json"}, {"_from": addr_a}]:
-        rsp = cli.set_tokenfactory_denom(file_meta, **kwargs)
-        assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.query_bank_denom_metadata(denom) == meta
-
+    assert_set_tokenfactory_denom(cli, tmp_path, denom, _from=addr_a)
     rsp = cli.update_tokenfactory_admin(denom, addr_b, _from=addr_a)
     assert rsp["code"] == 0, rsp["raw_log"]
     rsp = cli.query_denom_authority_metadata(denom, _from=addr_a).get("Admin")
