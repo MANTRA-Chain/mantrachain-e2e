@@ -36,7 +36,7 @@ pytestmark = pytest.mark.slow
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package", "cosmovisor"
+        tmp_path_factory, "upgrade-test-package", "cosmovisor", "genesis"
     )
 
 

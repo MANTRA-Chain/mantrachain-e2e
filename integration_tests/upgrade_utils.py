@@ -50,17 +50,17 @@ def do_upgrade(c, plan_name, target, gas_prices="0.8uom"):
     return c.cosmos_cli()
 
 
-def init_cosmovisor(home):
+def init_cosmovisor(home, genesis):
     """
     build and setup cosmovisor directory structure in each node's home directory
     """
     cosmovisor = home / "cosmovisor"
     cosmovisor.mkdir()
     (cosmovisor / "upgrades").symlink_to("../../../upgrades")
-    (cosmovisor / "genesis").symlink_to("./upgrades/genesis")
+    (cosmovisor / "genesis").symlink_to(f"./upgrades/{genesis}")
 
 
-def post_init(path, base_port, config):
+def post_init(path, base_port, config, genesis):
     """
     prepare cosmovisor for each node
     """
@@ -69,7 +69,7 @@ def post_init(path, base_port, config):
     cfg = json.loads((data / "config.json").read_text())
     for i, _ in enumerate(cfg["validators"]):
         home = data / f"node{i}"
-        init_cosmovisor(home)
+        init_cosmovisor(home, genesis)
 
     edit_ini_sections(
         chain_id,
@@ -86,7 +86,7 @@ def post_init(path, base_port, config):
     )
 
 
-def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name):
+def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis):
     path = tmp_path_factory.mktemp("upgrade")
     port = 26200
     configdir = Path(__file__).parent
@@ -111,7 +111,8 @@ def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name):
         port,
         configdir / f"configs/{cfg_name}.jsonnet",
         post_init=post_init,
-        chain_binary=str(upgrades / "genesis/bin/mantrachaind"),
+        chain_binary=str(upgrades / f"{genesis}/bin/mantrachaind"),
+        genesis=genesis,
     ) as mantra:
         yield mantra
 

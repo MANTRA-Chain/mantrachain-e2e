@@ -25,7 +25,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package-recent", "cosmovisor_recent"
+        tmp_path_factory, "upgrade-test-package", "cosmovisor_recent", "v5.0.0-rc3"
     )
 
 
