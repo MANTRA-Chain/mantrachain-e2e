@@ -600,21 +600,22 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     return denom
 
 
-def assert_mint_tokenfactory_denom(cli, denom, amt, **kwargs):
+def assert_mint_tokenfactory_denom(cli, denom, amt, is_legacy=False, **kwargs):
     # check mint tokenfactory denom
     sender = kwargs.get("_from")
     balance = cli.balance(sender, denom)
     coin = f"{amt}{denom}"
     rsp = cli.mint_tokenfactory_denom(coin, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    event = find_log_event_attrs(
-        rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
-    )
-    expected = {
-        "mint_to_address": sender,
-        "amount": coin,
-    }
-    assert expected.items() <= event.items()
+    if not is_legacy:
+        event = find_log_event_attrs(
+            rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
+        )
+        expected = {
+            "mint_to_address": sender,
+            "amount": coin,
+        }
+        assert expected.items() <= event.items()
     current = cli.balance(sender, denom)
     assert current == balance + amt
     return current
