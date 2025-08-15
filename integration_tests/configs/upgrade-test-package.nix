@@ -1,6 +1,5 @@
+{ pkgs ? import ../../nix { }, includeMantrachaind ? true }:
 let
-  pkgs = import ../../nix { };
-
   platform =
     if pkgs.stdenv.isDarwin then "darwin-amd64"
     else if pkgs.stdenv.isLinux && pkgs.stdenv.hostPlatform.isAarch64 then "linux-arm64"
@@ -81,7 +80,15 @@ let
     "v5.0.0-rc3" = mkMantrachain { version = "v5.0.0-rc3"; };
     "v5.0.0-rc4" = mkMantrachain { version = "v5.0.0-rc4"; };
     "v5.0.0-rc5" = pkgs.callPackage ../../nix/mantrachain { };
-  };
+  } // (
+    pkgs.lib.optionalAttrs includeMantrachaind {
+      "v5.0.0-rc5" = pkgs.callPackage ../../nix/mantrachain { };
+    }
+  ) // (
+    pkgs.lib.optionalAttrs (!includeMantrachaind) {
+      "v5.0.0-rc5" = pkgs.mantrachaind;
+    }
+  );
 
 in
 pkgs.linkFarm "upgrade-test-package" (
