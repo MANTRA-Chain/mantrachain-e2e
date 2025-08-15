@@ -248,7 +248,6 @@ async def test_ibc_cb(ibc, tmp_path):
     dst_chain = "mantra-canary-net-2"
     channel = "channel-0"
     isolated = generate_isolated_address(channel, addr_signer2)
-    print("mm-isolated", isolated)
 
     path, escrow_addr = hermes_transfer(
         ibc, src_chain, dst_chain, transfer_amt, addr_signer2, denom=erc20_denom
