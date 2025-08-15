@@ -94,6 +94,8 @@ def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis):
         "nix-build",
         configdir / f"configs/{nix_name}.nix",
     ]
+    if os.environ.get("INCLUDE_MANTRACHAIND", "true").lower() != "true":
+        cmd += ["--arg", "includeMantrachaind", "false"]
     print(*cmd)
     subprocess.run(cmd, check=True)
 
