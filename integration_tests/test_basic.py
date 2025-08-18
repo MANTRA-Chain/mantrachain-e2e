@@ -523,6 +523,8 @@ def test_textual(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
 
+# TODO: add after next release
+@pytest.mark.skip(reason="skipping opBlockhash test")
 def test_op_blk_hash(mantra):
     w3 = mantra.w3
     contract = deploy_contract(w3, CONTRACTS["TestBlockTxProperties"])

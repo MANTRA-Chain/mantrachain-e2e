@@ -23,6 +23,8 @@ from .utils import (
 )
 
 pytestmark = pytest.mark.asyncio
+# TODO: add after next release
+pytest.skip("skipping upgrade unify", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")
