@@ -55,6 +55,14 @@ let
         linux-amd64 = "sha256-z98DR0hYLyR5HfzyMZREiYMS8eq0/8rrQjB53/KHnSQ=";
       };
     };
+    "v5.0.0-rc5" = {
+      filename = "mantrachaind-5.0.0-rc5-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-1UsVHyUlV7I5Lp4pefbVUjlOoRh6czEqRwzxPZR8FrM=";
+        linux-arm64 = "";
+        linux-amd64 = "";
+      };
+    };
   };
 
   mkMantrachain = { version, name ? "mantrachaind-${version}" }: 
@@ -79,17 +87,9 @@ let
     "v5.0.0-rc2" = mkMantrachain { version = "v5.0.0-rc2"; };
     "v5.0.0-rc3" = mkMantrachain { version = "v5.0.0-rc3"; };
     "v5.0.0-rc4" = mkMantrachain { version = "v5.0.0-rc4"; };
-  } // (
-    pkgs.lib.optionalAttrs includeMantrachaind {
-      "v5.0.0-rc5" = pkgs.callPackage ../../nix/mantrachain { };
-    }
-  ) // (
-    pkgs.lib.optionalAttrs (!includeMantrachaind) {
-      "v5.0.0-rc5" = pkgs.writeShellScriptBin "mantrachaind" ''
-      exec mantrachaind "$@"
-    '';
-    }
-  );
+    "v5.0.0-rc5" = mkMantrachain { version = "v5.0.0-rc5"; };
+    "v5.0" = pkgs.callPackage ../../nix/unify { };
+  };
 
 in
 pkgs.linkFarm "upgrade-test-package" (

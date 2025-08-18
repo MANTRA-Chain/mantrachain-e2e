@@ -28,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package-unify", "cosmovisor", "genesis"
+        tmp_path_factory, "upgrade-test-package", "cosmovisor", "genesis"
     )
 
 
@@ -57,7 +57,7 @@ async def exec(c, tmp_path):
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
 
-    cli = do_upgrade(c, "v5", target_height)
+    cli = do_upgrade(c, "v5.0", target_height, chain_binary="v5.0")
 
     addr_b = cli.create_account("recover")["address"]
     sender = bech32_to_eth(addr_b)
