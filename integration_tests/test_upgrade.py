@@ -191,7 +191,7 @@ def exec(c, tmp_path):
     height = cli.block_height()
     target_height = height + 15
 
-    cli = do_upgrade(c, "v5.0.0-rc6", target_height)
+    cli = do_upgrade(c, "v5.0.0-rc6", target_height, gas_prices=DEFAULT_GAS_PRICE)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc6")
 
 
