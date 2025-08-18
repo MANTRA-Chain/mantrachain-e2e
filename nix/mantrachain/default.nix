@@ -82,12 +82,12 @@ buildGo123Module' rec {
     ;
   stdenv = buildStdenv;
   src = fetchFromGitHub {
-    owner = "mmsqe";
+    owner = "MANTRA-Chain";
     repo = pname;
-    rev = "f5cfb28a2ac678416243d735d17c6fc58f78a457";
-    hash = "sha256-lRiZKrntK7lusCh255VF0TuHFXMzC9/gMfIAbr6X07I=";
+    rev = "512c38ee52ce1ba20bc9eda3af2db37ef4e5de7e";
+    hash = "sha256-AP7eiRkxvMhUO5mBIUh92xbIPRg6nHVFuJdu3WTKcCs=";
   };
-  vendorHash = "sha256-rbVNj/Dj2R6xM3GksK2fZ/T4CUCzw3sxGES+UpAPGNs=";
+  vendorHash = "sha256-F1q4Cro5nSKC1QwBrQqudzE5I5RYDnvs5NlAwbAObEA=";
   proxyVendor = true;
   subPackages = [ "cmd/mantrachaind" ];
   CGO_ENABLED = "1";
