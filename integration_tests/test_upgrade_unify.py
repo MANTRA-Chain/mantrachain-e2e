@@ -1,6 +1,4 @@
-import json
 import time
-from pathlib import Path
 
 import pytest
 from eth_contract.erc20 import ERC20
@@ -14,6 +12,7 @@ from .upgrade_utils import (
 from .utils import (
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
+    assert_set_tokenfactory_denom,
     assert_transfer,
     assert_transfer_tokenfactory_denom,
     bech32_to_eth,
@@ -29,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package-unify", "cosmovisor"
+        tmp_path_factory, "upgrade-test-package-unify", "cosmovisor", "genesis"
     )
 
 
@@ -50,40 +49,24 @@ async def exec(c, tmp_path):
     gas_prices = "1uom"
     height = cli.block_height()
     target_height = height + 15
+
     denom = assert_create_tokenfactory_denom(
         cli, subdenom, is_legacy=True, _from=addr_a, gas_prices=gas_prices
     )
-    name = "Dubai"
-    symbol = "DLD"
-    meta = {
-        "description": name,
-        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
-        "base": denom,
-        "display": symbol,
-        "name": name,
-        "symbol": symbol,
-    }
-    file_meta = Path(tmp_path) / "meta.json"
-    file_meta.write_text(json.dumps(meta))
-    rsp = cli.set_tokenfactory_denom(file_meta, _from=addr_a, gas_prices=gas_prices)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.query_bank_denom_metadata(denom) == meta
-    rsp = cli.query_denom_authority_metadata(denom).get("Admin")
-    assert rsp == addr_a, rsp
-
-    tf_erc20_addr = denom_to_erc20_address(denom)
-    tf_amt = 10**6
-    gas = 300000
-    balance = cli.balance(addr_a, denom)
-    assert balance == 0
+    assert_set_tokenfactory_denom(
+        cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
+    )
 
     cli = do_upgrade(c, "v5", target_height)
 
     addr_b = cli.create_account("recover")["address"]
     sender = bech32_to_eth(addr_b)
+    tf_erc20_addr = denom_to_erc20_address(denom)
+    tf_amt = 10**6
     assert_transfer(cli, addr_a, addr_b, amt=tf_amt)
 
     transfer_amt = 1000
+    gas = 300000
     assert_mint_tokenfactory_denom(
         cli, denom, tf_amt, is_legacy=True, _from=community, gas=gas
     )
