@@ -1,5 +1,4 @@
 import configparser
-import os
 import subprocess
 from pathlib import Path
 
@@ -46,8 +45,6 @@ def custom_mantra(tmp_path_factory):
         "--no-out-link",
         Path(__file__).parent / "configs/broken-mantrachaind.nix",
     ]
-    if os.environ.get("INCLUDE_MAIN_MANTRACHAIND", "true").lower() != "true":
-        cmd += ["--arg", "includeMainMantrachaind", "false"]
     print(*cmd)
     broken_binary = (
         Path(subprocess.check_output(cmd).strip().decode()) / "bin/mantrachaind"

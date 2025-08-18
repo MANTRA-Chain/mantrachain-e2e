@@ -4,7 +4,6 @@ cd "$(dirname "$0")"
 
 # explicitly set a short TMPDIR to prevent path too long issue on macosx
 export TMPDIR=/tmp
-export INCLUDE_MAIN_MANTRACHAIND="${INCLUDE_MAIN_MANTRACHAIND:-true}"
 
 echo "build test contracts"
 cd ../integration_tests/contracts
