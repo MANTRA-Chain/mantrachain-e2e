@@ -75,6 +75,7 @@ TEST_CONTRACTS = {
     "TestExploitContract": "TestExploitContract.sol",
     "BurnGas": "BurnGas.sol",
     "CounterWithCallbacks": "CounterWithCallbacks.sol",
+    "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
 }
 
 WETH_SALT = 999
@@ -414,8 +415,8 @@ def deploy_contract_with_receipt(
     return w3.eth.contract(address=address, abi=info["abi"]), txreceipt
 
 
-async def deploy_contract_async(
-    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
+async def build_deploy_contract_async(
+    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"]
 ):
     acct = Account.from_key(key)
     info = json.loads(jsonfile.read_text())
@@ -426,13 +427,20 @@ async def deploy_contract_async(
         bytecode = info["byte"]
     contract = w3.eth.contract(abi=info["abi"], bytecode=bytecode)
     tx = await contract.constructor(*args).build_transaction({"from": acct.address})
-    txreceipt = await send_transaction_async(w3, acct.address, **tx)
+    return tx, info["abi"]
+
+
+async def deploy_contract_async(
+    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
+):
+    tx, abi = await build_deploy_contract_async(w3, jsonfile, args, key)
+    txreceipt = await send_transaction_async(w3, tx["from"], **tx)
     if exp_gas_used is not None:
         assert (
             exp_gas_used == txreceipt.gasUsed
         ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
     address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=info["abi"])
+    return w3.eth.contract(address=address, abi=abi)
 
 
 def get_contract(w3, address, jsonfile):
@@ -650,6 +658,27 @@ def assert_burn_tokenfactory_denom(cli, denom, amt, **kwargs):
     current = cli.balance(sender, denom)
     assert current == balance - amt
     return current
+
+
+def assert_set_tokenfactory_denom(cli, tmp_path, denom, **kwargs):
+    sender = kwargs.get("_from")
+    name = "Dubai"
+    symbol = "DLD"
+    meta = {
+        "description": name,
+        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
+        "base": denom,
+        "display": symbol,
+        "name": name,
+        "symbol": symbol,
+    }
+    file_meta = Path(tmp_path) / "meta.json"
+    file_meta.write_text(json.dumps(meta))
+    rsp = cli.set_tokenfactory_denom(file_meta, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.query_bank_denom_metadata(denom) == meta
+    rsp = cli.query_denom_authority_metadata(denom).get("Admin")
+    assert rsp == sender, rsp
 
 
 def recover_community(cli, tmp_path):
@@ -922,3 +951,43 @@ async def assert_create_erc20_denom(w3, signer):
 
 def address_to_bytes32(addr) -> HexBytes:
     return HexBytes(addr).rjust(32, b"\x00")
+
+
+async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
+    # signer1 transfer 5tf_erc20 to receiver
+    transfer_amt = 5
+    signer1_balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    signer2_balance_bf = await ERC20.fns.balanceOf(signer2).call(w3, to=tf_erc20_addr)
+    receiver_balance_bf = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
+    await ERC20.fns.transfer(receiver, transfer_amt).transact(
+        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    assert signer1_balance == signer1_balance_bf - transfer_amt
+    signer1_balance_bf = signer1_balance
+
+    receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
+    assert receiver_balance == receiver_balance_bf + transfer_amt
+    receiver_balance_bf = receiver_balance
+
+    # signer1 approve 2tf_erc20 to signer2
+    approve_amt = 2
+    await ERC20.fns.approve(signer2, approve_amt).transact(
+        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
+    assert allowance == approve_amt
+
+    # transferFrom signer1 to receiver via signer2 with 2tf_erc20
+    await ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact(
+        w3, signer2, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    assert signer1_balance == signer1_balance_bf - approve_amt
+    signer1_balance_bf = signer1_balance
+
+    signer2_balance = await ERC20.fns.balanceOf(signer2).call(w3, to=tf_erc20_addr)
+    assert signer2_balance == signer2_balance_bf
+    receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
+    assert receiver_balance == receiver_balance_bf + approve_amt
+    receiver_balance_bf = receiver_balance

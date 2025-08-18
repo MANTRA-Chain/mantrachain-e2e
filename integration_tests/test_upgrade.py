@@ -1,6 +1,4 @@
-import json
 import time
-from pathlib import Path
 
 import pytest
 import requests
@@ -19,6 +17,7 @@ from .utils import (
     DEFAULT_FEE,
     DEFAULT_GAS_PRICE,
     assert_create_tokenfactory_denom,
+    assert_set_tokenfactory_denom,
     assert_transfer,
     deploy_contract,
     derive_new_account,
@@ -36,7 +35,7 @@ pytestmark = pytest.mark.slow
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package", "cosmovisor"
+        tmp_path_factory, "upgrade-test-package", "cosmovisor", "genesis"
     )
 
 
@@ -111,23 +110,9 @@ def exec(c, tmp_path):
     denom = assert_create_tokenfactory_denom(
         cli, subdenom, is_legacy=True, _from=addr_a, gas_prices=gas_prices
     )
-    name = "Dubai"
-    symbol = "DLD"
-    meta = {
-        "description": name,
-        "denom_units": [{"denom": denom}, {"denom": symbol, "exponent": 6}],
-        "base": denom,
-        "display": symbol,
-        "name": name,
-        "symbol": symbol,
-    }
-    file_meta = Path(tmp_path) / "meta.json"
-    file_meta.write_text(json.dumps(meta))
-    rsp = cli.set_tokenfactory_denom(file_meta, _from=addr_a, gas_prices=gas_prices)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    assert cli.query_bank_denom_metadata(denom) == meta
-    rsp = cli.query_denom_authority_metadata(denom).get("Admin")
-    assert rsp == addr_a, rsp
+    assert_set_tokenfactory_denom(
+        cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
+    )
 
     cli = do_upgrade(c, "v5", target_height)
     acc_b = derive_new_account(100)

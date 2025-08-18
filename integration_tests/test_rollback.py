@@ -30,7 +30,7 @@ def update_node_cmd(path, cmd, i):
 
 
 def post_init(broken_binary):
-    def inner(path, base_port, config):
+    def inner(path, base_port, config, genesis):
         chain_id = "mantra-canary-net-1"
         update_node_cmd(path / chain_id, broken_binary, 1)
 

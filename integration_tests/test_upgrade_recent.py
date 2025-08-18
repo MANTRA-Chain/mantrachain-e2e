@@ -10,12 +10,13 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    ADDRS,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
+    assert_tf_flow,
     bech32_to_eth,
     denom_to_erc20_address,
     derive_new_account,
-    eth_to_bech32,
     wait_for_new_blocks,
 )
 
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package-recent", "cosmovisor_recent"
+        tmp_path_factory, "upgrade-test-package", "cosmovisor_recent", "v5.0.0-rc3"
     )
 
 
@@ -78,18 +79,7 @@ async def exec(c):
     assert total == balance == balance_eth == tf_amt
 
     receiver = derive_new_account(5).address
-    transfer_amt = 5
-    await ERC20.fns.transfer(receiver, transfer_amt).transact(
-        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
-
-    balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    balance = cli.balance(addr_a, denom)
-    assert balance == balance_eth == total - transfer_amt
-
-    balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    balance = cli.balance(eth_to_bech32(receiver), denom)
-    assert balance == balance_eth == transfer_amt
+    await assert_tf_flow(w3, receiver, signer1, ADDRS["signer2"], tf_erc20_addr)
 
     c.supervisorctl("stop", "all")
     state = cli.export()["app_state"]

@@ -1,8 +1,9 @@
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
-from eth_contract.contract import Contract
+from eth_contract.contract import Contract, ContractFunction
 from eth_contract.create2 import create2_address, create2_deploy
 from eth_contract.create3 import CREATEX_FACTORY, create3_address, create3_deploy
 from eth_contract.deploy_utils import (
@@ -26,10 +27,13 @@ from web3.types import TxParams, Wei
 from .utils import (
     ACCOUNTS,
     ADDRS,
+    CONTRACTS,
+    KEYS,
     WETH9_ARTIFACT,
     WETH_ADDRESS,
     WETH_SALT,
     address_to_bytes32,
+    build_deploy_contract_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -260,3 +264,45 @@ async def test_7702(mantra):
     )
     receipts = await w3.eth.get_block_receipts(receipt["blockNumber"])
     assert receipts[0] == receipt
+
+
+# TODO: rm flaky after evm mempool is ready
+@pytest.mark.flaky(max_runs=5)
+async def test_deploy_multi(mantra):
+    w3 = mantra.async_w3
+    name = "community"
+    key = KEYS[name]
+    owner = ADDRS[name]
+    contract = CONTRACTS["ERC20MinterBurnerDecimals"]
+    num = 2
+    args_list = [
+        (w3, contract, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)
+    ]
+    tx_results = await asyncio.gather(
+        *(build_deploy_contract_async(*args) for args in args_list)
+    )
+    nonce = await w3.eth.get_transaction_count(owner)
+    txs = [{**tx, "nonce": nonce + i} for i, (tx, _) in enumerate(tx_results)]
+    receipts = await asyncio.gather(
+        *(send_transaction(w3, tx["from"], **tx) for tx in txs), return_exceptions=True
+    )
+    for r in receipts:
+        if isinstance(r, Exception):
+            pytest.fail(f"send_transaction failed: {r}")
+    assert len(receipts) == num
+    total = 100
+    token = receipts[0]["contractAddress"]
+    receipt = await ERC20.fns.mint(owner, total).transact(w3, owner, to=token)
+    assert receipt.status == 1
+    assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == total
+    amt = 2
+    dec_amt = 1
+    inc = ContractFunction.from_abi("increaseAllowance(address,uint256)(bool)")
+    dec = ContractFunction.from_abi("decreaseAllowance(address,uint256)(bool)")
+    signer2 = ADDRS["signer2"]
+    await inc(signer2, amt).transact(w3, owner, to=token)
+    allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
+    assert allowance == amt
+    await dec(signer2, dec_amt).transact(w3, owner, to=token)
+    allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
+    assert allowance == amt - dec_amt

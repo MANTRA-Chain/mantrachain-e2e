@@ -132,6 +132,7 @@ def setup_custom_mantra(
     chain_binary=None,
     wait_port=True,
     relayer=cluster.Relayer.HERMES.value,
+    genesis=None,
 ):
     cmd = [
         "pystarport",
@@ -151,7 +152,7 @@ def setup_custom_mantra(
     print(*cmd)
     subprocess.run(cmd, check=True)
     if post_init is not None:
-        post_init(path, base_port, config)
+        post_init(path, base_port, config, genesis)
     proc = subprocess.Popen(
         ["pystarport", "start", "--data", path, "--quiet"],
         preexec_fn=os.setsid,
