@@ -87,6 +87,19 @@ async def exec(c):
         "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
     ]
 
+    c.supervisorctl(
+        "start",
+        "mantra-canary-net-1-node0",
+        "mantra-canary-net-1-node1",
+        "mantra-canary-net-1-node2",
+    )
+    wait_for_new_blocks(cli, 1)
+
+    height = cli.block_height()
+    target_height = height + 15
+
+    cli = do_upgrade(c, "v5.0.0-rc6", target_height)
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     await exec(custom_mantra)

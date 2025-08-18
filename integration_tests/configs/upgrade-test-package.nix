@@ -89,7 +89,17 @@ let
     "v5.0.0-rc4" = mkMantrachain { version = "v5.0.0-rc4"; };
     "v5.0.0-rc5" = mkMantrachain { version = "v5.0.0-rc5"; };
     "v5.0" = pkgs.callPackage ../../nix/unify { };
-  };
+  } // (
+    pkgs.lib.optionalAttrs includeMantrachaind {
+      "v5.0.0-rc6" = pkgs.callPackage ../../nix/mantrachain { };
+    }
+  ) // (
+    pkgs.lib.optionalAttrs (!includeMantrachaind) {
+      "v5.0.0-rc6" = pkgs.writeShellScriptBin "mantrachaind" ''
+      exec mantrachaind "$@"
+    '';
+    }
+  );
 
 in
 pkgs.linkFarm "upgrade-test-package" (
