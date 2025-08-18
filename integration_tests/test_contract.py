@@ -266,7 +266,7 @@ async def test_7702(mantra):
     assert receipts[0] == receipt
 
 
-# TODO: rm flaky after evm mempool is ready
+# TODO: rm flaky and enlarge num after evm mempool is ready
 @pytest.mark.flaky(max_runs=5)
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
