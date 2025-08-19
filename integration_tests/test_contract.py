@@ -77,8 +77,13 @@ async def assert_contract_deployed(w3):
     assert await w3.eth.get_code(MULTICALL3_ADDRESS)
 
 
-async def test_flow(mantra):
-    w3 = mantra.async_w3
+@pytest.mark.connect
+async def test_connect_flow(connect_mantra):
+    await test_flow(None, connect_mantra)
+
+
+async def test_flow(mantra, connect_mantra):
+    w3 = connect_mantra.async_w3
     await assert_contract_deployed(w3)
     owner = (await w3.eth.accounts)[0]
     await ensure_createx_deployed(w3, owner)
@@ -90,19 +95,16 @@ async def test_flow(mantra):
     res = (await contract.caller.getBlockHash(height)).hex()
     blk = await w3.eth.get_block(height)
     assert res == blk.hash.hex(), res
-    initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
 
     # test_create2_deploy
+    initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
     salt = 100
-    token = await create2_deploy(w3, owner, initcode, salt=salt)
-    assert (
-        token
-        == create2_address(initcode, salt)
-        == "0x854d811d90C6E81B84b29C1d7ed957843cF87bba"
-    )
-    assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 0
-    await ERC20.fns.mint(owner, 1000).transact(w3, owner, to=token)
-    assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == 1000
+    token = await ensure_deployed_by_create2(w3, owner, initcode, salt=salt)
+    assert token == "0x854d811d90C6E81B84b29C1d7ed957843cF87bba"
+    balance = await ERC20.fns.balanceOf(owner).call(w3, to=token)
+    amt = 1000
+    await ERC20.fns.mint(owner, amt).transact(w3, owner, to=token)
+    assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == balance + amt
 
     # test_create3_deploy
     salt = 200
