@@ -24,7 +24,6 @@ from .utils import (
     recover_community,
     send_transaction,
     transfer_via_cosmos,
-    w3_wait_for_new_blocks,
 )
 
 
@@ -521,13 +520,3 @@ def test_textual(mantra):
         sign_mode="textual",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-
-
-def test_op_blk_hash(mantra):
-    w3 = mantra.w3
-    contract = deploy_contract(w3, CONTRACTS["TestBlockTxProperties"])
-    height = w3.eth.get_block_number()
-    w3_wait_for_new_blocks(w3, 1)
-    res = contract.caller.getBlockHash(height).hex()
-    blk = w3.eth.get_block(height)
-    assert res == blk.hash.hex(), res

@@ -10,9 +10,11 @@ from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_createx_deployed,
     ensure_deployed_by_create2,
+    ensure_history_storage_deployed,
     ensure_multicall3_deployed,
 )
 from eth_contract.erc20 import ERC20
+from eth_contract.history_storage import HISTORY_STORAGE_ADDRESS
 from eth_contract.multicall3 import (
     MULTICALL3,
     MULTICALL3_ADDRESS,
@@ -34,6 +36,8 @@ from .utils import (
     WETH_SALT,
     address_to_bytes32,
     build_deploy_contract_async,
+    deploy_contract_async,
+    w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -78,6 +82,14 @@ async def test_flow(mantra):
     await assert_contract_deployed(w3)
     owner = (await w3.eth.accounts)[0]
     await ensure_createx_deployed(w3, owner)
+    await ensure_history_storage_deployed(w3, owner)
+    assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
+    contract = await deploy_contract_async(w3, CONTRACTS["TestBlockTxProperties"])
+    height = await w3.eth.get_block_number()
+    await w3_wait_for_new_blocks_async(w3, 1)
+    res = (await contract.caller.getBlockHash(height)).hex()
+    blk = await w3.eth.get_block(height)
+    assert res == blk.hash.hex(), res
     initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
 
     # test_create2_deploy
