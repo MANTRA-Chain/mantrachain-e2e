@@ -92,6 +92,7 @@ class Hermes:
 class ConnectMantra:
     def __init__(self, rpc, evm_rpc, evm_rpc_ws, chain_id, chain_binary="mantrachaind"):
         self._w3 = None
+        self._async_w3 = None
         self.rpc = rpc
         self.evm_rpc = evm_rpc
         self.evm_rpc_ws = evm_rpc_ws
@@ -105,11 +106,20 @@ class ConnectMantra:
             self._w3 = self.node_w3()
         return self._w3
 
+    @property
+    def async_w3(self, i=0):
+        if self._async_w3 is None:
+            self._async_w3 = self.async_node_w3()
+        return self._async_w3
+
     def node_w3(self):
         if self._use_websockets:
             return web3.Web3(web3.providers.WebsocketProvider(self.evm_rpc_ws))
         else:
             return web3.Web3(web3.providers.HTTPProvider(self.evm_rpc))
+
+    def async_node_w3(self):
+        return AsyncWeb3(AsyncHTTPProvider(self.evm_rpc, cache_allowed_requests=True))
 
     def cosmos_cli(self, home) -> CosmosCLI:
         return CosmosCLI(home, self.rpc, self.chain_binary, self.chain_id)
