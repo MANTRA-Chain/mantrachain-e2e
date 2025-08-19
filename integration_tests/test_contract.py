@@ -85,7 +85,7 @@ async def test_flow(mantra):
     await ensure_history_storage_deployed(w3, owner)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     contract = await deploy_contract_async(w3, CONTRACTS["TestBlockTxProperties"])
-    height = await w3.eth.get_block_number()
+    height = await w3.eth.block_number
     await w3_wait_for_new_blocks_async(w3, 1)
     res = (await contract.caller.getBlockHash(height)).hex()
     blk = await w3.eth.get_block(height)
