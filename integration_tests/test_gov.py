@@ -57,6 +57,27 @@ def normalize(lst):
     return {tuple(sorted(d.items())) for d in lst}
 
 
+@pytest.mark.slow
+def test_history_serve_window(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
+    p = cli.get_params("evm")["params"]
+    updated = 4096
+    p["history_serve_window"] = updated
+    submit_gov_proposal(
+        mantra,
+        tmp_path,
+        messages=[
+            {
+                "@type": "/cosmos.evm.vm.v1.MsgUpdateParams",
+                "authority": module_address("gov"),
+                "params": p,
+            },
+        ],
+    )
+    p = cli.get_params("evm")["params"]
+    assert int(p["history_serve_window"]) == int(updated), p
+
+
 @pytest.mark.asyncio
 async def test_submit_send_enabled(mantra, tmp_path):
     cli = mantra.cosmos_cli()
