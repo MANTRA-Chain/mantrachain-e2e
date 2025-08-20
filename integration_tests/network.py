@@ -107,7 +107,7 @@ class ConnectMantra:
         return self._w3
 
     @property
-    def async_w3(self, i=0):
+    def async_w3(self):
         if self._async_w3 is None:
             self._async_w3 = self.async_node_w3()
         return self._async_w3
