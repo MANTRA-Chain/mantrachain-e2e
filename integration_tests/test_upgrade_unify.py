@@ -23,14 +23,12 @@ from .utils import (
 )
 
 pytestmark = pytest.mark.asyncio
-# TODO: add after next release
-pytest.skip("skipping upgrade unify", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")
 def custom_mantra(tmp_path_factory):
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package", "cosmovisor", "genesis"
+        tmp_path_factory, "upgrade-test-package-unify", "cosmovisor", "genesis"
     )
 
 
@@ -59,7 +57,7 @@ async def exec(c, tmp_path):
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
 
-    cli = do_upgrade(c, "v5.0", target_height, chain_binary="v5.0")
+    cli = do_upgrade(c, "v5", target_height)
 
     addr_b = cli.create_account("recover")["address"]
     sender = bech32_to_eth(addr_b)

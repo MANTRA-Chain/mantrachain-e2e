@@ -20,7 +20,7 @@ from .utils import (
 )
 
 
-def do_upgrade(c, plan_name, target, gas_prices="0.8uom", chain_binary=None):
+def do_upgrade(c, plan_name, target, gas_prices="0.8uom"):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
@@ -41,10 +41,8 @@ def do_upgrade(c, plan_name, target, gas_prices="0.8uom", chain_binary=None):
     approve_proposal(c, rsp["events"])
 
     # update cli chain binary
-    if not chain_binary:
-        chain_binary = plan_name
     c.chain_binary = (
-        Path(c.chain_binary).parent.parent.parent / f"{chain_binary}/bin/mantrachaind"
+        Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
     )
     # block should pass the target height
     wait_for_block(c.cosmos_cli(), target + 2, timeout=480)
