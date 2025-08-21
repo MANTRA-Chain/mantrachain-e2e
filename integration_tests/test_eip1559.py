@@ -21,6 +21,8 @@ async def test_dynamic_fee_tx(mantra):
     before = await w3.eth.get_balance(ADDRS["community"])
     tip_price = 10000000000
     max_price = 1000000000000 + tip_price
+    begin = await w3.eth.block_number
+    await w3_wait_for_block_async(w3, begin + 1)
     tx = {
         "to": "0x0000000000000000000000000000000000000000",
         "value": amount,

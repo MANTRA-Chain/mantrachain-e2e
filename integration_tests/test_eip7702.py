@@ -1,5 +1,4 @@
 import pytest
-import web3
 
 from .network import Geth
 from .utils import ACCOUNTS, ADDRS, KEYS
@@ -57,9 +56,6 @@ async def test_eoa(cluster):
 
     if isinstance(cluster, Geth):
         send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
-    else:
-        with pytest.raises(web3.exceptions.Web3RPCError, match="invalid sequence"):
-            send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
 
     # clear code
     clear_tx = dict(tx)

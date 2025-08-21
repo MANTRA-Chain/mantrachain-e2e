@@ -257,7 +257,7 @@ async def test_7702(mantra, connect_mantra):
     w3: AsyncWeb3 = connect_mantra.async_w3
     await assert_contract_deployed(w3)
 
-    acct = ACCOUNTS["validator"]
+    acct = ACCOUNTS["signer1"]
     sponsor = ACCOUNTS["community"]
     multicall3 = MULTICALL3ROUTER
 
@@ -322,15 +322,13 @@ async def test_4337(mantra, connect_mantra):
     )
 
 
-# TODO: rm flaky and enlarge num after evm mempool is ready
-@pytest.mark.flaky(max_runs=5)
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
     name = "community"
     key = KEYS[name]
     owner = ADDRS[name]
     contract = CONTRACTS["ERC20MinterBurnerDecimals"]
-    num = 2
+    num = 10
     args_list = [
         (w3, contract, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)
     ]
