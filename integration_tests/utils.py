@@ -434,7 +434,7 @@ async def deploy_contract_async(
     w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
 ):
     tx, abi = await build_deploy_contract_async(w3, jsonfile, args, key)
-    txreceipt = await send_transaction_async(w3, tx["from"], **tx)
+    txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     if exp_gas_used is not None:
         assert (
             exp_gas_used == txreceipt.gasUsed
