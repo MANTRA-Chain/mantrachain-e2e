@@ -37,7 +37,6 @@ from .utils import (
     WETH_SALT,
     address_to_bytes32,
     build_deploy_contract_async,
-    deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
 
@@ -86,24 +85,25 @@ async def test_connect_flow(connect_mantra):
 async def test_flow(mantra, connect_mantra):
     w3 = connect_mantra.async_w3
     await assert_contract_deployed(w3)
-    key = KEYS["community"]
     account = Account.from_key(KEYS["community"])
     await ensure_createx_deployed(w3, account)
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
-    contract = await deploy_contract_async(
-        w3, CONTRACTS["TestBlockTxProperties"], key=key
-    )
+    salt = 100
+    initcode = get_initcode(json.loads(CONTRACTS["TestBlockTxProperties"].read_text()))
+    contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
+    assert contract == "0xe1B18c74a33b1E67B5f505C931Ac264668EA94F5"
     height = await w3.eth.block_number
     await w3_wait_for_new_blocks_async(w3, 1)
-    res = (await contract.caller.getBlockHash(height)).hex()
+
+    blockhash = ContractFunction.from_abi("getBlockHash(uint256)(bytes32)")
+    res = (await blockhash(height).call(w3, to=contract)).hex()
     blk = await w3.eth.get_block(height)
     assert res == blk.hash.hex(), res
 
     owner = account.address
     # test_create2_deploy
     initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
-    salt = 100
     token = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
     assert token == "0x854d811d90C6E81B84b29C1d7ed957843cF87bba"
     balance = await ERC20.fns.balanceOf(owner).call(w3, to=token)
