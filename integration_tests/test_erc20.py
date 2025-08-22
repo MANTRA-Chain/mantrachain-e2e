@@ -1,31 +1,37 @@
 import pytest
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
-from eth_contract.utils import get_initcode
+from eth_contract.erc20 import ERC20
+from eth_contract.weth import WETH
+from eth_utils import to_checksum_address
 
-from .utils import (
-    ACCOUNTS,
-    WETH9_ARTIFACT,
-    WETH_ADDRESS,
-    WETH_SALT,
-    assert_register_erc20_denom,
-    assert_weth_flow,
-)
+from .utils import ACCOUNTS
+
+WOM = to_checksum_address("0x4200000000000000000000000000000000000006")
 
 
 @pytest.mark.asyncio
-async def test_static_erc20(mantra, tmp_path):
+async def test_static_erc20(mantra):
     w3 = mantra.async_w3
-    account = ACCOUNTS["community"]
-    await ensure_create2_deployed(w3, account)
-    weth_addr = await ensure_deployed_by_create2(
-        w3,
-        account,
-        get_initcode(WETH9_ARTIFACT),
-        salt=WETH_SALT - 100,
-    )
-    assert weth_addr != WETH_ADDRESS, "should be different weth address"
-    assert_register_erc20_denom(mantra, weth_addr, tmp_path)
-    await assert_weth_flow(w3, weth_addr, account.address, account)
+    acct = ACCOUNTS["community"]
+    addr = acct.address
+    balance = await ERC20.fns.balanceOf(addr).call(w3, to=WOM)
+    assert balance > 0
+
+    # deposit should be nop
+    before = await w3.eth.get_balance(addr)
+    print("intial balance", before)
+    receipt = await WETH.fns.deposit().transact(w3, acct, value=10, to=WOM)
+    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    after = await w3.eth.get_balance(addr)
+    assert after == before - fee
+
+    # withdraw should be nop
+    before = await w3.eth.get_balance(addr)
+    receipt = await WETH.fns.withdraw(100).transact(w3, acct, to=WOM)
+    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    after = await w3.eth.get_balance(addr)
+    assert after == before - fee
+
+    # fail
+    assert await ERC20.fns.decimals().call(w3, to=WOM) == 9
+    assert await ERC20.fns.symbol().call(w3, to=WOM) == "uom"
+    assert await ERC20.fns.name().call(w3, to=WOM) == "uom"

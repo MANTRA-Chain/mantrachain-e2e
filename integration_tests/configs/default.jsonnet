@@ -105,6 +105,17 @@
             allow_unprotected_txs: true,
           },
         },
+        erc20: {
+          native_precompiles: [
+            '0x4200000000000000000000000000000000000006',
+          ],
+          token_pairs: [{
+            erc20_address: '0x4200000000000000000000000000000000000006',
+            denom: 'uom',
+            enabled: true,
+            contract_owner: 1,
+          }],
+        },
         feemarket: {
           params: {
             base_fee: '0.010000000000000000',
