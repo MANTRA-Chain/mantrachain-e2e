@@ -100,6 +100,11 @@ async def exec(c):
 
     cli = do_upgrade(c, "v5.0.0-rc6", target_height)
 
+    height = cli.block_height()
+    target_height = height + 15
+
+    cli = do_upgrade(c, "v5.0.0-rc7", target_height)
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     await exec(custom_mantra)
