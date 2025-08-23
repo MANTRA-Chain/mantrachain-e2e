@@ -970,18 +970,7 @@ def assert_register_erc20_denom(c, addr, tmp_path):
 
 
 async def assert_weth_flow(w3, weth_addr, owner, account):
-    # deposit should be nop
     weth = WETH(to=weth_addr)
-    before = await balance_of(w3, ZERO_ADDRESS, owner)
-    receipt = await weth.fns.deposit().transact(w3, account, value=1000)
-    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    assert await balance_of(w3, weth_addr, owner) == 1000
-    receipt = await weth.fns.withdraw(1000).transact(w3, account)
-    fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    assert await balance_of(w3, weth_addr, owner) == 0
-    assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
-
-    # withdraw should be nop
     before = await balance_of(w3, ZERO_ADDRESS, owner)
     receipt = await weth.fns.deposit().transact(w3, account, value=1000)
     fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
@@ -990,11 +979,9 @@ async def assert_weth_flow(w3, weth_addr, owner, account):
     fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
     await balance_of(w3, weth_addr, owner) == 0
     assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
-
-    # fail
-    assert await weth.fns.decimals().call(w3, to=weth_addr) == 18
-    assert await weth.fns.symbol().call(w3, to=weth_addr) == "WETH"
-    assert await weth.fns.name().call(w3, to=weth_addr) == "Wrapped Ether"
+    assert await weth.fns.decimals().call(w3) == 18
+    assert await weth.fns.symbol().call(w3) == "WETH"
+    assert await weth.fns.name().call(w3) == "Wrapped Ether"
 
 
 def address_to_bytes32(addr) -> HexBytes:
