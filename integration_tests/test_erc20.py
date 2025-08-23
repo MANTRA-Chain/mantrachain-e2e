@@ -1,4 +1,5 @@
 import pytest
+import web3
 from eth_contract.erc20 import ERC20
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
@@ -19,7 +20,7 @@ async def test_static_erc20(mantra):
     # deposit should be nop
     before = await w3.eth.get_balance(addr)
     print("intial balance", before)
-    receipt = await WETH.fns.deposit().transact(w3, acct, value=10, to=WOM)
+    receipt = await WETH.fns.deposit().transact(w3, acct, value=10**18, to=WOM)
     fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
     after = await w3.eth.get_balance(addr)
     assert after == before - fee
@@ -32,6 +33,10 @@ async def test_static_erc20(mantra):
     assert after == before - fee
 
     # fail
-    assert await ERC20.fns.decimals().call(w3, to=WOM) == 9
-    assert await ERC20.fns.symbol().call(w3, to=WOM) == "uom"
-    assert await ERC20.fns.name().call(w3, to=WOM) == "uom"
+    msg = "execution reverted"
+    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
+        assert await ERC20.fns.decimals().call(w3, to=WOM) == 9
+    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
+        assert await ERC20.fns.symbol().call(w3, to=WOM) == "uom"
+    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
+        assert await ERC20.fns.name().call(w3, to=WOM) == "uom"
