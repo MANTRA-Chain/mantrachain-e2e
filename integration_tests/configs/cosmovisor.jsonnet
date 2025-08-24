@@ -22,6 +22,7 @@ config {
       },
       app_state+: {
         evm:: super.evm,
+        erc20:: super.erc20,
         feemarket: {
           params: {
             alpha: '0.000000000000000000',

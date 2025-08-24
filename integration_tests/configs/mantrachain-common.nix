@@ -63,6 +63,14 @@ let
         linux-amd64 = "sha256-TonsORkOBzi5CgAZ3seDTlvhquLw9UvNfp3q1kMW4EE=";
       };
     };
+    "v5.0.0-rc6" = {
+      filename = "mantrachaind-5.0.0-rc6-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-bXIZx9aF1+i1POq0Ah6UX4wgcsznXiQseF2jxdxK70U=";
+        linux-arm64 = "sha256-pxRSgZrQx/2brjpGZ1KmwBWN4dA5XjNXTbYm8jAedh8=";
+        linux-amd64 = "sha256-pxRSgZrQx/2brjpGZ1KmwBWN4dA5XjNXTbYm8jAedh8=";
+      };
+    };
   };
 
   mkMantrachain = { version, name ? "mantrachaind-${version}" }: 

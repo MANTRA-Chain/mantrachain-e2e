@@ -17,6 +17,7 @@ from .utils import (
     assert_create_erc20_denom,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
+    assert_register_erc20_denom,
     assert_tf_flow,
     assert_transfer_tokenfactory_denom,
     denom_to_erc20_address,
@@ -26,9 +27,7 @@ from .utils import (
     find_duplicate,
     generate_isolated_address,
     ibc_denom_address,
-    module_address,
     parse_events_rpc,
-    submit_gov_proposal,
     wait_for_fn,
     wait_for_fn_async,
 )
@@ -184,17 +183,7 @@ async def test_ibc_cb(ibc, tmp_path):
     erc20_denom, total = await assert_create_erc20_denom(w3, signer1)
 
     # check native erc20 transfer
-    submit_gov_proposal(
-        ibc.ibc1,
-        tmp_path,
-        messages=[
-            {
-                "@type": "/cosmos.evm.erc20.v1.MsgRegisterERC20",
-                "signer": module_address("gov"),
-                "erc20addresses": [WETH_ADDRESS],
-            }
-        ],
-    )
+    assert_register_erc20_denom(ibc.ibc1, WETH_ADDRESS, tmp_path)
 
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50erc20_denom
     transfer_amt = total // 2

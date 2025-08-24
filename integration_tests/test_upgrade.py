@@ -197,6 +197,12 @@ def exec(c, tmp_path):
     for limit in [1, 2]:
         assert len(cli.query_erc20_token_pairs(limit=limit)) == limit
 
+    height = cli.block_height()
+    target_height = height + 15
+
+    cli = do_upgrade(c, "v5.0.0-rc7", target_height, gas_prices=DEFAULT_GAS_PRICE)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc7")
+
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     exec(custom_mantra, tmp_path)

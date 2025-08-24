@@ -30,7 +30,7 @@ from eth_contract.deploy_utils import (
     ensure_deployed_by_create2,
 )
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import get_initcode
+from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
@@ -949,6 +949,39 @@ async def assert_create_erc20_denom(w3, signer):
     assert total == signer1_balance_eth == deposit_amt
     signer1_balance_eth_bf = signer1_balance_eth
     return erc20_denom, total
+
+
+def assert_register_erc20_denom(c, addr, tmp_path):
+    submit_gov_proposal(
+        c,
+        tmp_path,
+        messages=[
+            {
+                "@type": "/cosmos.evm.erc20.v1.MsgRegisterERC20",
+                "signer": module_address("gov"),
+                "erc20addresses": [addr],
+            },
+        ],
+        gas=300000,
+    )
+    erc20_denom = f"erc20:{addr}"
+    res = c.cosmos_cli().query_erc20_token_pair(erc20_denom)
+    assert res["erc20_address"] == addr, res
+
+
+async def assert_weth_flow(w3, weth_addr, owner, account):
+    weth = WETH(to=weth_addr)
+    before = await balance_of(w3, ZERO_ADDRESS, owner)
+    receipt = await weth.fns.deposit().transact(w3, account, value=1000)
+    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    await balance_of(w3, weth_addr, owner) == 1000
+    receipt = await weth.fns.withdraw(1000).transact(w3, account)
+    fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
+    await balance_of(w3, weth_addr, owner) == 0
+    assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
+    assert await weth.fns.decimals().call(w3) == 18
+    assert await weth.fns.symbol().call(w3) == "WETH"
+    assert await weth.fns.name().call(w3) == "Wrapped Ether"
 
 
 def address_to_bytes32(addr) -> HexBytes:

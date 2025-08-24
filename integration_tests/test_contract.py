@@ -43,6 +43,7 @@ from .utils import (
     WETH_ADDRESS,
     WETH_SALT,
     address_to_bytes32,
+    assert_weth_flow,
     build_deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
@@ -128,14 +129,7 @@ async def test_flow(mantra, connect_mantra):
 
     # test_weth
     weth = WETH(to=WETH_ADDRESS)
-    before = await balance_of(w3, ZERO_ADDRESS, owner)
-    receipt = await weth.fns.deposit().transact(w3, account, value=1000)
-    fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    await balance_of(w3, WETH_ADDRESS, owner) == 1000
-    receipt = await weth.fns.withdraw(1000).transact(w3, account)
-    fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    await balance_of(w3, WETH_ADDRESS, owner) == 0
-    assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
+    await assert_weth_flow(w3, WETH_ADDRESS, owner, account)
 
     # test_batch_call
     users = [ACCOUNTS[key] for key in ["community", "signer1", "signer2"]]

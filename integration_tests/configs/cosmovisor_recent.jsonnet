@@ -16,6 +16,7 @@ config {
           params+: {
             native_precompiles: ['0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'],
           },
+          native_precompiles:: super.native_precompiles,
         },
       },
     },

@@ -922,7 +922,7 @@ web3 = ">=7.12.0"
 type = "git"
 url = "https://github.com/yihuang/eth-contract.git"
 reference = "main"
-resolved_reference = "4ac6eb84542f717f830cb796ba816542d135ff54"
+resolved_reference = "6b2538e26b7cf96bd783f1deebb013cd66eebe17"
 
 [[package]]
 name = "eth-hash"
