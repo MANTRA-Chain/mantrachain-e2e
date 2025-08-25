@@ -4,23 +4,31 @@ from eth_contract.utils import send_transaction
 
 from .utils import (
     ADDRS,
-    CONTRACTS,
-    deploy_contract_async,
+    build_and_deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio
 
 
+BURN_GAS_CONTRACT = None
+
+async def get_burn_gas_contract(w3):
+    global BURN_GAS_CONTRACT
+    if BURN_GAS_CONTRACT is None:
+        BURN_GAS_CONTRACT = await build_and_deploy_contract_async(w3, "BurnGas")
+    return BURN_GAS_CONTRACT
+
+
 async def test_gas_call(mantra):
     w3 = mantra.async_w3
     input = 10
-    contract = await deploy_contract_async(w3, CONTRACTS["BurnGas"])
+    contract = await get_burn_gas_contract(w3)
     txhash = await contract.functions.burnGas(input).transact(
         {"from": ADDRS["validator"], "gasPrice": await w3.eth.gas_price}
     )
     receipt = await w3.eth.wait_for_transaction_receipt(txhash)
-    assert receipt.gasUsed == 267426
+    assert receipt.gasUsed == 267441
 
 
 async def test_block_gas_limit(mantra):
@@ -47,7 +55,7 @@ async def test_block_gas_limit(mantra):
 
     # expect an error on contract call due to block gas limit
     with pytest.raises(web3.exceptions.Web3RPCError, match=msg):
-        contract = await deploy_contract_async(w3, CONTRACTS["BurnGas"])
+        contract = await get_burn_gas_contract(w3)
         await contract.functions.burnGas(exceeded_gas_limit).transact(
             {
                 "from": sender,

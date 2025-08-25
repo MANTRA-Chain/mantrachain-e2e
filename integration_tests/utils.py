@@ -73,7 +73,6 @@ TEST_CONTRACTS = {
     "TestBlockTxProperties": "TestBlockTxProperties.sol",
     "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
-    "BurnGas": "BurnGas.sol",
     "CounterWithCallbacks": "CounterWithCallbacks.sol",
     "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
 }
@@ -436,6 +435,49 @@ async def deploy_contract_async(
     w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
 ):
     tx, abi = await build_deploy_contract_async(w3, jsonfile, args, key)
+    txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
+    if exp_gas_used is not None:
+        assert (
+            exp_gas_used == txreceipt.gasUsed
+        ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
+    address = txreceipt.contractAddress
+    return w3.eth.contract(address=address, abi=abi)
+
+
+def build_contract(name):
+    cmd = [
+        "solc",
+        "--abi",
+        "--bin",
+        f"contracts/contracts/{name}.sol",
+        "-o",
+        "build",
+        "--overwrite",
+        "--optimize",
+        "--optimize-runs",
+        "100000",
+        "--via-ir",
+        "--evm-version",
+        "cancun",
+        "--metadata-hash",
+        "none",
+        "--no-cbor-metadata",
+    ]
+    print(*cmd)
+    subprocess.run(cmd, check=True)
+    abi = json.loads(Path(f"build/{name}.abi").read_text())
+    bin_path = Path(f"build/{name}.bin")
+    with open(bin_path, "rb") as f:
+        return abi, f"0x{f.read().decode()}"
+
+
+async def build_and_deploy_contract_async(
+    w3: AsyncWeb3, name, args=(), key=KEYS["validator"], exp_gas_used=None
+):
+    abi, bytecode = build_contract(name)
+    contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+    acct = Account.from_key(key)
+    tx = await contract.constructor(*args).build_transaction({"from": acct.address})
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     if exp_gas_used is not None:
         assert (
