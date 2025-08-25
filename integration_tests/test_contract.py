@@ -100,8 +100,7 @@ async def test_flow(mantra, connect_mantra):
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     salt = 100
-    _, initcode = build_contract("TestBlockTxProperties")
-    initcode = to_bytes(hexstr=initcode[2:])
+    initcode = to_bytes(hexstr=build_contract("TestBlockTxProperties")["initcode"][2:])
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
     assert contract == "0xe48C487A7D3Aaa3665D7c63cCaf29F31d0c74E1A"
     height = await w3.eth.block_number

@@ -209,19 +209,19 @@ def test_transaction(mantra):
     # Deploy multiple contracts
     contracts = {
         "test_revert_1": RevertTestContract(
-            CONTRACTS["TestRevert"],
+            "TestRevert",
             KEYS["validator"],
         ),
         "test_revert_2": RevertTestContract(
-            CONTRACTS["TestRevert"],
+            "TestRevert",
             KEYS["community"],
         ),
         "greeter_1": Greeter(
-            CONTRACTS["Greeter"],
+            "Greeter",
             KEYS["signer1"],
         ),
         "greeter_2": Greeter(
-            CONTRACTS["Greeter"],
+            "Greeter",
             KEYS["signer2"],
         ),
     }
@@ -289,10 +289,9 @@ def assert_receipt_transaction_and_block(w3, futures):
 
 def test_exception(mantra):
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestRevert"],
-    )
+    revert = RevertTestContract("TestRevert")
+    revert.deploy(w3)
+    contract = revert.contract
     with pytest.raises(web3.exceptions.ContractLogicError):
         send_transaction(
             w3, contract.functions.transfer(5 * (10**18) - 1).build_transaction()
@@ -409,7 +408,9 @@ def test_refund_unused_gas_when_contract_tx_reverted(mantra):
     Fee is gasUsed * effectiveGasPrice
     """
     w3 = mantra.w3
-    contract = deploy_contract(w3, CONTRACTS["TestRevert"])
+    revert = RevertTestContract("TestRevert")
+    revert.deploy(w3)
+    contract = revert.contract
     more_than_enough_gas = 1000000
 
     balance_bef = w3.eth.get_balance(ADDRS["community"])

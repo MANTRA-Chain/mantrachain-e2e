@@ -66,10 +66,10 @@ ADDRESS_PREFIX = "mantra"
 
 TEST_CONTRACTS = {
     "TestERC20A": "TestERC20A.sol",
-    "TestRevert": "TestRevert.sol",
     "Greeter": "Greeter.sol",
     "TestMessageCall": "TestMessageCall.sol",
     "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
+    "CounterWithCallbacks": "CounterWithCallbacks.sol",
 }
 
 WETH_SALT = 999
@@ -96,16 +96,14 @@ CONTRACTS = {
 
 
 class Contract:
-    def __init__(self, contract_path, private_key=KEYS["validator"], chain_id=5887):
+    def __init__(self, name, private_key=KEYS["validator"], chain_id=5887):
         self.chain_id = chain_id
         self.account = Account.from_key(private_key)
         self.address = self.account.address
         self.private_key = private_key
-        with open(contract_path) as f:
-            json_data = f.read()
-            contract_json = json.loads(json_data)
-        self.bytecode = contract_json["bytecode"]
-        self.abi = contract_json["abi"]
+        res = build_contract(name)
+        self.bytecode = res["bytecode"]
+        self.abi = res["abi"]
         self.contract = None
         self.w3 = None
 
@@ -439,7 +437,7 @@ async def deploy_contract_async(
     return w3.eth.contract(address=address, abi=abi)
 
 
-def build_contract(name):
+def build_contract(name) -> dict:
     cmd = [
         "solc",
         "--abi",
@@ -460,17 +458,18 @@ def build_contract(name):
     ]
     print(*cmd)
     subprocess.run(cmd, check=True)
-    abi = json.loads(Path(f"build/{name}.abi").read_text())
-    bin_path = Path(f"build/{name}.bin")
-    with open(bin_path, "rb") as f:
-        return abi, f"0x{f.read().decode()}"
+    bytecode = Path(f"build/{name}.bin").read_text().strip()
+    return {
+        "abi": json.loads(Path(f"build/{name}.abi").read_text()),
+        "bytecode": f"0x{bytecode}",
+    }
 
 
 async def build_and_deploy_contract_async(
     w3: AsyncWeb3, name, args=(), key=KEYS["validator"], exp_gas_used=None
 ):
-    abi, bytecode = build_contract(name)
-    contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+    res = build_contract(name)
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     acct = Account.from_key(key)
     tx = await contract.constructor(*args).build_transaction({"from": acct.address})
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
@@ -479,7 +478,7 @@ async def build_and_deploy_contract_async(
             exp_gas_used == txreceipt.gasUsed
         ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
     address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=abi)
+    return w3.eth.contract(address=address, abi=res["abi"])
 
 
 def get_contract(w3, address, jsonfile):

@@ -1,14 +1,21 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .utils import CONTRACTS, create_contract_transaction, deploy_contract
+from .utils import (
+    CONTRACTS,
+    RevertTestContract,
+    create_contract_transaction,
+    deploy_contract,
+)
 
 METHOD = "eth_estimateGas"
 
 
 def test_revert(mantra):
     def process(w3):
-        contract = deploy_contract(w3, CONTRACTS["TestRevert"])
+        revert = RevertTestContract("TestRevert")
+        revert.deploy(w3)
+        contract = revert.contract
         res = []
         call = w3.provider.make_request
         # revertWithoutMsg
