@@ -12,6 +12,7 @@ pkgs.mkShell {
     pkgs.cosmovisor
     pkgs.start-scripts
     pkgs.hermes
+    pkgs.solc
   ] ++ pkgs.lib.optionals includeMantrachaind [
     pkgs.mantrachaind
   ];
