@@ -2,6 +2,8 @@ import itertools
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from eth_account import Account
+
 from .expected_constants import (
     EXPECTED_CALLTRACERS,
     EXPECTED_CONTRACT_CREATE_TRACER,
@@ -9,10 +11,9 @@ from .expected_constants import (
 )
 from .utils import (
     ADDRS,
-    CONTRACTS,
     Contract,
+    build_contract,
     create_contract_transaction,
-    deploy_contract_with_receipt,
     derive_new_account,
     derive_random_account,
     fund_acc,
@@ -100,8 +101,11 @@ def test_trace_transactions_tracers(mantra):
             [tx_hash, tracer | {"tracerConfig": {"onlyTopCall": True}}],
         )
         assert tx_res["result"] == EXPECTED_CALLTRACERS, ""
-        _, tx = deploy_contract_with_receipt(w3, CONTRACTS["TestERC20A"], key=acc.key)
-        tx_hash = tx["transactionHash"].hex()
+        res = build_contract("TestERC20A")
+        contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
+        acct = Account.from_key(acc.key)
+        tx = contract.constructor().build_transaction({"from": acct.address})
+        tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
         w3_wait_for_new_blocks(w3, 1)
         tx_res = call(method, [tx_hash, tracer])

@@ -1,4 +1,3 @@
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -11,7 +10,6 @@ from hexbytes import HexBytes
 
 from .utils import (
     ADDRS,
-    CONTRACTS,
     DEFAULT_DENOM,
     KEYS,
     Contract,
@@ -20,8 +18,8 @@ from .utils import (
     assert_balance,
     assert_transfer,
     build_batch_tx,
+    build_contract,
     contract_address,
-    deploy_contract,
     do_multisig,
     recover_community,
     send_transaction,
@@ -69,20 +67,17 @@ def test_send_transaction(mantra):
 
 
 @pytest.mark.connect
-def test_connect_events(connect_mantra):
-    test_events(None, connect_mantra, exp_gas_used=None)
+async def test_connect_events(connect_mantra):
+    await test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=914023):
+def test_events(mantra, connect_mantra, exp_gas_used=919699):
     w3 = connect_mantra.w3
     sender = "community"
     receiver = "signer1"
-    erc20 = deploy_contract(
-        w3,
-        CONTRACTS["TestERC20A"],
-        key=KEYS[sender],
-        exp_gas_used=exp_gas_used,
-    )
+    contract = Contract("TestERC20A", private_key=KEYS[sender])
+    contract.deploy(w3, exp_gas_used=exp_gas_used)
+    erc20 = contract.contract
     tx = erc20.functions.transfer(ADDRS[receiver], 10).build_transaction(
         {"from": ADDRS[sender]}
     )
@@ -311,10 +306,9 @@ def test_message_call(mantra):
     w3 = mantra.w3
     msg = Contract("TestMessageCall")
     msg.deploy(w3)
-    contract = msg.contract
     iterations = 13000
     addr = ADDRS["validator"]
-    tx = contract.functions.test(iterations).build_transaction(
+    tx = msg.contract.functions.test(iterations).build_transaction(
         {
             "from": addr,
             "nonce": w3.eth.get_transaction_count(addr),
@@ -328,7 +322,7 @@ def test_message_call(mantra):
     assert elapsed < 5  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx)
-    assert 22300228 == receipt.cumulativeGasUsed
+    assert receipt.cumulativeGasUsed == 22300228
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
@@ -338,7 +332,7 @@ def test_log0(mantra):
     test compliance of empty topics behavior
     """
     w3 = mantra.w3
-    empty = Contract("TestEmptyTopic")
+    empty = Contract("TestERC20A")
     empty.deploy(w3)
     contract = empty.contract
     tx = contract.functions.test_log0().build_transaction({"from": ADDRS["validator"]})
@@ -380,12 +374,12 @@ def test_batch_tx(mantra):
     sender = ADDRS["validator"]
     recipient = ADDRS["community"]
     nonce = w3.eth.get_transaction_count(sender)
-    info = json.loads(CONTRACTS["TestERC20A"].read_text())
-    contract = w3.eth.contract(abi=info["abi"], bytecode=info["bytecode"])
+    res = build_contract("TestERC20A")
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     deploy_tx = contract.constructor().build_transaction(
         {"from": sender, "nonce": nonce}
     )
-    contract = w3.eth.contract(address=contract_address(sender, nonce), abi=info["abi"])
+    contract = w3.eth.contract(address=contract_address(sender, nonce), abi=res["abi"])
     transfer_tx1 = contract.functions.transfer(recipient, 1000).build_transaction(
         {"from": sender, "nonce": nonce + 1, "gas": 200000}
     )
