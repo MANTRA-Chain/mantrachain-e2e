@@ -44,6 +44,7 @@ from .utils import (
     WETH_SALT,
     address_to_bytes32,
     assert_weth_flow,
+    build_contract,
     build_deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
@@ -98,7 +99,8 @@ async def test_flow(mantra, connect_mantra):
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     salt = 100
-    initcode = get_initcode(json.loads(CONTRACTS["TestBlockTxProperties"].read_text()))
+    abi, _ = build_contract("TestBlockTxProperties")
+    initcode = get_initcode(abi)
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
     assert contract == "0xe1B18c74a33b1E67B5f505C931Ac264668EA94F5"
     height = await w3.eth.block_number

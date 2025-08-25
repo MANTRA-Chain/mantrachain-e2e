@@ -13,6 +13,7 @@ pytestmark = pytest.mark.asyncio
 
 BURN_GAS_CONTRACT = None
 
+
 async def get_burn_gas_contract(w3):
     global BURN_GAS_CONTRACT
     if BURN_GAS_CONTRACT is None:

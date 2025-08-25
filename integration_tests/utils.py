@@ -69,11 +69,8 @@ TEST_CONTRACTS = {
     "TestRevert": "TestRevert.sol",
     "Greeter": "Greeter.sol",
     "TestMessageCall": "TestMessageCall.sol",
-    "SelfDestruct": "SelfDestruct.sol",
     "TestBlockTxProperties": "TestBlockTxProperties.sol",
-    "Random": "Random.sol",
     "TestExploitContract": "TestExploitContract.sol",
-    "CounterWithCallbacks": "CounterWithCallbacks.sol",
     "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
 }
 

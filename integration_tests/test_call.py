@@ -5,7 +5,7 @@ from hexbytes import HexBytes
 from web3 import Web3
 from web3._utils.contracts import encode_transaction_data
 
-from .utils import CONTRACTS, deploy_contract
+from .utils import CONTRACTS, build_and_deploy_contract_async, deploy_contract
 
 
 @pytest.mark.skip(reason="skipping temporary_contract_code test")
@@ -101,10 +101,8 @@ def test_override_state(mantra):
     assert ("",) == w3.codec.decode(("string",), result)
 
 
-def test_opcode(mantra):
-    contract = deploy_contract(
-        mantra.w3,
-        CONTRACTS["Random"],
-    )
-    res = contract.caller.randomTokenId()
+@pytest.mark.asyncio
+async def test_opcode(mantra):
+    contract = await build_and_deploy_contract_async(mantra.async_w3, "Random")
+    res = await contract.caller.randomTokenId()
     assert res > 0, res

@@ -8,7 +8,6 @@ from eth_contract.erc20 import ERC20
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
-    CONTRACTS,
     DEFAULT_DENOM,
     KEYS,
     WETH_ADDRESS,
@@ -20,8 +19,8 @@ from .utils import (
     assert_register_erc20_denom,
     assert_tf_flow,
     assert_transfer_tokenfactory_denom,
+    build_and_deploy_contract_async,
     denom_to_erc20_address,
-    deploy_contract_async,
     derive_new_account,
     eth_to_bech32,
     find_duplicate,
@@ -155,8 +154,8 @@ async def test_ibc_transfer(ibc):
 
 async def prepare_dest_callback(w3, sender, amt):
     # deploy cb contract
-    contract = await deploy_contract_async(
-        w3, CONTRACTS["CounterWithCallbacks"], KEYS["signer1"]
+    contract = await build_and_deploy_contract_async(
+        w3, "CounterWithCallbacks", KEYS["signer1"]
     )
     calldata = await contract.functions.add(WETH_ADDRESS, amt).build_transaction(
         {"from": sender, "gas": 210000}
