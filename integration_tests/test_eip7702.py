@@ -1,7 +1,5 @@
 import pytest
-import web3
 
-from .network import Geth
 from .utils import ACCOUNTS, ADDRS, KEYS
 from .utils import send_transaction as send_transaction_sync
 
@@ -49,17 +47,13 @@ async def test_eoa(cluster):
     code = await w3.eth.get_code(acct.address)
     assert code.hex().startswith("ef0100deadbeef"), "Code was not set!"
 
-    w3_sync = cluster.w3
-    gas_price = w3_sync.eth.gas_price
+    gas_price = cluster.w3.eth.gas_price
     gas = 21000
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
-    data["nonce"] = w3_sync.eth.get_transaction_count(ADDRS["validator"]) + 1
+    data["nonce"] = cluster.w3.eth.get_transaction_count(ADDRS["validator"]) + 1
 
-    if isinstance(cluster, Geth):
-        send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
-    else:
-        with pytest.raises(web3.exceptions.Web3RPCError, match="invalid sequence"):
-            send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
+    hash = send_transaction_sync(cluster.w3, data, KEYS["validator"], check=False)
+    print("mm-hash", hash.hex())
 
     # clear code
     clear_tx = dict(tx)

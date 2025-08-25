@@ -137,48 +137,30 @@ async def test_minimal_gas_price(mantra, connect_mantra):
 def test_transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price
+    gas = 21000
 
     # send transaction
-    txhash_1 = send_transaction(
-        w3,
-        {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price},
-        KEYS["validator"],
-    )["transactionHash"]
+    data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
+    txhash_1 = send_transaction(w3, data, KEYS["validator"])["transactionHash"]
     tx1 = w3.eth.get_transaction(txhash_1)
     assert tx1["transactionIndex"] == 0
 
-    initial_block_number = w3.eth.get_block_number()
+    with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
+        data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"]) - 1
+        send_transaction(w3, data, KEYS["validator"])
 
-    # tx already in mempool
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
-        send_transaction(
-            w3,
-            {
-                "to": ADDRS["community"],
-                "value": 10000,
-                "gasPrice": gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) - 1,
-            },
-            KEYS["validator"],
-        )
-    assert "tx already in mempool" in str(exc)
+    data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"]) + 1
+    txhash = send_transaction(w3, data, KEYS["validator"], check=False)
 
-    # invalid sequence
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
-        send_transaction(
-            w3,
-            {
-                "to": ADDRS["community"],
-                "value": 10000,
-                "gasPrice": w3.eth.gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) + 1,
-            },
-            KEYS["validator"],
-        )
-    assert "invalid sequence" in str(exc)
+    data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"])
+    receipt = send_transaction(w3, data, KEYS["validator"])
+    assert receipt["status"] == 1
 
-    # out of gas
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
+    # tx queued due to nonce gap should be success now
+    receipt = w3.eth.wait_for_transaction_receipt(txhash)
+    assert receipt["status"] == 1
+
+    with pytest.raises(web3.exceptions.Web3RPCError, match="intrinsic gas too low"):
         send_transaction(
             w3,
             {
@@ -189,23 +171,18 @@ def test_transaction(mantra):
             },
             KEYS["validator"],
         )["transactionHash"]
-    assert "intrinsic gas too low" in str(exc)
 
-    # insufficient fee
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
+    with pytest.raises(web3.exceptions.Web3RPCError, match="insufficient fee"):
         send_transaction(
             w3,
             {
                 "to": ADDRS["community"],
                 "value": 10000,
+                "gas": gas,
                 "gasPrice": 1,
             },
             KEYS["validator"],
         )["transactionHash"]
-    assert "insufficient fee" in str(exc)
-
-    # check all failed transactions are not included in blockchain
-    assert w3.eth.get_block_number() == initial_block_number
 
     # Deploy multiple contracts
     contracts = {
