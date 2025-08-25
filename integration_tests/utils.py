@@ -69,7 +69,6 @@ TEST_CONTRACTS = {
     "TestRevert": "TestRevert.sol",
     "Greeter": "Greeter.sol",
     "TestMessageCall": "TestMessageCall.sol",
-    "TestExploitContract": "TestExploitContract.sol",
     "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
 }
 
