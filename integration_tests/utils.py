@@ -35,6 +35,7 @@ from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from pystarport import ports
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
@@ -967,6 +968,9 @@ def assert_register_erc20_denom(c, addr, tmp_path):
     erc20_denom = f"erc20:{addr}"
     res = c.cosmos_cli().query_erc20_token_pair(erc20_denom)
     assert res["erc20_address"] == addr, res
+    p = ports.api_port(c.base_port(0))
+    url = f"http://127.0.0.1:{p}/cosmos/evm/erc20/v1/token_pairs/{erc20_denom}"
+    assert requests.get(url).json()["token_pair"] == res
 
 
 async def assert_weth_flow(w3, weth_addr, owner, account):
