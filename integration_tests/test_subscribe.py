@@ -14,6 +14,7 @@ from .utils import (
     ADDRS,
     CONTRACTS,
     KEYS,
+    Contract,
     deploy_contract,
     send_raw_transactions,
     send_transaction,
@@ -154,7 +155,9 @@ def test_subscribe_basic(mantra: Mantra):
             contract = deploy_contract(mantra.w3, CONTRACTS["TestERC20A"])
             address = contract.address
             await transfer_test(c, mantra.w3, contract, address)
-            contract = deploy_contract(mantra.w3, CONTRACTS["TestMessageCall"])
+            msg = Contract("TestMessageCall")
+            msg.deploy(mantra.w3)
+            contract = msg.contract
             inner = contract.caller.inner()
             begin = time.time()
             await logs_test(c, mantra.w3, contract, inner)

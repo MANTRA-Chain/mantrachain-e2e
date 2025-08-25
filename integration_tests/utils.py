@@ -66,8 +66,6 @@ ADDRESS_PREFIX = "mantra"
 
 TEST_CONTRACTS = {
     "TestERC20A": "TestERC20A.sol",
-    "Greeter": "Greeter.sol",
-    "TestMessageCall": "TestMessageCall.sol",
     "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
     "CounterWithCallbacks": "CounterWithCallbacks.sol",
 }
@@ -103,6 +101,7 @@ class Contract:
         self.private_key = private_key
         res = build_contract(name)
         self.bytecode = res["bytecode"]
+        self.code = res["code"]
         self.abi = res["abi"]
         self.contract = None
         self.w3 = None
@@ -442,6 +441,7 @@ def build_contract(name) -> dict:
         "solc",
         "--abi",
         "--bin",
+        "--bin-runtime",
         f"contracts/contracts/{name}.sol",
         "-o",
         "build",
@@ -450,8 +450,6 @@ def build_contract(name) -> dict:
         "--optimize-runs",
         "100000",
         "--via-ir",
-        "--evm-version",
-        "cancun",
         "--metadata-hash",
         "none",
         "--no-cbor-metadata",
@@ -459,9 +457,11 @@ def build_contract(name) -> dict:
     print(*cmd)
     subprocess.run(cmd, check=True)
     bytecode = Path(f"build/{name}.bin").read_text().strip()
+    code = Path(f"build/{name}.bin-runtime").read_text().strip()
     return {
         "abi": json.loads(Path(f"build/{name}.abi").read_text()),
         "bytecode": f"0x{bytecode}",
+        "code": f"0x{code}",
     }
 
 
@@ -486,13 +486,13 @@ def get_contract(w3, address, jsonfile):
     return w3.eth.contract(address=address, abi=info["abi"])
 
 
-def create_contract_transaction(w3, jsonfile, args=(), key=KEYS["validator"]):
+def create_contract_transaction(w3, name, args=(), key=KEYS["validator"]):
     """
     create contract transaction
     """
     acct = Account.from_key(key)
-    info = json.loads(jsonfile.read_text())
-    contract = w3.eth.contract(abi=info["abi"], bytecode=info["bytecode"])
+    res = build_contract(name)
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     tx = contract.constructor(*args).build_transaction({"from": acct.address})
     return tx
 

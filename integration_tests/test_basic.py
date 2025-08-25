@@ -14,6 +14,7 @@ from .utils import (
     CONTRACTS,
     DEFAULT_DENOM,
     KEYS,
+    Contract,
     Greeter,
     RevertTestContract,
     assert_balance,
@@ -308,10 +309,9 @@ def test_exception(mantra):
 def test_message_call(mantra):
     "stress test the evm by doing message calls as much as possible"
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestMessageCall"],
-    )
+    msg = Contract("TestMessageCall")
+    msg.deploy(w3)
+    contract = msg.contract
     iterations = 13000
     addr = ADDRS["validator"]
     tx = contract.functions.test(iterations).build_transaction(
@@ -328,7 +328,7 @@ def test_message_call(mantra):
     assert elapsed < 5  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx)
-    assert 22326250 == receipt.cumulativeGasUsed
+    assert 22300228 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
@@ -338,10 +338,9 @@ def test_log0(mantra):
     test compliance of empty topics behavior
     """
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestERC20A"],
-    )
+    empty = Contract("TestEmptyTopic")
+    empty.deploy(w3)
+    contract = empty.contract
     tx = contract.functions.test_log0().build_transaction({"from": ADDRS["validator"]})
     receipt = send_transaction(w3, tx, KEYS["validator"])
     assert len(receipt.logs) == 1
@@ -363,7 +362,9 @@ def test_contract(mantra, connect_mantra, tmp_path):
     w3 = connect_mantra.w3
     name = "community"
     key = KEYS[name]
-    contract = deploy_contract(w3, CONTRACTS["Greeter"], key=key)
+    greeter = Greeter("Greeter")
+    greeter.deploy(w3)
+    contract = greeter.contract
     assert "Hello" == contract.caller.greet()
     # change
     tx = contract.functions.setGreeting("world").build_transaction()

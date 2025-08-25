@@ -10,8 +10,8 @@ from .expected_constants import (
 from .utils import (
     ADDRS,
     CONTRACTS,
+    Contract,
     create_contract_transaction,
-    deploy_contract,
     deploy_contract_with_receipt,
     derive_new_account,
     derive_random_account,
@@ -30,7 +30,9 @@ def test_out_of_gas_error(mantra):
     def process(w3):
         # fund new sender to deploy contract with same address
         fund_acc(w3, acc)
-        contract = deploy_contract(w3, CONTRACTS["TestMessageCall"], key=acc.key)
+        msg = Contract("TestMessageCall", acc.key)
+        msg.deploy(mantra.w3)
+        contract = msg.contract
         tx = contract.functions.test(iterations).build_transaction({"gas": 21510})
         tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
@@ -57,7 +59,7 @@ def test_storage_out_of_gas_error(mantra):
     def process(w3):
         # fund new sender to deploy contract with same address
         fund_acc(w3, acc)
-        tx = create_contract_transaction(w3, CONTRACTS["TestMessageCall"], key=acc.key)
+        tx = create_contract_transaction(w3, "TestMessageCall", key=acc.key)
         tx["gas"] = 210000
         tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
@@ -129,7 +131,9 @@ def test_trace_tx(mantra):
     def process(w3):
         # fund new sender to deploy contract with same address
         fund_acc(w3, acc)
-        contract = deploy_contract(w3, CONTRACTS["TestMessageCall"], key=acc.key)
+        msg = Contract("TestMessageCall", acc.key)
+        msg.deploy(mantra.w3)
+        contract = msg.contract
         tx = contract.functions.test(iterations).build_transaction()
         tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
