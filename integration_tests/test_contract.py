@@ -31,6 +31,7 @@ from eth_contract.multicall3 import (
 )
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH
+from eth_utils import to_bytes
 from web3 import AsyncWeb3
 from web3.types import TxParams
 
@@ -99,10 +100,10 @@ async def test_flow(mantra, connect_mantra):
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     salt = 100
-    abi, _ = build_contract("TestBlockTxProperties")
-    initcode = get_initcode(abi)
+    _, initcode = build_contract("TestBlockTxProperties")
+    initcode = to_bytes(hexstr=initcode[2:])
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
-    assert contract == "0xe1B18c74a33b1E67B5f505C931Ac264668EA94F5"
+    assert contract == "0xe48C487A7D3Aaa3665D7c63cCaf29F31d0c74E1A"
     height = await w3.eth.block_number
     await w3_wait_for_new_blocks_async(w3, 1)
 
