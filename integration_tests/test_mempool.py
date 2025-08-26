@@ -6,9 +6,8 @@ from web3 import Web3
 from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
-    CONTRACTS,
     KEYS,
-    deploy_contract,
+    Greeter,
     send_txs,
     sign_transaction,
     wait_for_new_blocks,
@@ -34,7 +33,9 @@ def test_mempool(mantra_mempool):
     wait_for_new_blocks(cli, 1, sleep=0.1)
     block_num_2 = w3.eth.get_block_number()
     print(f"block number contract begin at height: {block_num_2}")
-    contract = deploy_contract(w3, CONTRACTS["Greeter"])
+    greeter = Greeter("Greeter")
+    greeter.deploy(w3)
+    contract = greeter.contract
     tx = contract.functions.setGreeting("world").build_transaction()
     signed = sign_transaction(w3, tx)
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)

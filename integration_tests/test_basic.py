@@ -1,4 +1,3 @@
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,16 +11,16 @@ from hexbytes import HexBytes
 from .utils import (
     ACCOUNTS,
     ADDRS,
-    CONTRACTS,
     DEFAULT_DENOM,
     KEYS,
+    Contract,
     Greeter,
     RevertTestContract,
     assert_balance,
     assert_transfer,
     build_batch_tx,
+    build_contract,
     contract_address,
-    deploy_contract,
     do_multisig,
     recover_community,
     send_transaction,
@@ -69,20 +68,17 @@ def test_send_transaction(mantra):
 
 
 @pytest.mark.connect
-def test_connect_events(connect_mantra):
-    test_events(None, connect_mantra, exp_gas_used=None)
+async def test_connect_events(connect_mantra):
+    await test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=914023):
+def test_events(mantra, connect_mantra, exp_gas_used=919699):
     w3 = connect_mantra.w3
     sender = "community"
     receiver = "signer1"
-    erc20 = deploy_contract(
-        w3,
-        CONTRACTS["TestERC20A"],
-        key=KEYS[sender],
-        exp_gas_used=exp_gas_used,
-    )
+    contract = Contract("TestERC20A", private_key=KEYS[sender])
+    contract.deploy(w3, exp_gas_used=exp_gas_used)
+    erc20 = contract.contract
     tx = erc20.functions.transfer(ADDRS[receiver], 10).build_transaction(
         {"from": ADDRS[sender]}
     )
@@ -210,19 +206,19 @@ def test_transaction(mantra):
     # Deploy multiple contracts
     contracts = {
         "test_revert_1": RevertTestContract(
-            CONTRACTS["TestRevert"],
+            "TestRevert",
             KEYS["validator"],
         ),
         "test_revert_2": RevertTestContract(
-            CONTRACTS["TestRevert"],
+            "TestRevert",
             KEYS["community"],
         ),
         "greeter_1": Greeter(
-            CONTRACTS["Greeter"],
+            "Greeter",
             KEYS["signer1"],
         ),
         "greeter_2": Greeter(
-            CONTRACTS["Greeter"],
+            "Greeter",
             KEYS["signer2"],
         ),
     }
@@ -290,10 +286,9 @@ def assert_receipt_transaction_and_block(w3, futures):
 
 def test_exception(mantra):
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestRevert"],
-    )
+    revert = RevertTestContract("TestRevert")
+    revert.deploy(w3)
+    contract = revert.contract
     with pytest.raises(web3.exceptions.ContractLogicError):
         send_transaction(
             w3, contract.functions.transfer(5 * (10**18) - 1).build_transaction()
@@ -310,13 +305,11 @@ def test_exception(mantra):
 def test_message_call(mantra):
     "stress test the evm by doing message calls as much as possible"
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestMessageCall"],
-    )
+    msg = Contract("TestMessageCall")
+    msg.deploy(w3)
     iterations = 13000
     addr = ADDRS["validator"]
-    tx = contract.functions.test(iterations).build_transaction(
+    tx = msg.contract.functions.test(iterations).build_transaction(
         {
             "from": addr,
             "nonce": w3.eth.get_transaction_count(addr),
@@ -330,7 +323,7 @@ def test_message_call(mantra):
     assert elapsed < 5  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx)
-    assert 22326250 == receipt.cumulativeGasUsed
+    assert 22768266 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
@@ -340,10 +333,9 @@ def test_log0(mantra):
     test compliance of empty topics behavior
     """
     w3 = mantra.w3
-    contract = deploy_contract(
-        w3,
-        CONTRACTS["TestERC20A"],
-    )
+    empty = Contract("TestERC20A")
+    empty.deploy(w3)
+    contract = empty.contract
     tx = contract.functions.test_log0().build_transaction({"from": ADDRS["validator"]})
     receipt = send_transaction(w3, tx, KEYS["validator"])
     assert len(receipt.logs) == 1
@@ -365,7 +357,9 @@ def test_contract(mantra, connect_mantra, tmp_path):
     w3 = connect_mantra.w3
     name = "community"
     key = KEYS[name]
-    contract = deploy_contract(w3, CONTRACTS["Greeter"], key=key)
+    greeter = Greeter("Greeter")
+    greeter.deploy(w3)
+    contract = greeter.contract
     assert "Hello" == contract.caller.greet()
     # change
     tx = contract.functions.setGreeting("world").build_transaction()
@@ -381,12 +375,12 @@ def test_batch_tx(mantra):
     sender = ADDRS["validator"]
     recipient = ADDRS["community"]
     nonce = w3.eth.get_transaction_count(sender)
-    info = json.loads(CONTRACTS["TestERC20A"].read_text())
-    contract = w3.eth.contract(abi=info["abi"], bytecode=info["bytecode"])
+    res = build_contract("TestERC20A")
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     deploy_tx = contract.constructor().build_transaction(
         {"from": sender, "nonce": nonce}
     )
-    contract = w3.eth.contract(address=contract_address(sender, nonce), abi=info["abi"])
+    contract = w3.eth.contract(address=contract_address(sender, nonce), abi=res["abi"])
     transfer_tx1 = contract.functions.transfer(recipient, 1000).build_transaction(
         {"from": sender, "nonce": nonce + 1, "gas": 200000}
     )
@@ -410,7 +404,9 @@ def test_refund_unused_gas_when_contract_tx_reverted(mantra):
     Fee is gasUsed * effectiveGasPrice
     """
     w3 = mantra.w3
-    contract = deploy_contract(w3, CONTRACTS["TestRevert"])
+    revert = RevertTestContract("TestRevert")
+    revert.deploy(w3)
+    contract = revert.contract
     more_than_enough_gas = 1000000
 
     balance_bef = w3.eth.get_balance(ADDRS["community"])

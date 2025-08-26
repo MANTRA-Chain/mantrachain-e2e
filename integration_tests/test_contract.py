@@ -30,30 +30,27 @@ from eth_contract.multicall3 import (
     multicall,
 )
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
-from eth_contract.weth import WETH
+from eth_contract.weth import WETH, WETH9_ARTIFACT
+from eth_utils import to_bytes
 from web3 import AsyncWeb3
 from web3.types import TxParams
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
-    CONTRACTS,
     KEYS,
-    WETH9_ARTIFACT,
     WETH_ADDRESS,
     WETH_SALT,
+    MockERC20_ARTIFACT,
     address_to_bytes32,
     assert_weth_flow,
+    build_contract,
     build_deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio
 
-
-MockERC20_ARTIFACT = json.loads(
-    Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
-)
 
 MULTICALL3ROUTER_ARTIFACT = json.loads(
     Path(__file__)
@@ -98,7 +95,7 @@ async def test_flow(mantra, connect_mantra):
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     salt = 100
-    initcode = get_initcode(json.loads(CONTRACTS["TestBlockTxProperties"].read_text()))
+    initcode = to_bytes(hexstr=build_contract("TestBlockTxProperties")["bytecode"][2:])
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
     assert contract == "0xe1B18c74a33b1E67B5f505C931Ac264668EA94F5"
     height = await w3.eth.block_number
@@ -323,16 +320,14 @@ async def test_deploy_multi(mantra):
     name = "community"
     key = KEYS[name]
     owner = ADDRS[name]
-    contract = CONTRACTS["ERC20MinterBurnerDecimals"]
     num = 2
-    args_list = [
-        (w3, contract, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)
-    ]
+    res = build_contract("ERC20MinterBurnerDecimals")
+    args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
     tx_results = await asyncio.gather(
         *(build_deploy_contract_async(*args) for args in args_list)
     )
     nonce = await w3.eth.get_transaction_count(owner)
-    txs = [{**tx, "nonce": nonce + i} for i, (tx, _) in enumerate(tx_results)]
+    txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]
     receipts = await asyncio.gather(
         *(send_transaction(w3, tx["from"], **tx) for tx in txs), return_exceptions=True
     )

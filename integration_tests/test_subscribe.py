@@ -12,9 +12,8 @@ from web3 import Web3
 from .network import Mantra
 from .utils import (
     ADDRS,
-    CONTRACTS,
     KEYS,
-    deploy_contract,
+    Contract,
     send_raw_transactions,
     send_transaction,
     sign_transaction,
@@ -151,13 +150,15 @@ def test_subscribe_basic(mantra: Mantra):
             t = asyncio.create_task(c.receive_loop())
             # run three subscribers concurrently
             await asyncio.gather(*[subscriber_test(c) for i in range(3)])
-            contract = deploy_contract(mantra.w3, CONTRACTS["TestERC20A"])
-            address = contract.address
-            await transfer_test(c, mantra.w3, contract, address)
-            contract = deploy_contract(mantra.w3, CONTRACTS["TestMessageCall"])
-            inner = contract.caller.inner()
+            w3 = mantra.w3
+            erc20 = Contract("TestERC20A")
+            erc20.deploy(w3)
+            await transfer_test(c, mantra.w3, erc20.contract, erc20.contract.address)
+            msg = Contract("TestMessageCall")
+            msg.deploy(w3)
+            inner = msg.contract.caller.inner()
             begin = time.time()
-            await logs_test(c, mantra.w3, contract, inner)
+            await logs_test(c, mantra.w3, msg.contract, inner)
             print("msg call time", time.time() - begin)
             t.cancel()
             try:

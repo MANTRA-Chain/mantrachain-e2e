@@ -58,5 +58,18 @@
         "type": "tarball",
         "url": "https://github.com/allthatjazzleo/hermes/archive/474db763e1a84cc54500278be722205549336527.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "dapptools": {
+        "branch": "master",
+        "description": "Dapp, Seth, Hevm, and more",
+        "homepage": "https://dapp.tools",
+        "owner": "dapphub",
+        "repo": "dapptools",
+        "rev": "a782a9dfcbf87756170c975c30e83339a99194b5",
+        "sha256": "sha256:0fsp4pvip77qjb3yciz2a3224ir8wvbb1snc851fbgmf34q7dqfi",
+        "type": "tarball",
+        "url": "https://github.com/dapphub/dapptools/archive/a782a9dfcbf87756170c975c30e83339a99194b5.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "version": "hevm/0.49.0"
     }
 }

@@ -32,7 +32,7 @@ from eth_contract.deploy_utils import (
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
-from eth_contract.weth import WETH
+from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
@@ -64,66 +64,41 @@ UOM_PER_OM = 10**6  # 10^6 uom == 1 om
 WEI_PER_UOM = 10**12  # 10^12 wei == 1 uom
 ADDRESS_PREFIX = "mantra"
 
-TEST_CONTRACTS = {
-    "TestERC20A": "TestERC20A.sol",
-    "TestRevert": "TestRevert.sol",
-    "Greeter": "Greeter.sol",
-    "TestMessageCall": "TestMessageCall.sol",
-    "SelfDestruct": "SelfDestruct.sol",
-    "TestBlockTxProperties": "TestBlockTxProperties.sol",
-    "Random": "Random.sol",
-    "TestExploitContract": "TestExploitContract.sol",
-    "BurnGas": "BurnGas.sol",
-    "CounterWithCallbacks": "CounterWithCallbacks.sol",
-    "ERC20MinterBurnerDecimals": "ERC20MinterBurnerDecimals.sol",
-}
 
 WETH_SALT = 999
-WETH9_ARTIFACT = json.loads(
-    Path(__file__).parent.joinpath("contracts/contracts/WETH9.json").read_text()
-)
 WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 
-
-def contract_path(name, filename):
-    return (
-        Path(__file__).parent
-        / "contracts/artifacts/contracts"
-        / filename
-        / (name + ".json")
-    )
-
-
-CONTRACTS = {
-    **{
-        name: contract_path(name, filename) for name, filename in TEST_CONTRACTS.items()
-    },
-}
+MockERC20_ARTIFACT = json.loads(
+    Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
+)
 
 
 class Contract:
-    def __init__(self, contract_path, private_key=KEYS["validator"], chain_id=5887):
+    def __init__(self, name, private_key=KEYS["validator"], chain_id=5887):
         self.chain_id = chain_id
         self.account = Account.from_key(private_key)
-        self.address = self.account.address
+        self.owner = self.account.address
         self.private_key = private_key
-        with open(contract_path) as f:
-            json_data = f.read()
-            contract_json = json.loads(json_data)
-        self.bytecode = contract_json["bytecode"]
-        self.abi = contract_json["abi"]
+        res = build_contract(name)
+        self.bytecode = res["bytecode"]
+        self.code = res["code"]
+        self.abi = res["abi"]
         self.contract = None
         self.w3 = None
 
-    def deploy(self, w3):
+    def deploy(self, w3, exp_gas_used=None):
         "Deploy contract on `w3` and return the receipt."
         if self.contract is None:
             self.w3 = w3
             contract = self.w3.eth.contract(abi=self.abi, bytecode=self.bytecode)
             transaction = contract.constructor().build_transaction(
-                {"chainId": self.chain_id, "from": self.address}
+                {"chainId": self.chain_id, "from": self.owner}
             )
             receipt = send_transaction(self.w3, transaction, self.private_key)
+            if exp_gas_used is not None:
+                assert (
+                    exp_gas_used == receipt.gasUsed
+                ), f"exp {exp_gas_used}, got {receipt.gasUsed}"
             self.contract = self.w3.eth.contract(
                 address=receipt.contractAddress, abi=self.abi
             )
@@ -140,7 +115,7 @@ class Greeter(Contract):
         transaction = self.contract.functions.setGreeting(string).build_transaction(
             {
                 "chainId": self.chain_id,
-                "from": self.address,
+                "from": self.owner,
             }
         )
         receipt = send_transaction(self.w3, transaction, self.private_key)
@@ -156,7 +131,7 @@ class RevertTestContract(Contract):
         transaction = self.contract.functions.transfer(value).build_transaction(
             {
                 "chainId": self.chain_id,
-                "from": self.address,
+                "from": self.owner,
                 "gas": 100000,  # skip estimateGas error
             }
         )
@@ -380,85 +355,75 @@ def send_txs(w3, cli, to, keys, params):
 
     # send transactions
     sended_hash_set = send_raw_transactions(w3, raw_transactions)
-
     return block_num_0, sended_hash_set
 
 
-def deploy_contract(w3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None):
-    """
-    deploy contract and return the deployed contract instance
-    """
-    contract, _ = deploy_contract_with_receipt(w3, jsonfile, args, key, exp_gas_used)
-    return contract
+def build_contract(name) -> dict:
+    cmd = [
+        "solc",
+        "--abi",
+        "--bin",
+        "--bin-runtime",
+        f"contracts/contracts/{name}.sol",
+        "-o",
+        "build",
+        "--overwrite",
+        "--optimize",
+        "--optimize-runs",
+        "100000",
+        "--via-ir",
+        "--metadata-hash",
+        "none",
+        "--no-cbor-metadata",
+        "--base-path",
+        "contracts",
+        "--include-path",
+        "contracts/openzeppelin/contracts",
+    ]
+    print(*cmd)
+    subprocess.run(cmd, check=True)
+    bytecode = Path(f"build/{name}.bin").read_text().strip()
+    code = Path(f"build/{name}.bin-runtime").read_text().strip()
+    return {
+        "abi": json.loads(Path(f"build/{name}.abi").read_text()),
+        "bytecode": f"0x{bytecode}",
+        "code": f"0x{code}",
+    }
 
 
-def deploy_contract_with_receipt(
-    w3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
+async def build_and_deploy_contract_async(
+    w3: AsyncWeb3, name, args=(), key=KEYS["validator"], exp_gas_used=None
 ):
-    """
-    deploy contract and return the deployed contract instance and receipt
-    """
+    res = build_contract(name)
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     acct = Account.from_key(key)
-    info = json.loads(jsonfile.read_text())
-    bytecode = ""
-    if "bytecode" in info:
-        bytecode = info["bytecode"]
-    if "byte" in info:
-        bytecode = info["byte"]
-    contract = w3.eth.contract(abi=info["abi"], bytecode=bytecode)
-    tx = contract.constructor(*args).build_transaction({"from": acct.address})
-    txreceipt = send_transaction(w3, tx, key)
-    assert txreceipt.status == 1
-    if exp_gas_used is not None:
-        assert (
-            exp_gas_used == txreceipt.gasUsed
-        ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
-    address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=info["abi"]), txreceipt
-
-
-async def build_deploy_contract_async(
-    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"]
-):
-    acct = Account.from_key(key)
-    info = json.loads(jsonfile.read_text())
-    bytecode = ""
-    if "bytecode" in info:
-        bytecode = info["bytecode"]
-    if "byte" in info:
-        bytecode = info["byte"]
-    contract = w3.eth.contract(abi=info["abi"], bytecode=bytecode)
     tx = await contract.constructor(*args).build_transaction({"from": acct.address})
-    return tx, info["abi"]
-
-
-async def deploy_contract_async(
-    w3: AsyncWeb3, jsonfile, args=(), key=KEYS["validator"], exp_gas_used=None
-):
-    tx, abi = await build_deploy_contract_async(w3, jsonfile, args, key)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     if exp_gas_used is not None:
         assert (
             exp_gas_used == txreceipt.gasUsed
         ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
     address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=abi)
+    return w3.eth.contract(address=address, abi=res["abi"])
 
 
-def get_contract(w3, address, jsonfile):
-    info = json.loads(jsonfile.read_text())
-    return w3.eth.contract(address=address, abi=info["abi"])
-
-
-def create_contract_transaction(w3, jsonfile, args=(), key=KEYS["validator"]):
+def create_contract_transaction(w3, name, args=(), key=KEYS["validator"]):
     """
     create contract transaction
     """
     acct = Account.from_key(key)
-    info = json.loads(jsonfile.read_text())
-    contract = w3.eth.contract(abi=info["abi"], bytecode=info["bytecode"])
+    res = build_contract(name)
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     tx = contract.constructor(*args).build_transaction({"from": acct.address})
     return tx
+
+
+async def build_deploy_contract_async(
+    w3: AsyncWeb3, res, args=(), key=KEYS["validator"]
+):
+    acct = Account.from_key(key)
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
+    return await contract.constructor(*args).build_transaction({"from": acct.address})
 
 
 def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):

@@ -5,8 +5,7 @@ from web3 import AsyncWeb3, Web3
 
 from .utils import (
     ADDRS,
-    CONTRACTS,
-    deploy_contract_async,
+    build_and_deploy_contract_async,
     w3_wait_for_new_blocks_async,
 )
 
@@ -15,7 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_get_logs_by_topic(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    contract = await deploy_contract_async(w3, CONTRACTS["Greeter"])
+    contract = await build_and_deploy_contract_async(w3, "Greeter")
     topic = f"0x{Web3.keccak(text='ChangeGreeting(address,string)').hex()}"
     tx = await contract.functions.setGreeting("world").build_transaction()
     await send_transaction(w3, ADDRS["validator"], **tx)
@@ -100,20 +99,20 @@ async def test_block_filter(mantra):
 
 async def test_event_log_filter(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    mycontract = await deploy_contract_async(w3, CONTRACTS["Greeter"])
-    assert "Hello" == await mycontract.caller.greet()
+    contract = await build_and_deploy_contract_async(w3, "Greeter")
+    assert "Hello" == await contract.caller.greet()
     current_height = hex(await w3.eth.get_block_number())
-    event_filter = await mycontract.events.ChangeGreeting.create_filter(
+    event_filter = await contract.events.ChangeGreeting.create_filter(
         from_block=current_height
     )
-    tx = await mycontract.functions.setGreeting("world").build_transaction()
+    tx = await contract.functions.setGreeting("world").build_transaction()
     tx_receipt = await send_transaction(w3, ADDRS["validator"], **tx)
-    log = mycontract.events.ChangeGreeting().process_receipt(tx_receipt)[0]
+    log = contract.events.ChangeGreeting().process_receipt(tx_receipt)[0]
     assert log["event"] == "ChangeGreeting"
     new_entries = await event_filter.get_new_entries()
     assert len(new_entries) == 1
     assert new_entries[0] == log
-    assert "world" == await mycontract.caller.greet()
+    assert "world" == await contract.caller.greet()
     # without new txs since last call
     assert await event_filter.get_new_entries() == []
     assert await event_filter.get_all_entries() == new_entries
