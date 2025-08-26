@@ -1,5 +1,7 @@
 import pytest
+import web3
 
+from .network import Geth
 from .utils import ACCOUNTS, ADDRS, KEYS
 from .utils import send_transaction as send_transaction_sync
 
@@ -53,7 +55,13 @@ async def test_eoa(cluster):
     data["nonce"] = cluster.w3.eth.get_transaction_count(ADDRS["validator"]) + 1
 
     hash = send_transaction_sync(cluster.w3, data, KEYS["validator"], check=False)
-    print("mm-hash", hash.hex())
+
+    if isinstance(cluster, Geth):
+        with pytest.raises(web3.exceptions.TransactionNotFound):
+            await cluster.w3.eth.get_transaction_receipt(hash)
+    else:
+        with pytest.raises(web3.exceptions.RequestTimedOut):
+            await cluster.w3.eth.get_transaction_receipt(hash)
 
     # clear code
     clear_tx = dict(tx)
