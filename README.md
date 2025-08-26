@@ -27,6 +27,10 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```
 
 3. **Run tests:**
+   ensure all git submodules are initialized and updated:
+   ```sh
+   git submodule update --init --depth 1 --recursive
+   ```
    to try all test
    ```sh
    make test-e2e-nix

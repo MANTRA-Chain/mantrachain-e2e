@@ -11,6 +11,7 @@ import sources.nixpkgs {
         inherit (pkgs.darwin) libobjc;
         inherit (pkgs.darwin.apple_sdk.frameworks) IOKit;
       };
+      dapp = pkgs.dapp;
     })
     (import "${sources.poetry2nix}/overlay.nix")
     (pkgs: _:

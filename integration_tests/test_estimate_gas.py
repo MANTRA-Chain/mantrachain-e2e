@@ -1,14 +1,20 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .utils import CONTRACTS, create_contract_transaction, deploy_contract
+from .utils import (
+    Contract,
+    RevertTestContract,
+    create_contract_transaction,
+)
 
 METHOD = "eth_estimateGas"
 
 
 def test_revert(mantra):
     def process(w3):
-        contract = deploy_contract(w3, CONTRACTS["TestRevert"])
+        revert = RevertTestContract("TestRevert")
+        revert.deploy(w3)
+        contract = revert.contract
         res = []
         call = w3.provider.make_request
         # revertWithoutMsg
@@ -38,7 +44,9 @@ def test_out_of_gas_error(mantra):
     gas = 21204
 
     def process(w3):
-        contract = deploy_contract(w3, CONTRACTS["TestMessageCall"])
+        msg = Contract("TestMessageCall")
+        msg.deploy(w3)
+        contract = msg.contract
         tx = contract.functions.test(iterations).build_transaction()
         tx = {"to": contract.address, "data": tx["data"], "gas": hex(gas)}
         call = w3.provider.make_request
@@ -57,7 +65,7 @@ def test_storage_out_of_gas_error(mantra):
     gas = 210000
 
     def process(w3):
-        tx = create_contract_transaction(w3, CONTRACTS["TestMessageCall"])
+        tx = create_contract_transaction(w3, "TestMessageCall")
         tx = {"data": tx["data"], "gas": hex(gas)}
         call = w3.provider.make_request
         error = call(METHOD, [tx])["error"]

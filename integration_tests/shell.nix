@@ -5,13 +5,14 @@
 }:
 pkgs.mkShell {
   buildInputs = [
-    pkgs.nodejs
+    pkgs.git
     pkgs.test-env
     pkgs.poetry
     pkgs.go-ethereum
     pkgs.cosmovisor
     pkgs.start-scripts
     pkgs.hermes
+    pkgs.solc
   ] ++ pkgs.lib.optionals includeMantrachaind [
     pkgs.mantrachaind
   ];

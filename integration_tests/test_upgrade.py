@@ -13,13 +13,12 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
-    CONTRACTS,
     DEFAULT_FEE,
     DEFAULT_GAS_PRICE,
+    Greeter,
     assert_create_tokenfactory_denom,
     assert_set_tokenfactory_denom,
     assert_transfer,
-    deploy_contract,
     derive_new_account,
     eth_to_bech32,
     get_balance,
@@ -123,7 +122,9 @@ def exec(c, tmp_path):
     amt = int(balance - DEFAULT_FEE - 1e6)
     assert_transfer(cli, addr_a, addr_b, amt=amt)
     # check set contract tx works
-    contract = deploy_contract(c.w3, CONTRACTS["Greeter"], key=acc_b.key)
+    greeter = Greeter("Greeter", acc_b.key)
+    greeter.deploy(c.w3)
+    contract = greeter.contract
     assert "Hello" == contract.caller.greet()
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world")
     wait_for_new_blocks(cli, 3)

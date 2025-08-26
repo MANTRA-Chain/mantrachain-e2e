@@ -7,7 +7,6 @@ from pystarport import cluster, ports
 
 from .utils import (
     ADDRS,
-    CONTRACTS,
     KEYS,
     Greeter,
     get_sync_info,
@@ -25,10 +24,7 @@ def test_statesync(mantra):
     tx = {"to": ADDRS["community"], "value": tx_value, "gasPrice": gas_price}
     txhash_0 = send_transaction(w3, tx, KEYS["validator"])["transactionHash"].hex()
 
-    greeter = Greeter(
-        CONTRACTS["Greeter"],
-        KEYS["validator"],
-    )
+    greeter = Greeter("Greeter", KEYS["validator"])
     txhash_1 = greeter.deploy(w3)["transactionHash"].hex()
 
     assert w3.eth.get_balance(ADDRS["community"]) == initial_balance + tx_value

@@ -9,9 +9,8 @@ from web3.datastructures import AttributeDict
 from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
-    CONTRACTS,
     KEYS,
-    deploy_contract,
+    Contract,
     sign_transaction,
     wait_for_new_blocks,
 )
@@ -34,17 +33,15 @@ def test_pruned_node(mantra):
     test basic json-rpc apis works in pruned node
     """
     w3 = mantra.w3
-    erc20 = deploy_contract(
-        w3,
-        CONTRACTS["TestERC20A"],
-        key=KEYS["validator"],
-    )
+    contract = Contract("TestERC20A")
+    contract.deploy(w3)
+    erc20 = contract.contract
     tx = erc20.functions.transfer(ADDRS["community"], 10).build_transaction(
         {"from": ADDRS["validator"]}
     )
     signed = sign_transaction(w3, tx, KEYS["validator"])
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    exp_gas_used = 51382
+    exp_gas_used = 51437
 
     print("wait for prunning happens")
     wait_for_new_blocks(mantra.cosmos_cli(0), 10)
