@@ -98,7 +98,7 @@ async def test_flow(mantra, connect_mantra):
     salt = 100
     initcode = to_bytes(hexstr=build_contract("TestBlockTxProperties")["bytecode"][2:])
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
-    assert contract == "0xe48C487A7D3Aaa3665D7c63cCaf29F31d0c74E1A"
+    assert contract == "0xe1B18c74a33b1E67B5f505C931Ac264668EA94F5"
     height = await w3.eth.block_number
     await w3_wait_for_new_blocks_async(w3, 1)
 

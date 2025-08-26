@@ -48,8 +48,7 @@ def test_pruned_node(mantra):
 
     print("wait for transaction receipt", txhash.hex())
     txreceipt = w3.eth.wait_for_transaction_receipt(txhash)
-    print("mm-txreceipt.gasUsed", txreceipt.gasUsed)
-    # assert txreceipt.gasUsed == exp_gas_used
+    assert txreceipt.gasUsed == exp_gas_used
     assert len(txreceipt.logs) == 1
     data = "0x000000000000000000000000000000000000000000000000000000000000000a"
     expect_log = {

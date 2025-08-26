@@ -5,6 +5,7 @@
 }:
 pkgs.mkShell {
   buildInputs = [
+    pkgs.git
     pkgs.test-env
     pkgs.poetry
     pkgs.go-ethereum

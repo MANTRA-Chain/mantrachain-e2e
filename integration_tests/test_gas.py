@@ -29,8 +29,7 @@ async def test_gas_call(mantra):
         {"from": ADDRS["validator"], "gasPrice": await w3.eth.gas_price}
     )
     receipt = await w3.eth.wait_for_transaction_receipt(txhash)
-    # assert receipt.gasUsed == 267441
-    print("mm-receipt.gasUsed", receipt.gasUsed)
+    assert receipt.gasUsed == 267649
 
 
 async def test_block_gas_limit(mantra):

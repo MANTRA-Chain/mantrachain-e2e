@@ -5,7 +5,6 @@ import pytest
 import web3
 from eth_bloom import BloomFilter
 from eth_contract.utils import send_transaction as send_transaction_async
-from eth_contract.erc20 import ERC20, ERC20_ABI
 from eth_utils import abi, big_endian_to_int
 from hexbytes import HexBytes
 
@@ -323,7 +322,7 @@ def test_message_call(mantra):
     assert elapsed < 5  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx)
-    # assert 22768266 == receipt.cumulativeGasUsed
+    assert 22768266 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
