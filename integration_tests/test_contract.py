@@ -30,7 +30,7 @@ from eth_contract.multicall3 import (
     multicall,
 )
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
-from eth_contract.weth import WETH
+from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_bytes
 from web3 import AsyncWeb3
 from web3.types import TxParams
@@ -39,7 +39,6 @@ from .utils import (
     ACCOUNTS,
     ADDRS,
     KEYS,
-    WETH9_ARTIFACT,
     WETH_ADDRESS,
     WETH_SALT,
     MockERC20_ARTIFACT,

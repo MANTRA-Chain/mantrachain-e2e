@@ -32,7 +32,7 @@ from eth_contract.deploy_utils import (
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode
 from eth_contract.utils import send_transaction as send_transaction_async
-from eth_contract.weth import WETH
+from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
@@ -66,9 +66,6 @@ ADDRESS_PREFIX = "mantra"
 
 
 WETH_SALT = 999
-WETH9_ARTIFACT = json.loads(
-    Path(__file__).parent.joinpath("contracts/contracts/WETH9.json").read_text()
-)
 WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 
 MockERC20_ARTIFACT = json.loads(
