@@ -480,7 +480,7 @@ def generate_isolated_address(channel_id, sender):
 
 def get_balance(cli, name):
     try:
-        addr = cli.address(name)
+        addr = cli.address(name, skip_create=True)
     except Exception as e:
         if "key not found" not in str(e):
             raise
@@ -491,7 +491,7 @@ def get_balance(cli, name):
 
 def assert_balance(cli, w3, name, evm=False):
     try:
-        addr = cli.address(name)
+        addr = cli.address(name, skip_create=True)
     except Exception as e:
         if "key not found" not in str(e):
             raise

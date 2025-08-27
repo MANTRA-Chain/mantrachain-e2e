@@ -86,7 +86,7 @@ class CosmosCLI:
         }
         return denoms.get(denom, 0)
 
-    def address(self, name, bech="acc", field="address"):
+    def address(self, name, bech="acc", field="address", skip_create=False):
         try:
             output = self.raw(
                 "keys",
@@ -98,6 +98,8 @@ class CosmosCLI:
                 bech=bech,
             )
         except AssertionError as e:
+            if skip_create:
+                raise
             if "not a valid name or address" in str(e):
                 self.create_account(name, mnemonic=MNEMONICS[name], home=self.data_dir)
                 output = self.raw(
