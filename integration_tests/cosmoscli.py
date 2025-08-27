@@ -379,11 +379,10 @@ class CosmosCLI:
             name,
             multisig=f"{signer1},{signer2}",
             multisig_threshold="2",
-            **(self.get_base_kwargs() | kwargs),
+            **(self.get_kwargs() | kwargs),
         )
 
     def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
-        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "tx",
@@ -391,7 +390,7 @@ class CosmosCLI:
                 tx_file,
                 from_=signer_name,
                 multisig=multi_addr,
-                **(default_kwargs | kwargs),
+                **(self.get_kwargs() | kwargs),
             )
         )
 

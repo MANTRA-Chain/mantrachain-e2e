@@ -837,9 +837,10 @@ def fund_acc(w3, acc, fund=4000000000000000000):
 
 def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     # prepare multisig and accounts
+    signer1 = cli.address(signer1_name)
+    signer2 = cli.address(signer2_name)
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    signer1 = cli.address(signer1_name)
     amt = 4000
     cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
     acc = cli.account(multi_addr)
@@ -851,7 +852,6 @@ def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     p2_txt = tmp_path / "p2.txt"
     tx_txt = tmp_path / "tx.txt"
     amt = 1
-    signer2 = cli.address(signer2_name)
     multi_tx = cli.transfer(
         multi_addr,
         signer2,
