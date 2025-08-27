@@ -30,14 +30,19 @@ class CosmosCLI:
     ):
         self.data_dir = data_dir
         genesis_path = self.data_dir / "config" / "genesis.json"
+        self.raw = ChainCommand(cmd)
         if genesis_path.exists():
             self._genesis = json.loads(genesis_path.read_text())
             self.chain_id = self._genesis["chain_id"]
         else:
             self._genesis = {}
             self.chain_id = chain_id
+            # avoid client.yml overwrite flag in textual mode
+            self.raw(
+                "config", "set", "client", "chain-id", chain_id, home=self.data_dir
+            )
+            self.raw("config", "set", "client", "node", node_rpc, home=self.data_dir)
         self.node_rpc = node_rpc
-        self.raw = ChainCommand(cmd)
         self.output = None
         self.error = None
 
