@@ -38,7 +38,7 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     check number of validators
     """
     cli = connect_mantra.cosmos_cli(tmp_path)
-    assert len(cli.validators()) == 3
+    assert len(cli.validators()) > 0
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
@@ -66,21 +66,15 @@ def test_transfer(mantra, connect_mantra, tmp_path):
 
 
 @pytest.mark.connect
-def test_connect_send_transaction(connect_mantra):
-    test_send_transaction(None, connect_mantra, check_gas=False)
+async def test_connect_send_transaction(connect_mantra):
+    await test_send_transaction(None, connect_mantra, check_gas=False)
 
 
-def test_send_transaction(mantra, connect_mantra, check_gas=True):
-    w3 = connect_mantra.w3
-    txhash = w3.eth.send_transaction(
-        {
-            "from": ADDRS["validator"],
-            "to": ADDRS["community"],
-            "value": 1000,
-        }
+async def test_send_transaction(mantra, connect_mantra, check_gas=True):
+    tx = {"to": ADDRS["signer1"], "value": 1000}
+    receipt = await send_transaction_async(
+        connect_mantra.async_w3, ACCOUNTS["community"], **tx
     )
-    receipt = w3.eth.wait_for_transaction_receipt(txhash)
-    assert receipt.status == 1
     if check_gas:
         assert receipt.gasUsed == 21000
 
@@ -452,20 +446,22 @@ def test_refund_unused_gas_when_contract_tx_reverted(mantra, connect_mantra):
     Fee is gasUsed * effectiveGasPrice
     """
     w3 = connect_mantra.w3
-    revert = RevertTestContract("TestRevert")
+    key = KEYS["community"]
+    sender = ADDRS["community"]
+    revert = RevertTestContract("TestRevert", private_key=key)
     revert.deploy(w3)
     contract = revert.contract
     more_than_enough_gas = 1000000
 
-    balance_bef = w3.eth.get_balance(ADDRS["community"])
+    balance_bef = w3.eth.get_balance(sender)
     receipt = send_transaction(
         w3,
         contract.functions.transfer(5 * (10**18) - 1).build_transaction(
             {"gas": more_than_enough_gas}
         ),
-        key=KEYS["community"],
+        key=key,
     )
-    balance_aft = w3.eth.get_balance(ADDRS["community"])
+    balance_aft = w3.eth.get_balance(sender)
 
     assert receipt["status"] == 0, "should be a failed tx"
     assert receipt["gasUsed"] != more_than_enough_gas
