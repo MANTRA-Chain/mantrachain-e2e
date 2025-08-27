@@ -142,6 +142,16 @@
             ],
           },
         },
+        crisis: {
+          constant_fee: {
+            denom: 'uom',
+          },
+        },
+        mint: {
+          params: {
+            mint_denom: 'uom',
+          },
+        },
         staking: {
           params: {
             bond_denom: 'uom',

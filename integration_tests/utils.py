@@ -57,7 +57,7 @@ EVM_CHAIN_ID = 5887
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
-DEFAULT_GAS = 200000
+DEFAULT_GAS = 210000
 DEFAULT_FEE = int(DEFAULT_GAS_AMT * DEFAULT_GAS)
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 UOM_PER_OM = 10**6  # 10^6 uom == 1 om
@@ -770,11 +770,10 @@ def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
     return rsp
 
 
-def derive_new_account(n=1):
+def derive_new_account(n=1, mnemonic="SIGNER1_MNEMONIC"):
     # derive a new address
     account_path = f"m/44'/60'/0'/0/{n}"
-    mnemonic = os.getenv("SIGNER1_MNEMONIC")
-    return Account.from_mnemonic(mnemonic, account_path=account_path)
+    return Account.from_mnemonic(os.getenv(mnemonic), account_path=account_path)
 
 
 def derive_random_account():
