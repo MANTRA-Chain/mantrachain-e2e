@@ -5,7 +5,7 @@ import tempfile
 import requests
 from pystarport.utils import build_cli_args_safe, interact, parse_amount
 
-from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, get_sync_info
+from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, MNEMONICS, get_sync_info
 
 
 class ChainCommand:
@@ -87,15 +87,30 @@ class CosmosCLI:
         return denoms.get(denom, 0)
 
     def address(self, name, bech="acc", field="address"):
-        output = self.raw(
-            "keys",
-            "show",
-            name,
-            f"--{field}",
-            home=self.data_dir,
-            keyring_backend="test",
-            bech=bech,
-        )
+        try:
+            output = self.raw(
+                "keys",
+                "show",
+                name,
+                f"--{field}",
+                home=self.data_dir,
+                keyring_backend="test",
+                bech=bech,
+            )
+        except AssertionError as e:
+            if "not a valid name or address" in str(e):
+                self.create_account(name, mnemonic=MNEMONICS[name], home=self.data_dir)
+                output = self.raw(
+                    "keys",
+                    "show",
+                    name,
+                    f"--{field}",
+                    home=self.data_dir,
+                    keyring_backend="test",
+                    bech=bech,
+                )
+            else:
+                raise
         return output.strip().decode()
 
     def account(self, addr, **kwargs):

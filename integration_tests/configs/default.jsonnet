@@ -84,6 +84,7 @@
       'coin-type': 60,
       name: 'reserve',
       coins: '100000000000uom',
+      mnemonic: '${RESERVE_MNEMONIC}',
       vesting: '60s',
     }],
     genesis: {

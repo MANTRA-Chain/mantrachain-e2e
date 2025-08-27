@@ -40,13 +40,17 @@ from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
 load_dotenv(Path(__file__).parent.parent / "scripts/.env")
 Account.enable_unaudited_hdwallet_features()
+MNEMONICS = {
+    "validator": os.getenv("VALIDATOR1_MNEMONIC"),
+    "validator2": os.getenv("VALIDATOR2_MNEMONIC"),
+    "validator3": os.getenv("VALIDATOR3_MNEMONIC"),
+    "community": os.getenv("COMMUNITY_MNEMONIC"),
+    "signer1": os.getenv("SIGNER1_MNEMONIC"),
+    "signer2": os.getenv("SIGNER2_MNEMONIC"),
+    "reserve": os.getenv("RESERVE_MNEMONIC"),
+}
 ACCOUNTS = {
-    "validator": Account.from_mnemonic(os.getenv("VALIDATOR1_MNEMONIC")),
-    "validator2": Account.from_mnemonic(os.getenv("VALIDATOR2_MNEMONIC")),
-    "validator3": Account.from_mnemonic(os.getenv("VALIDATOR3_MNEMONIC")),
-    "community": Account.from_mnemonic(os.getenv("COMMUNITY_MNEMONIC")),
-    "signer1": Account.from_mnemonic(os.getenv("SIGNER1_MNEMONIC")),
-    "signer2": Account.from_mnemonic(os.getenv("SIGNER2_MNEMONIC")),
+    name: Account.from_mnemonic(mnemonic) for name, mnemonic in MNEMONICS.items()
 }
 KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
