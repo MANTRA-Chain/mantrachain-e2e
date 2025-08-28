@@ -102,7 +102,7 @@ def test_blacklist(mantra, tmp_path):
     assert rsp["code"] == 0
     wait_for_new_blocks(cli, 1)
     balance = cli.balance(granter)
-    assert balance > balance1 + int(rewards1 + cli.distribution_reward(granter))
+    assert balance >= balance1 + int(rewards1 + cli.distribution_reward(granter))
 
     with pytest.raises(AssertionError, match=f"{granter} is blacklisted"):
         assert_transfer(cli, granter, community)

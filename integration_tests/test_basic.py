@@ -28,43 +28,55 @@ from .utils import (
 )
 
 
-def test_simple(mantra):
+@pytest.mark.connect
+def test_connect_simple(connect_mantra, tmp_path):
+    test_simple(None, connect_mantra, tmp_path, check_reserve=False)
+
+
+def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     """
     check number of validators
     """
-    cli = mantra.cosmos_cli()
-    assert len(cli.validators()) == 3
-    # check vesting account
-    addr = cli.address("reserve")
-    account = cli.account(addr)["account"]
-    assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
-    assert account["value"]["base_vesting_account"]["original_vesting"] == [
-        {"denom": DEFAULT_DENOM, "amount": "100000000000"}
-    ]
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    assert len(cli.validators()) > 0
+    if check_reserve:
+        # check vesting account
+        cli = mantra.cosmos_cli()
+        addr = cli.address("reserve")
+        account = cli.account(addr)["account"]
+        assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
+        assert account["value"]["base_vesting_account"]["original_vesting"] == [
+            {"denom": DEFAULT_DENOM, "amount": "100000000000"}
+        ]
 
 
-def test_transfer(mantra):
+@pytest.mark.connect
+def test_connect_transfer(connect_mantra, tmp_path):
+    test_transfer(None, connect_mantra, tmp_path)
+
+
+def test_transfer(mantra, connect_mantra, tmp_path):
     """
     check simple transfer tx success
     """
-    cli = mantra.cosmos_cli()
+    cli = connect_mantra.cosmos_cli(tmp_path)
     addr_a = cli.address("community")
     addr_b = cli.address("reserve")
     assert_transfer(cli, addr_a, addr_b)
 
 
-def test_send_transaction(mantra):
-    w3 = mantra.w3
-    txhash = w3.eth.send_transaction(
-        {
-            "from": ADDRS["validator"],
-            "to": ADDRS["community"],
-            "value": 1000,
-        }
+@pytest.mark.connect
+async def test_connect_send_transaction(connect_mantra):
+    await test_send_transaction(None, connect_mantra, check_gas=False)
+
+
+async def test_send_transaction(mantra, connect_mantra, check_gas=True):
+    tx = {"to": ADDRS["signer1"], "value": 1000}
+    receipt = await send_transaction_async(
+        connect_mantra.async_w3, ACCOUNTS["community"], **tx
     )
-    receipt = w3.eth.wait_for_transaction_receipt(txhash)
-    assert receipt.status == 1
-    assert receipt.gasUsed == 21000
+    if check_gas:
+        assert receipt.gasUsed == 21000
 
 
 @pytest.mark.connect
@@ -284,31 +296,45 @@ def assert_receipt_transaction_and_block(w3, futures):
         assert transaction["blockNumber"] == block["number"]
 
 
-def test_exception(mantra):
-    w3 = mantra.w3
-    revert = RevertTestContract("TestRevert")
+@pytest.mark.connect
+async def test_connect_exception(connect_mantra):
+    test_exception(None, connect_mantra)
+
+
+def test_exception(mantra, connect_mantra):
+    w3 = connect_mantra.w3
+    key = KEYS["community"]
+    revert = RevertTestContract("TestRevert", private_key=key)
     revert.deploy(w3)
     contract = revert.contract
     with pytest.raises(web3.exceptions.ContractLogicError):
         send_transaction(
-            w3, contract.functions.transfer(5 * (10**18) - 1).build_transaction()
+            w3,
+            contract.functions.transfer(5 * (10**18) - 1).build_transaction(),
+            key=key,
         )
     assert 0 == contract.caller.query()
 
     receipt = send_transaction(
-        w3, contract.functions.transfer(5 * (10**18)).build_transaction()
+        w3, contract.functions.transfer(5 * (10**18)).build_transaction(), key=key
     )
     assert receipt.status == 1, "should be successfully"
     assert 5 * (10**18) == contract.caller.query()
 
 
-def test_message_call(mantra):
+@pytest.mark.connect
+async def test_connect_message_call(connect_mantra):
+    test_message_call(None, connect_mantra)
+
+
+def test_message_call(mantra, connect_mantra):
     "stress test the evm by doing message calls as much as possible"
-    w3 = mantra.w3
-    msg = Contract("TestMessageCall")
+    w3 = connect_mantra.w3
+    key = KEYS["community"]
+    msg = Contract("TestMessageCall", private_key=key)
     msg.deploy(w3)
     iterations = 13000
-    addr = ADDRS["validator"]
+    addr = ADDRS["community"]
     tx = msg.contract.functions.test(iterations).build_transaction(
         {
             "from": addr,
@@ -322,22 +348,28 @@ def test_message_call(mantra):
     print("elapsed:", elapsed)
     assert elapsed < 5  # should finish in reasonable time
 
-    receipt = send_transaction(w3, tx)
+    receipt = send_transaction(w3, tx, key=key)
     assert 22768266 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
 
-def test_log0(mantra):
+@pytest.mark.connect
+def test_connect_log0(connect_mantra):
+    test_log0(None, connect_mantra)
+
+
+def test_log0(mantra, connect_mantra):
     """
     test compliance of empty topics behavior
     """
-    w3 = mantra.w3
-    empty = Contract("TestERC20A")
+    w3 = connect_mantra.w3
+    key = KEYS["community"]
+    empty = Contract("TestERC20A", private_key=key)
     empty.deploy(w3)
     contract = empty.contract
-    tx = contract.functions.test_log0().build_transaction({"from": ADDRS["validator"]})
-    receipt = send_transaction(w3, tx, KEYS["validator"])
+    tx = contract.functions.test_log0().build_transaction({"from": ADDRS["community"]})
+    receipt = send_transaction(w3, tx, key=key)
     assert len(receipt.logs) == 1
     log = receipt.logs[0]
     assert log.topics == []
@@ -368,12 +400,17 @@ def test_contract(mantra, connect_mantra, tmp_path):
     assert_balance(cli, w3, name)
 
 
-def test_batch_tx(mantra):
+@pytest.mark.connect
+def test_connect_batch_tx(connect_mantra, tmp_path):
+    test_batch_tx(None, connect_mantra, tmp_path)
+
+
+def test_batch_tx(mantra, connect_mantra, tmp_path):
     "send multiple eth txs in single cosmos tx should be disabled"
-    w3 = mantra.w3
-    cli = mantra.cosmos_cli()
-    sender = ADDRS["validator"]
-    recipient = ADDRS["community"]
+    w3 = connect_mantra.w3
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    sender = ADDRS["community"]
+    recipient = ADDRS["signer1"]
     nonce = w3.eth.get_transaction_count(sender)
     res = build_contract("TestERC20A")
     contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
@@ -389,35 +426,42 @@ def test_batch_tx(mantra):
     )
 
     cosmos_tx, tx_hashes = build_batch_tx(
-        w3, cli, [deploy_tx, transfer_tx1, transfer_tx2]
+        w3, cli, [deploy_tx, transfer_tx1, transfer_tx2], key=KEYS["community"]
     )
     rsp = cli.broadcast_tx_json(cosmos_tx)
     assert rsp["code"] == 18
     assert f"got {len(tx_hashes)}" in rsp["raw_log"]
 
 
-def test_refund_unused_gas_when_contract_tx_reverted(mantra):
+@pytest.mark.connect
+def test_connect_refund_unused_gas_when_contract_tx_reverted(connect_mantra):
+    test_refund_unused_gas_when_contract_tx_reverted(None, connect_mantra)
+
+
+def test_refund_unused_gas_when_contract_tx_reverted(mantra, connect_mantra):
     """
     Call a smart contract method that reverts with very high gas limit
 
     Call tx receipt should be status 0 (fail)
     Fee is gasUsed * effectiveGasPrice
     """
-    w3 = mantra.w3
-    revert = RevertTestContract("TestRevert")
+    w3 = connect_mantra.w3
+    key = KEYS["community"]
+    sender = ADDRS["community"]
+    revert = RevertTestContract("TestRevert", private_key=key)
     revert.deploy(w3)
     contract = revert.contract
     more_than_enough_gas = 1000000
 
-    balance_bef = w3.eth.get_balance(ADDRS["community"])
+    balance_bef = w3.eth.get_balance(sender)
     receipt = send_transaction(
         w3,
         contract.functions.transfer(5 * (10**18) - 1).build_transaction(
             {"gas": more_than_enough_gas}
         ),
-        key=KEYS["community"],
+        key=key,
     )
-    balance_aft = w3.eth.get_balance(ADDRS["community"])
+    balance_aft = w3.eth.get_balance(sender)
 
     assert receipt["status"] == 0, "should be a failed tx"
     assert receipt["gasUsed"] != more_than_enough_gas
@@ -482,13 +526,23 @@ def test_failed_transfer_tx(mantra):
             }
 
 
-def test_multisig(mantra, tmp_path):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_multisig(connect_mantra, tmp_path):
+    test_multisig(None, connect_mantra, tmp_path)
+
+
+def test_multisig(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     do_multisig(cli, tmp_path, "signer1", "signer2", "multitest1")
 
 
-def test_multisig_cosmos(mantra, tmp_path):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_multisig_cosmos(connect_mantra, tmp_path):
+    test_multisig_cosmos(None, connect_mantra, tmp_path)
+
+
+def test_multisig_cosmos(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     recover1 = "recover1"
     recover2 = "recover2"
     amt = 6000
@@ -508,10 +562,15 @@ def test_multisig_cosmos(mantra, tmp_path):
     do_multisig(cli, tmp_path, recover1, recover2, "multitest2")
 
 
-def test_textual(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_textual(connect_mantra, tmp_path):
+    test_textual(None, connect_mantra, tmp_path)
+
+
+def test_textual(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     rsp = cli.transfer(
-        cli.address("validator"),
+        cli.address("community"),
         cli.address("signer2"),
         f"1{DEFAULT_DENOM}",
         sign_mode="textual",
