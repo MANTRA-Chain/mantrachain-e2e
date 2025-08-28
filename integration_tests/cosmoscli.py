@@ -797,3 +797,29 @@ class CosmosCLI:
         if idx == -1:
             raise ValueError("No JSON object found in export output")
         return json.loads(raw[idx:])
+
+    def ibc_transfer(
+        self,
+        to,
+        amount,
+        channel,  # src channel
+        generate_only=False,
+        **kwargs,
+    ):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "ibc-transfer",
+                "transfer",
+                "transfer",
+                channel,
+                to,
+                amount,
+                "-y",
+                "--generate-only" if generate_only else None,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp

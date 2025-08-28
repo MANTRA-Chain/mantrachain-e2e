@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import time
 
 import pytest
 from eth_contract.erc20 import ERC20
@@ -114,12 +115,30 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     assert balance == signer1_balance_eth == transfer_amt
 
 
+def assert_receiver_events(cli, cli2, target):
+    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
+    events = cli.tx_search(criteria)["txs"][0]["events"]
+    events = parse_events_rpc(events)
+    receiver = events.get("ibc_transfer").get("receiver")
+    assert receiver == target
+
+    time.sleep(5)
+    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
+    events = cli2.tx_search(criteria)["txs"][0]["events"]
+    events = parse_events_rpc(events)
+    receiver = events.get("ibccallbackerror-fungible_token_packet").get(
+        "ibccallbackerror-receiver"
+    )
+    assert receiver == target
+
+
 async def test_ibc_transfer(ibc):
     w3 = ibc.ibc1.async_w3
     cli = ibc.ibc1.cosmos_cli()
     cli2 = ibc.ibc2.cosmos_cli()
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
+    community = ADDRS["community"]
     addr_signer1 = eth_to_bech32(signer1)
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
@@ -140,6 +159,18 @@ async def test_ibc_transfer(ibc):
     assert_balance(cli2, ibc.ibc2.w3, escrow_addr) == transfer_amt
     assert_dynamic_fee(cli)
     assert_dup_events(cli)
+
+    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community eth addr with 5uom
+    amount = 5
+    rsp = cli.ibc_transfer(
+        community[2:],
+        f"{amount}{DEFAULT_DENOM}",
+        "channel-0",
+        from_=addr_signer1,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert_receiver_events(cli, cli2, community[2:])
+
     ibc_erc20_addr = ibc_denom_address(dst_denom)
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
