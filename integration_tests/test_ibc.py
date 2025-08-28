@@ -122,7 +122,7 @@ def assert_receiver_events(cli, cli2, target):
     receiver = events.get("ibc_transfer").get("receiver")
     assert receiver == target
 
-    time.sleep(5)
+    time.sleep(10)
     criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
     events = cli2.tx_search(criteria)["txs"][0]["events"]
     events = parse_events_rpc(events)
