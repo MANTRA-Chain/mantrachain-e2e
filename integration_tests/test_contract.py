@@ -44,8 +44,10 @@ from .utils import (
     MockERC20_ARTIFACT,
     address_to_bytes32,
     assert_weth_flow,
+    build_and_deploy_contract_async,
     build_contract,
     build_deploy_contract_async,
+    derive_new_account,
     w3_wait_for_new_blocks_async,
 )
 
@@ -351,3 +353,31 @@ async def test_deploy_multi(mantra):
     await dec(signer2, dec_amt).transact(w3, owner, to=token)
     allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
     assert allowance == amt - dec_amt
+
+
+async def test_transfer_multi(mantra):
+    w3 = mantra.async_w3
+    contract = await build_and_deploy_contract_async(
+        w3, "TestERC20A", key=KEYS["validator"]
+    )
+    token = contract.address
+    owner = ACCOUNTS["validator"]
+    transfer_amt = 1
+    base_gas_price = await w3.eth.gas_price
+    nonce_start = await w3.eth.get_transaction_count(owner.address)
+    tasks = []
+
+    receivers = [derive_new_account(4 + i).address for i in range(8)]
+    # geth 1 passed, 2 warnings in 52.25s
+    for i in range(10000):
+        receiver = receivers[i % 8]
+        nonce = nonce_start + i
+        gas_price = base_gas_price
+        tasks.append(
+            ERC20.fns.transfer(receiver, transfer_amt).transact(
+                w3, owner, to=token, nonce=nonce, gasPrice=gas_price
+            )
+        )
+    results = await asyncio.gather(*tasks)
+    for i, res in enumerate(results):
+        print("mm-hash", res.transactionHash.hex())
