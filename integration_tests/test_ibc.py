@@ -126,9 +126,7 @@ def assert_receiver_events(cli, cli2, target):
     criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
     events = cli2.tx_search(criteria)["txs"][0]["events"]
     events = parse_events_rpc(events)
-    receiver = events.get("ibccallbackerror-fungible_token_packet").get(
-        "ibccallbackerror-receiver"
-    )
+    receiver = events.get("fungible_token_packet").get("receiver")
     assert receiver == target
 
 
