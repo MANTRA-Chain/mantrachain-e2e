@@ -1,7 +1,6 @@
 import hashlib
 import json
 import math
-import time
 
 import pytest
 from eth_contract.erc20 import ERC20
@@ -122,7 +121,6 @@ def assert_receiver_events(cli, cli2, target):
     receiver = events.get("ibc_transfer").get("receiver")
     assert receiver == target
 
-    time.sleep(10)
     criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
     events = cli2.tx_search(criteria)["txs"][0]["events"]
     events = parse_events_rpc(events)
@@ -138,6 +136,7 @@ async def test_ibc_transfer(ibc):
     signer2 = ADDRS["signer2"]
     community = ADDRS["community"]
     addr_signer1 = eth_to_bech32(signer1)
+    addr_community = eth_to_bech32(community)
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
     transfer_amt = 100
@@ -147,10 +146,10 @@ async def test_ibc_transfer(ibc):
         ibc, src_chain, dst_chain, transfer_amt, addr_signer1
     )
     denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
-    dst_denom = f"ibc/{denom_hash}"
-    signer1_balance_bf = cli.balance(addr_signer1, dst_denom)
+    ibc_denom = f"ibc/{denom_hash}"
+    signer1_balance_bf = cli.balance(addr_signer1, ibc_denom)
     signer1_balance = wait_for_balance_change(
-        cli, addr_signer1, dst_denom, signer1_balance_bf
+        cli, addr_signer1, ibc_denom, signer1_balance_bf
     )
     assert signer1_balance == signer1_balance_bf + transfer_amt
     assert cli.ibc_denom_hash(path) == denom_hash
@@ -167,9 +166,15 @@ async def test_ibc_transfer(ibc):
         from_=addr_signer1,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
+
+    community_balance_bf = cli2.balance(addr_community, ibc_denom)
+    community_balance = wait_for_balance_change(
+        cli2, addr_community, ibc_denom, community_balance_bf
+    )
+    assert community_balance == community_balance_bf + amount
     assert_receiver_events(cli, cli2, community)
 
-    ibc_erc20_addr = ibc_denom_address(dst_denom)
+    ibc_erc20_addr = ibc_denom_address(ibc_denom)
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
     total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     receiver = derive_new_account(4).address
