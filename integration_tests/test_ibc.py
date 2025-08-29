@@ -161,13 +161,13 @@ async def test_ibc_transfer(ibc):
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community eth addr with 5uom
     amount = 5
     rsp = cli.ibc_transfer(
-        community[2:],
+        community,
         f"{amount}{DEFAULT_DENOM}",
         "channel-0",
         from_=addr_signer1,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    assert_receiver_events(cli, cli2, community[2:])
+    assert_receiver_events(cli, cli2, community)
 
     ibc_erc20_addr = ibc_denom_address(dst_denom)
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
