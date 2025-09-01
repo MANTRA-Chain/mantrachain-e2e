@@ -56,8 +56,8 @@ KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = "uom"
-CHAIN_ID = "mantra-canary-net-1"
-EVM_CHAIN_ID = 5887
+CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
+EVM_CHAIN_ID = os.getenv("EVM_CHAIN_ID", 5887)
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
@@ -78,7 +78,7 @@ MockERC20_ARTIFACT = json.loads(
 
 
 class Contract:
-    def __init__(self, name, private_key=KEYS["validator"], chain_id=5887):
+    def __init__(self, name, private_key=KEYS["validator"], chain_id=EVM_CHAIN_ID):
         self.chain_id = chain_id
         self.account = Account.from_key(private_key)
         self.owner = self.account.address

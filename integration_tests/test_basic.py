@@ -121,6 +121,22 @@ def test_events(mantra, connect_mantra, exp_gas_used=919699):
     for topic in expect_log["topics"]:
         assert topic in bloom
 
+    block_logs = w3.eth.get_block_receipts(txreceipt.blockNumber)[0].logs[0]
+    call = w3.provider.make_request
+    tx_logs = call("eth_getTransactionLogs", [txreceipt.transactionHash])["result"][0]
+    for k in expect_log:
+        assert expect_log[k] == block_logs[k]
+        if k == "address":
+            assert expect_log[k] == w3.to_checksum_address(tx_logs[k])
+        elif k == "data":
+            assert expect_log[k].hex() == block_logs[k].hex() == tx_logs[k][2:]
+        elif k == "topics":
+            assert expect_log[k] == [HexBytes(t) for t in tx_logs[k]]
+        elif k in ("transactionIndex", "logIndex"):
+            assert expect_log[k] == int(tx_logs[k], 16)
+        else:
+            assert expect_log[k] == tx_logs[k]
+
 
 @pytest.mark.connect
 async def test_connect_minimal_gas_price(connect_mantra):
