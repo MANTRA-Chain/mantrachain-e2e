@@ -41,20 +41,24 @@ from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
 load_dotenv(Path(__file__).parent.parent / "scripts/.env")
 Account.enable_unaudited_hdwallet_features()
+MNEMONICS = {
+    "validator": os.getenv("VALIDATOR1_MNEMONIC"),
+    "validator2": os.getenv("VALIDATOR2_MNEMONIC"),
+    "validator3": os.getenv("VALIDATOR3_MNEMONIC"),
+    "community": os.getenv("COMMUNITY_MNEMONIC"),
+    "signer1": os.getenv("SIGNER1_MNEMONIC"),
+    "signer2": os.getenv("SIGNER2_MNEMONIC"),
+    "reserve": os.getenv("RESERVE_MNEMONIC"),
+}
 ACCOUNTS = {
-    "validator": Account.from_mnemonic(os.getenv("VALIDATOR1_MNEMONIC")),
-    "validator2": Account.from_mnemonic(os.getenv("VALIDATOR2_MNEMONIC")),
-    "validator3": Account.from_mnemonic(os.getenv("VALIDATOR3_MNEMONIC")),
-    "community": Account.from_mnemonic(os.getenv("COMMUNITY_MNEMONIC")),
-    "signer1": Account.from_mnemonic(os.getenv("SIGNER1_MNEMONIC")),
-    "signer2": Account.from_mnemonic(os.getenv("SIGNER2_MNEMONIC")),
+    name: Account.from_mnemonic(mnemonic) for name, mnemonic in MNEMONICS.items()
 }
 KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = "uom"
-CHAIN_ID = "mantra-canary-net-1"
-EVM_CHAIN_ID = 5887
+CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
+EVM_CHAIN_ID = os.getenv("EVM_CHAIN_ID", 5887)
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
@@ -75,7 +79,7 @@ MockERC20_ARTIFACT = json.loads(
 
 
 class Contract:
-    def __init__(self, name, private_key=KEYS["validator"], chain_id=5887):
+    def __init__(self, name, private_key=KEYS["validator"], chain_id=EVM_CHAIN_ID):
         self.chain_id = chain_id
         self.account = Account.from_key(private_key)
         self.owner = self.account.address
@@ -477,7 +481,7 @@ def generate_isolated_address(channel_id, sender):
 
 def get_balance(cli, name):
     try:
-        addr = cli.address(name)
+        addr = cli.address(name, skip_create=True)
     except Exception as e:
         if "key not found" not in str(e):
             raise
@@ -488,7 +492,7 @@ def get_balance(cli, name):
 
 def assert_balance(cli, w3, name, evm=False):
     try:
-        addr = cli.address(name)
+        addr = cli.address(name, skip_create=True)
     except Exception as e:
         if "key not found" not in str(e):
             raise
@@ -771,11 +775,10 @@ def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
     return rsp
 
 
-def derive_new_account(n=1):
+def derive_new_account(n=1, mnemonic="SIGNER1_MNEMONIC"):
     # derive a new address
     account_path = f"m/44'/60'/0'/0/{n}"
-    mnemonic = os.getenv("SIGNER1_MNEMONIC")
-    return Account.from_mnemonic(mnemonic, account_path=account_path)
+    return Account.from_mnemonic(os.getenv(mnemonic), account_path=account_path)
 
 
 def derive_random_account():
@@ -835,9 +838,10 @@ def fund_acc(w3, acc, fund=4000000000000000000):
 
 def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     # prepare multisig and accounts
+    signer1 = cli.address(signer1_name)
+    signer2 = cli.address(signer2_name)
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    signer1 = cli.address(signer1_name)
     amt = 4000
     cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
     acc = cli.account(multi_addr)
@@ -849,7 +853,6 @@ def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     p2_txt = tmp_path / "p2.txt"
     tx_txt = tmp_path / "tx.txt"
     amt = 1
-    signer2 = cli.address(signer2_name)
     multi_tx = cli.transfer(
         multi_addr,
         signer2,

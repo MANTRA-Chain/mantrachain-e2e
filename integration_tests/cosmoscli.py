@@ -3,9 +3,9 @@ import subprocess
 import tempfile
 
 import requests
-from pystarport.utils import build_cli_args_safe, interact
+from pystarport.utils import build_cli_args_safe, interact, parse_amount
 
-from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, get_sync_info
+from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, MNEMONICS, get_sync_info
 
 
 class ChainCommand:
@@ -30,14 +30,19 @@ class CosmosCLI:
     ):
         self.data_dir = data_dir
         genesis_path = self.data_dir / "config" / "genesis.json"
+        self.raw = ChainCommand(cmd)
         if genesis_path.exists():
             self._genesis = json.loads(genesis_path.read_text())
             self.chain_id = self._genesis["chain_id"]
         else:
             self._genesis = {}
             self.chain_id = chain_id
+            # avoid client.yml overwrite flag in textual mode
+            self.raw(
+                "config", "set", "client", "chain-id", chain_id, home=self.data_dir
+            )
+            self.raw("config", "set", "client", "node", node_rpc, home=self.data_dir)
         self.node_rpc = node_rpc
-        self.raw = ChainCommand(cmd)
         self.output = None
         self.error = None
 
@@ -86,16 +91,33 @@ class CosmosCLI:
         }
         return denoms.get(denom, 0)
 
-    def address(self, name, bech="acc", field="address"):
-        output = self.raw(
-            "keys",
-            "show",
-            name,
-            f"--{field}",
-            home=self.data_dir,
-            keyring_backend="test",
-            bech=bech,
-        )
+    def address(self, name, bech="acc", field="address", skip_create=False):
+        try:
+            output = self.raw(
+                "keys",
+                "show",
+                name,
+                f"--{field}",
+                home=self.data_dir,
+                keyring_backend="test",
+                bech=bech,
+            )
+        except AssertionError as e:
+            if skip_create:
+                raise
+            if "not a valid name or address" in str(e):
+                self.create_account(name, mnemonic=MNEMONICS[name], home=self.data_dir)
+                output = self.raw(
+                    "keys",
+                    "show",
+                    name,
+                    f"--{field}",
+                    home=self.data_dir,
+                    keyring_backend="test",
+                    bech=bech,
+                )
+            else:
+                raise
         return output.strip().decode()
 
     def account(self, addr, **kwargs):
@@ -297,6 +319,23 @@ class CosmosCLI:
         res = res.get("pool") or res
         return int(res["bonded_tokens" if bonded else "not_bonded_tokens"])
 
+    def delegate_amount(self, validator_address, amt, **kwargs):
+        default_kwargs = self.get_kwargs()
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "staking",
+                "delegate",
+                validator_address,
+                amt,
+                "-y",
+                **(default_kwargs | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
     def query_tally(self, proposal_id, **kwargs):
         res = json.loads(
             self.raw(
@@ -345,11 +384,10 @@ class CosmosCLI:
             name,
             multisig=f"{signer1},{signer2}",
             multisig_threshold="2",
-            **(self.get_base_kwargs() | kwargs),
+            **(self.get_kwargs() | kwargs),
         )
 
     def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
-        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "tx",
@@ -357,7 +395,7 @@ class CosmosCLI:
                 tx_file,
                 from_=signer_name,
                 multisig=multi_addr,
-                **(default_kwargs | kwargs),
+                **(self.get_kwargs() | kwargs),
             )
         )
 
@@ -651,20 +689,35 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def withdraw_rewards(self, val_addr, **kwargs):
+    def withdraw_all_rewards(self, generate_only=False, **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
                 "distribution",
-                "withdraw-rewards",
+                "withdraw-all-rewards",
                 "-y",
-                val_addr,
+                "--generate-only" if generate_only else None,
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def distribution_reward(self, delegator_addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "distribution",
+                "rewards",
+                delegator_addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        total = res.get("total")
+        if not total or total[0] is None:
+            return 0
+        return parse_amount(total[0])
 
     def query_disabled_list(self, **kwargs):
         return json.loads(
@@ -676,7 +729,7 @@ class CosmosCLI:
             )
         ).get("disabled_list")
 
-    def grant_authorization(self, grantee, authz_type, granter, **kwargs):
+    def grant_authorization(self, grantee, authz_type, **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -685,7 +738,6 @@ class CosmosCLI:
                 grantee,
                 authz_type,
                 "-y",
-                from_=granter,
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
@@ -693,7 +745,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def exec_tx_by_grantee(self, tx_file, grantee, **kwargs):
+    def exec_tx_by_grantee(self, tx_file, **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -701,7 +753,6 @@ class CosmosCLI:
                 "exec",
                 tx_file,
                 "-y",
-                from_=grantee,
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
@@ -709,7 +760,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def revoke_authorization(self, grantee, msg_type, granter, **kwargs):
+    def revoke_authorization(self, grantee, msg_type, **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -718,7 +769,6 @@ class CosmosCLI:
                 grantee,
                 msg_type,
                 "-y",
-                from_=granter,
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
