@@ -15,10 +15,14 @@ from .utils import (
 
 
 @pytest.fixture(scope="module")
-def mantra_mempool(tmp_path_factory):
+def mantra_mempool(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra-mempool")
     yield from setup_custom_mantra(
-        path, 26300, Path(__file__).parent / "configs/long_timeout_commit.jsonnet"
+        path,
+        26300,
+        Path(__file__).parent / "configs/long_timeout_commit.jsonnet",
+        chain=chain,
     )
 
 

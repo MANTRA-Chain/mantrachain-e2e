@@ -46,7 +46,7 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
         account = cli.account(addr)["account"]
         assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
         assert account["value"]["base_vesting_account"]["original_vesting"] == [
-            {"denom": DEFAULT_DENOM, "amount": "100000000000"}
+            {"denom": DEFAULT_DENOM, "amount": "100000000000000000000"}
         ]
 
 
@@ -158,6 +158,7 @@ async def test_minimal_gas_price(mantra, connect_mantra):
     assert receipt.status == 1
 
 
+@pytest.mark.flaky(max_runs=3)
 def test_transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price

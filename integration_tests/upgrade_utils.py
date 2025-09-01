@@ -86,7 +86,7 @@ def post_init(path, base_port, config, genesis):
     )
 
 
-def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis):
+def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis, chain):
     path = tmp_path_factory.mktemp("upgrade")
     port = 26200
     configdir = Path(__file__).parent
@@ -115,6 +115,7 @@ def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis):
         post_init=post_init,
         chain_binary=str(upgrades / f"{genesis}/bin/mantrachaind"),
         genesis=genesis,
+        chain=chain,
     ) as mantra:
         yield mantra
 

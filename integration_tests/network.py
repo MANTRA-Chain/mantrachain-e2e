@@ -170,14 +170,7 @@ class ConnectMantra:
 
 def setup_mantra(path, base_port, chain):
     cfg = Path(__file__).parent / ("configs/default.jsonnet")
-    data = json.loads(
-        _jsonnet.evaluate_file(str(cfg), ext_vars={"CHAIN_CONFIG": chain})
-    )
-    data = expand(data, None, cfg)
-    with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
-        f.write(json.dumps(data))
-        f.flush()
-        yield from setup_custom_mantra(path, base_port, f.name, chain_binary=chain)
+    yield from setup_custom_mantra(path, base_port, cfg, chain=chain)
 
 
 def setup_custom_mantra(
@@ -189,40 +182,50 @@ def setup_custom_mantra(
     wait_port=True,
     relayer=cluster.Relayer.HERMES.value,
     genesis=None,
+    chain=None,
 ):
-    cmd = [
-        "pystarport",
-        "init",
-        "--config",
-        config,
-        "--data",
-        path,
-        "--base_port",
-        str(base_port),
-        "--no_remove",
-    ]
-    if relayer == cluster.Relayer.RLY.value:
-        cmd = cmd + ["--relayer", str(relayer)]
-    if chain_binary is not None:
-        cmd = cmd[:1] + ["--cmd", chain_binary] + cmd[1:]
-    print(*cmd)
-    subprocess.run(cmd, check=True)
-    if post_init is not None:
-        post_init(path, base_port, config, genesis)
-    proc = subprocess.Popen(
-        ["pystarport", "start", "--data", path, "--quiet"],
-        preexec_fn=os.setsid,
-    )
-    try:
-        if wait_port:
-            wait_for_port(ports.rpc_port(base_port))
-        c = Mantra(path / CHAIN_ID, chain_binary=chain_binary or "mantrachaind")
-        wait_for_block(c.cosmos_cli(), 1)
-        yield c
-    finally:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        # proc.terminate()
-        proc.wait()
+    if config.suffix == ".jsonnet":
+        data = json.loads(
+            _jsonnet.evaluate_file(str(config), ext_vars={"CHAIN_CONFIG": chain})
+        )
+        data = expand(data, None, config)
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+            f.write(json.dumps(data))
+            f.flush()
+            config = f.name
+            cmd = [
+                "pystarport",
+                "init",
+                "--config",
+                config,
+                "--data",
+                path,
+                "--base_port",
+                str(base_port),
+                "--no_remove",
+            ]
+            if relayer == cluster.Relayer.RLY.value:
+                cmd = cmd + ["--relayer", str(relayer)]
+            if chain_binary is not None:
+                cmd = cmd[:1] + ["--cmd", chain_binary] + cmd[1:]
+            print(*cmd)
+            subprocess.run(cmd, check=True)
+            if post_init is not None:
+                post_init(path, base_port, config, genesis)
+            proc = subprocess.Popen(
+                ["pystarport", "start", "--data", path, "--quiet"],
+                preexec_fn=os.setsid,
+            )
+            try:
+                if wait_port:
+                    wait_for_port(ports.rpc_port(base_port))
+                c = Mantra(path / CHAIN_ID, chain_binary=chain_binary or "mantrachaind")
+                wait_for_block(c.cosmos_cli(), 1)
+                yield c
+            finally:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                # proc.terminate()
+                proc.wait()
 
 
 def connect_custom_mantra():
