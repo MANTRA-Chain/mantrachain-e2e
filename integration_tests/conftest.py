@@ -7,6 +7,17 @@ from .network import (
 )
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--chain-config",
+        default="mantrachaind",
+        action="store",
+        metavar="CHAIN_CONFIG",
+        required=False,
+        help="Specify chain config to test",
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "unmarked: fallback mark for unmarked tests")
     config.addinivalue_line("markers", "slow: marks tests as slow")
@@ -61,8 +72,9 @@ def suspend_capture(pytestconfig):
 
 @pytest.fixture(scope="session", params=[True])
 def mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra")
-    yield from setup_mantra(path, 26650)
+    yield from setup_mantra(path, 26650, chain)
 
 
 @pytest.fixture(scope="session", params=[True])

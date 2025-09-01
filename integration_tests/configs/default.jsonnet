@@ -1,7 +1,9 @@
+local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
+
 {
   dotenv: '../../scripts/.env',
   'mantra-canary-net-1': {
-    cmd: 'mantrachaind',
+    cmd: chain.cmd,
     'start-flags': '--trace',
     config: {
       mempool: {
@@ -16,7 +18,7 @@
       grpc: {
         'skip-check-header': true,
       },
-      'minimum-gas-prices': '0uom',
+      'minimum-gas-prices': '0' + chain.evm_denom,
       'index-events': ['ethereum_tx.ethereumTxHash'],
       'iavl-lazy-loading': true,
       'json-rpc': {
@@ -36,15 +38,15 @@
     },
     validators: [{
       'coin-type': 60,
-      coins: '100001000000uom',
-      staked: '1000000uom',
-      gas_prices: '0.01uom',
+      coins: '100000000000000000000' + chain.evm_denom,
+      staked: '10000000000000000000' + chain.evm_denom,
+      gas_prices: '0.01' + chain.evm_denom,
       mnemonic: '${VALIDATOR1_MNEMONIC}',
     }, {
       'coin-type': 60,
-      coins: '100001000000uom',
-      staked: '1000000uom',
-      gas_prices: '0.01uom',
+      coins: '100000000000000000000' + chain.evm_denom,
+      staked: '10000000000000000000' + chain.evm_denom,
+      gas_prices: '0.01' + chain.evm_denom,
       mnemonic: '${VALIDATOR2_MNEMONIC}',
       config: {
         db_backend: 'pebbledb',
@@ -54,9 +56,9 @@
       },
     }, {
       'coin-type': 60,
-      coins: '100001000000uom',
-      staked: '1000000uom',
-      gas_prices: '0.01uom',
+      coins: '100000000000000000000' + chain.evm_denom,
+      staked: '10000000000000000000' + chain.evm_denom,
+      gas_prices: '0.01' + chain.evm_denom,
       mnemonic: '${VALIDATOR3_MNEMONIC}',
       config: {
         db_backend: 'goleveldb',
@@ -68,22 +70,22 @@
     accounts: [{
       'coin-type': 60,
       name: 'community',
-      coins: '100000000000uom',
+      coins: '100000000000000000000' + chain.evm_denom + ',1000000000000atoken',
       mnemonic: '${COMMUNITY_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'signer1',
-      coins: '200000000000uom',
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER1_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'signer2',
-      coins: '300000000000uom',
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER2_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'reserve',
-      coins: '100000000000uom',
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${RESERVE_MNEMONIC}',
       vesting: '60s',
     }],
@@ -102,7 +104,10 @@
       app_state: {
         evm: {
           params: {
-            evm_denom: 'uom',
+            evm_denom: chain.evm_denom,
+            active_static_precompiles: [
+              '0x0000000000000000000000000000000000000807',
+            ],
           },
         },
         erc20: {
@@ -111,7 +116,7 @@
           ],
           token_pairs: [{
             erc20_address: '0x4200000000000000000000000000000000000006',
-            denom: 'uom',
+            denom: chain.evm_denom,
             enabled: true,
             contract_owner: 1,
           }],
@@ -130,13 +135,13 @@
             max_deposit_period: '10s',
             min_deposit: [
               {
-                denom: 'uom',
+                denom: chain.evm_denom,
                 amount: '1',
               },
             ],
             expedited_min_deposit: [
               {
-                denom: 'uom',
+                denom: chain.evm_denom,
                 amount: '2',
               },
             ],
@@ -154,8 +159,26 @@
         },
         staking: {
           params: {
-            bond_denom: 'uom',
+            bond_denom: chain.evm_denom,
           },
+        },
+        bank: {
+          denom_metadata: [{
+            denom_units: [
+              {
+                denom: 'atoken',
+                exponent: 0,
+              },
+              {
+                denom: 'token',
+                exponent: 18,
+              },
+            ],
+            base: 'atoken',
+            display: 'token',
+            name: 'Test Coin',
+            symbol: 'ATOKEN',
+          }],
         },
       },
     },

@@ -2,11 +2,14 @@ import json
 import os
 import signal
 import subprocess
+import tempfile
 from pathlib import Path
 
+import _jsonnet
 import tomlkit
 import web3
 from pystarport import cluster, ports
+from pystarport.expansion import expand
 from requests.exceptions import (
     HTTPError,
     Timeout,
@@ -165,9 +168,16 @@ class ConnectMantra:
         self._use_websockets = use
 
 
-def setup_mantra(path, base_port):
+def setup_mantra(path, base_port, chain):
     cfg = Path(__file__).parent / ("configs/default.jsonnet")
-    yield from setup_custom_mantra(path, base_port, cfg)
+    data = json.loads(
+        _jsonnet.evaluate_file(str(cfg), ext_vars={"CHAIN_CONFIG": chain})
+    )
+    data = expand(data, None, cfg)
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+        f.write(json.dumps(data))
+        f.flush()
+        yield from setup_custom_mantra(path, base_port, f.name, chain_binary=chain)
 
 
 def setup_custom_mantra(
