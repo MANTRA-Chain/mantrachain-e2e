@@ -16,10 +16,14 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="module")
-def custom_mantra(tmp_path_factory):
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("permission")
     yield from setup_custom_mantra(
-        path, 26700, Path(__file__).parent / "configs/accounts.jsonnet"
+        path,
+        26700,
+        Path(__file__).parent / "configs/accounts.jsonnet",
+        chain=chain,
     )
 
 

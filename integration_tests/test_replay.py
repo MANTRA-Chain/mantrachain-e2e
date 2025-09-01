@@ -11,10 +11,14 @@ from .utils import send_transaction
 
 
 @pytest.fixture(scope="module")
-def mantra_replay(tmp_path_factory):
+def mantra_replay(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra-replay")
     yield from setup_custom_mantra(
-        path, 26400, Path(__file__).parent / "configs/default.jsonnet"
+        path,
+        26400,
+        Path(__file__).parent / "configs/default.jsonnet",
+        chain=chain,
     )
 
 

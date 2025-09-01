@@ -52,13 +52,14 @@ def call_hermes_cmd(hermes, incentivized, version):
     )
 
 
-def prepare_network(tmp_path, name):
+def prepare_network(tmp_path, name, chain):
     name = f"configs/{name}.jsonnet"
     with contextmanager(setup_custom_mantra)(
         tmp_path,
         27000,
         Path(__file__).parent / name,
         relayer=cluster.Relayer.HERMES.value,
+        chain=chain,
     ) as ibc1:
         cli = ibc1.cosmos_cli()
         ibc2 = Mantra(ibc1.base_dir.parent / "mantra-canary-net-2")
