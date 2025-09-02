@@ -9,6 +9,7 @@ from web3.datastructures import AttributeDict
 from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
+    EVM_CHAIN_ID,
     KEYS,
     Contract,
     sign_transaction,
@@ -103,7 +104,7 @@ def test_pruned_node(mantra):
             "value": 0,
             "type": 2,
             "accessList": [],
-            "chainId": 5887,
+            "chainId": EVM_CHAIN_ID,
         }
     )
     assert tx1 == tx2

@@ -86,6 +86,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
       'coin-type': 60,
       name: 'reserve',
       coins: '100000000000' + chain.evm_denom,
+      mnemonic: '${RESERVE_MNEMONIC}',
       vesting: '60s',
     }],
     genesis: {

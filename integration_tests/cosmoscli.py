@@ -5,7 +5,7 @@ import tempfile
 import requests
 from pystarport.utils import build_cli_args_safe, interact, parse_amount
 
-from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, get_sync_info
+from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, MNEMONICS, get_sync_info
 
 
 class ChainCommand:
@@ -30,14 +30,19 @@ class CosmosCLI:
     ):
         self.data_dir = data_dir
         genesis_path = self.data_dir / "config" / "genesis.json"
+        self.raw = ChainCommand(cmd)
         if genesis_path.exists():
             self._genesis = json.loads(genesis_path.read_text())
             self.chain_id = self._genesis["chain_id"]
         else:
             self._genesis = {}
             self.chain_id = chain_id
+            # avoid client.yml overwrite flag in textual mode
+            self.raw(
+                "config", "set", "client", "chain-id", chain_id, home=self.data_dir
+            )
+            self.raw("config", "set", "client", "node", node_rpc, home=self.data_dir)
         self.node_rpc = node_rpc
-        self.raw = ChainCommand(cmd)
         self.output = None
         self.error = None
 
@@ -86,16 +91,33 @@ class CosmosCLI:
         }
         return denoms.get(denom, 0)
 
-    def address(self, name, bech="acc", field="address"):
-        output = self.raw(
-            "keys",
-            "show",
-            name,
-            f"--{field}",
-            home=self.data_dir,
-            keyring_backend="test",
-            bech=bech,
-        )
+    def address(self, name, bech="acc", field="address", skip_create=False):
+        try:
+            output = self.raw(
+                "keys",
+                "show",
+                name,
+                f"--{field}",
+                home=self.data_dir,
+                keyring_backend="test",
+                bech=bech,
+            )
+        except AssertionError as e:
+            if skip_create:
+                raise
+            if "not a valid name or address" in str(e):
+                self.create_account(name, mnemonic=MNEMONICS[name], home=self.data_dir)
+                output = self.raw(
+                    "keys",
+                    "show",
+                    name,
+                    f"--{field}",
+                    home=self.data_dir,
+                    keyring_backend="test",
+                    bech=bech,
+                )
+            else:
+                raise
         return output.strip().decode()
 
     def account(self, addr, **kwargs):
@@ -362,11 +384,10 @@ class CosmosCLI:
             name,
             multisig=f"{signer1},{signer2}",
             multisig_threshold="2",
-            **(self.get_base_kwargs() | kwargs),
+            **(self.get_kwargs() | kwargs),
         )
 
     def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
-        default_kwargs = self.get_kwargs()
         return json.loads(
             self.raw(
                 "tx",
@@ -374,7 +395,7 @@ class CosmosCLI:
                 tx_file,
                 from_=signer_name,
                 multisig=multi_addr,
-                **(default_kwargs | kwargs),
+                **(self.get_kwargs() | kwargs),
             )
         )
 

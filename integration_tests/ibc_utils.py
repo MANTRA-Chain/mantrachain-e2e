@@ -8,6 +8,7 @@ from pystarport import cluster, ports
 
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
+    CHAIN_ID,
     DEFAULT_DENOM,
     escrow_address,
     wait_for_new_blocks,
@@ -34,7 +35,7 @@ def call_hermes_cmd(hermes, incentivized, version):
             "--b-port",
             "transfer",
             "--a-chain",
-            "mantra-canary-net-1",
+            CHAIN_ID,
             "--b-chain",
             "mantra-canary-net-2",
             "--new-client-connection",
