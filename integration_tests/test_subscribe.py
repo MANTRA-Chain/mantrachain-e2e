@@ -106,8 +106,8 @@ def test_subscribe_basic(mantra: Mantra):
 
     async def transfer_test(c: Client, w3, contract, address):
         sub_id = await c.subscribe("logs", {"address": address})
-        to = ADDRS["community"]
-        _from = ADDRS["validator"]
+        to = ADDRS["signer1"]
+        _from = ADDRS["community"]
         total = 5
         topic = abi.event_signature_to_log_topic("Transfer(address,address,uint256)")
         for i in range(total):

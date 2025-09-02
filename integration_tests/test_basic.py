@@ -163,12 +163,13 @@ async def test_minimal_gas_price(mantra, connect_mantra):
 def test_transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
 
     # send transaction
     txhash_1 = send_transaction(
         w3,
-        {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price},
-        KEYS["validator"],
+        {"to": receiver, "value": 10000, "gasPrice": gas_price},
     )["transactionHash"]
     tx1 = w3.eth.get_transaction(txhash_1)
     assert tx1["transactionIndex"] == 0
@@ -180,12 +181,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) - 1,
+                "nonce": w3.eth.get_transaction_count(sender) - 1,
             },
-            KEYS["validator"],
         )
     assert "tx already in mempool" in str(exc)
 
@@ -194,12 +194,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": w3.eth.gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) + 1,
+                "nonce": w3.eth.get_transaction_count(sender) + 1,
             },
-            KEYS["validator"],
         )
     assert "invalid sequence" in str(exc)
 
@@ -208,12 +207,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": w3.eth.gas_price,
                 "gas": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
     assert "intrinsic gas too low" in str(exc)
 
@@ -222,11 +220,10 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
     assert "insufficient fee" in str(exc)
 

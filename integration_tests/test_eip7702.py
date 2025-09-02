@@ -2,7 +2,7 @@ import pytest
 import web3
 
 from .network import Geth
-from .utils import ACCOUNTS, ADDRS, KEYS
+from .utils import ACCOUNTS, ADDRS
 from .utils import send_transaction as send_transaction_sync
 
 
@@ -56,10 +56,10 @@ async def test_eoa(cluster):
     data["nonce"] = w3_sync.eth.get_transaction_count(ADDRS["validator"]) + 1
 
     if isinstance(cluster, Geth):
-        send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
+        send_transaction_sync(w3_sync, data, check=False)
     else:
         with pytest.raises(web3.exceptions.Web3RPCError, match="invalid sequence"):
-            send_transaction_sync(w3_sync, data, KEYS["validator"], check=False)
+            send_transaction_sync(w3_sync, data, check=False)
 
     # clear code
     clear_tx = dict(tx)
