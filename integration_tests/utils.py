@@ -55,7 +55,7 @@ ACCOUNTS = {
 KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
-DEFAULT_DENOM = "uom"
+DEFAULT_DENOM = os.getenv("EVM_DENOM", "uom")
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
 EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 5887))
 # the default initial base fee used by integration tests
@@ -750,7 +750,11 @@ def approve_proposal(n, events, event_query_tx=False):
     proposal_id = ev["proposal_id"]
     for i in range(len(n.config["validators"])):
         rsp = n.cosmos_cli(i).gov_vote(
-            "validator", proposal_id, "yes", event_query_tx, gas_prices="0.8uom"
+            "validator",
+            proposal_id,
+            "yes",
+            event_query_tx,
+            gas_prices=f"0.8{DEFAULT_DENOM}",
         )
         assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 1)

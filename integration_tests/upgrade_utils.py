@@ -11,6 +11,7 @@ from pystarport.cluster import SUPERVISOR_CONFIG_FILE
 
 from .network import setup_custom_mantra
 from .utils import (
+    DEFAULT_DENOM,
     approve_proposal,
     bech32_to_eth,
     edit_ini_sections,
@@ -20,7 +21,7 @@ from .utils import (
 )
 
 
-def do_upgrade(c, plan_name, target, gas_prices="0.8uom"):
+def do_upgrade(c, plan_name, target, gas_prices=f"0.8{DEFAULT_DENOM}"):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
@@ -32,7 +33,7 @@ def do_upgrade(c, plan_name, target, gas_prices="0.8uom"):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": "1uom",
+            "deposit": f"1{DEFAULT_DENOM}",
         },
         gas=300000,
         gas_prices=gas_prices,

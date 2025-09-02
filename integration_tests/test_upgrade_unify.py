@@ -10,6 +10,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    DEFAULT_DENOM,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_set_tokenfactory_denom,
@@ -51,7 +52,7 @@ async def exec(c, tmp_path):
 
     addr_a = cli.address(community)
     subdenom = f"admin{time.time()}"
-    gas_prices = "1uom"
+    gas_prices = f"1{DEFAULT_DENOM}"
     height = cli.block_height()
     target_height = height + 15
 
