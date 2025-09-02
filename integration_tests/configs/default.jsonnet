@@ -70,22 +70,22 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
     accounts: [{
       'coin-type': 60,
       name: 'community',
-      coins: '100000000000' + chain.evm_denom,
+      coins: '100000000000000000000' + chain.evm_denom + ',1000000000000atoken',
       mnemonic: '${COMMUNITY_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'signer1',
-      coins: '200000000000' + chain.evm_denom,
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER1_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'signer2',
-      coins: '300000000000' + chain.evm_denom,
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER2_MNEMONIC}',
     }, {
       'coin-type': 60,
       name: 'reserve',
-      coins: '100000000000' + chain.evm_denom,
+      coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${RESERVE_MNEMONIC}',
       vesting: '60s',
     }],
@@ -105,6 +105,9 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
         evm: {
           params: {
             evm_denom: chain.evm_denom,
+            active_static_precompiles: [
+              '0x0000000000000000000000000000000000000807',
+            ],
           },
         },
         erc20: {
@@ -158,6 +161,24 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
           params: {
             bond_denom: chain.evm_denom,
           },
+        },
+        bank: {
+          denom_metadata: [{
+            denom_units: [
+              {
+                denom: 'atoken',
+                exponent: 0,
+              },
+              {
+                denom: 'token',
+                exponent: 18,
+              },
+            ],
+            base: 'atoken',
+            display: 'token',
+            name: 'Test Coin',
+            symbol: 'ATOKEN',
+          }],
         },
       },
     },
