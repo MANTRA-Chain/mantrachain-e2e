@@ -25,6 +25,7 @@ from .utils import (
     recover_community,
     send_transaction,
     transfer_via_cosmos,
+    w3_wait_for_new_blocks,
 )
 
 
@@ -252,6 +253,7 @@ def test_transaction(mantra):
         ),
     }
 
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         future_to_contract = {
             executor.submit(contract.deploy, w3): name
@@ -261,6 +263,7 @@ def test_transaction(mantra):
         assert_receipt_transaction_and_block(w3, future_to_contract)
 
     # Do Multiple contract calls
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         futures = []
         futures.append(
@@ -274,14 +277,10 @@ def test_transaction(mantra):
 
         assert_receipt_transaction_and_block(w3, futures)
 
-        # revert transaction
-        assert futures[0].result()["status"] == 0
-        # normal transaction
-        assert futures[1].result()["status"] == 1
-        # normal transaction
-        assert futures[2].result()["status"] == 1
-        # normal transaction
-        assert futures[3].result()["status"] == 1
+        # revert transaction for 1st, normal transaction for others
+        statuses = [0, 1, 1, 1]
+        for i, future in enumerate(futures):
+            assert future.result()["status"] == statuses[i]
 
 
 def assert_receipt_transaction_and_block(w3, futures):
