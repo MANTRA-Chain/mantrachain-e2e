@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 from eth_bloom import BloomFilter
-from eth_utils import abi, big_endian_to_int
+from eth_contract.erc20 import ERC20
+from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 from web3.datastructures import AttributeDict
 
@@ -10,8 +11,8 @@ from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
     EVM_CHAIN_ID,
-    KEYS,
     Contract,
+    address_to_bytes32,
     sign_transaction,
     wait_for_new_blocks,
 )
@@ -39,10 +40,11 @@ def test_pruned_node(mantra):
     contract = Contract("TestERC20A")
     contract.deploy(w3)
     erc20 = contract.contract
-    tx = erc20.functions.transfer(ADDRS["community"], 10).build_transaction(
-        {"from": ADDRS["validator"]}
-    )
-    signed = sign_transaction(w3, tx, KEYS["validator"])
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
+    tx = erc20.functions.transfer(receiver, 10).build_transaction({"from": sender})
+    nonce = w3.eth.get_transaction_count(sender)
+    signed = sign_transaction(w3, tx)
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
     exp_gas_used = 51437
 
@@ -57,11 +59,9 @@ def test_pruned_node(mantra):
     expect_log = {
         "address": erc20.address,
         "topics": [
-            HexBytes(
-                abi.event_signature_to_log_topic("Transfer(address,address,uint256)")
-            ),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS["validator"])),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS["community"])),
+            ERC20.events.Transfer.topic,
+            address_to_bytes32(sender),
+            address_to_bytes32(receiver),
         ],
         "data": HexBytes(data),
         "transactionIndex": 0,
@@ -72,11 +72,9 @@ def test_pruned_node(mantra):
 
     # check get_balance and eth_call don't work on pruned state
     with pytest.raises(Exception):
-        w3.eth.get_balance(ADDRS["validator"], block_identifier=txreceipt.blockNumber)
+        w3.eth.get_balance(sender, block_identifier=txreceipt.blockNumber)
     with pytest.raises(Exception):
-        erc20.caller(block_identifier=txreceipt.blockNumber).balanceOf(
-            ADDRS["validator"]
-        )
+        erc20.caller(block_identifier=txreceipt.blockNumber).balanceOf(sender)
 
     # check block bloom
     block = w3.eth.get_block(txreceipt.blockNumber)
@@ -93,14 +91,10 @@ def test_pruned_node(mantra):
     )
     exp_tx = AttributeDict(
         {
-            "from": "0x57f96e6B86CdeFdB3d412547816a82E3E0EbF9D2",
+            "from": sender,
             "gas": exp_gas_used,
-            "input": HexBytes(
-                "0xa9059cbb000000000000000000000000378c50d9264c63f3f92b806d4ee56e"
-                "9d86ffb3ec000000000000000000000000000000000000000000000000000000"
-                "000000000a"
-            ),
-            "nonce": 2,
+            "input": ERC20.fns.transfer(receiver, 10).data,
+            "nonce": nonce,
             "to": erc20.address,
             "transactionIndex": 0,
             "value": 0,

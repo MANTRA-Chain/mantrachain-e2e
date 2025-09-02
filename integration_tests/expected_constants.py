@@ -1,9 +1,9 @@
 EXPECTED_CALLTRACERS = {
-    "from": "0x57f96e6b86cdefdb3d412547816a82e3e0ebf9d2",
+    "from": "0x378c50d9264c63f3f92b806d4ee56e9d86ffb3ec",
     "gas": "0x5208",
     "gasUsed": "0x5208",
     "input": "0x",
-    "to": "0x378c50d9264c63f3f92b806d4ee56e9d86ffb3ec",
+    "to": "0xd09f7c8c4529cb5d387aa17e33d707c529a6f694",
     "type": "CALL",
     "value": "0x64",
 }

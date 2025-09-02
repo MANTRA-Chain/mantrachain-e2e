@@ -87,7 +87,7 @@ def test_trace_transactions_tracers(mantra):
     def process(w3):
         fund_acc(w3, acc)
         call = w3.provider.make_request
-        tx = {"to": ADDRS["community"], "value": 100, "gasPrice": price}
+        tx = {"to": ADDRS["signer1"], "value": 100, "gasPrice": price}
         tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
         tx_hash = f"0x{tx_hash}"
         tx_res = call(method, [tx_hash])

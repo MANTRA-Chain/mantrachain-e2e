@@ -5,7 +5,13 @@ import tempfile
 import requests
 from pystarport.utils import build_cli_args_safe, interact, parse_amount
 
-from .utils import DEFAULT_GAS, DEFAULT_GAS_PRICE, MNEMONICS, get_sync_info
+from .utils import (
+    DEFAULT_DENOM,
+    DEFAULT_GAS,
+    DEFAULT_GAS_PRICE,
+    MNEMONICS,
+    get_sync_info,
+)
 
 
 class ChainCommand:
@@ -84,7 +90,7 @@ class CosmosCLI:
             )
         )["balances"]
 
-    def balance(self, addr, denom="uom", height=0):
+    def balance(self, addr, denom=DEFAULT_DENOM, height=0):
         denoms = {
             coin["denom"]: int(coin["amount"])
             for coin in self.balances(addr, height=height)

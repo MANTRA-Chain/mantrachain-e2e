@@ -116,7 +116,7 @@ def test_mempool_nonce(mantra_mempool, tmp_path):
     )
     p = cli.get_params("consensus")["params"]
     assert int(p["block"]["max_bytes"]) == max_bytes
-    sender = ADDRS["validator"]
+    sender = ADDRS["community"]
     orig_nonce = w3.eth.get_transaction_count(sender)
     height = w3.eth.get_block_number()
     local_nonce = orig_nonce
@@ -124,13 +124,13 @@ def test_mempool_nonce(mantra_mempool, tmp_path):
 
     def send_with_nonce(nonce):
         tx = {
-            "to": ADDRS["community"],
+            "to": ADDRS["signer1"],
             "value": 1,
             "gas": 4121000,
             "data": "0x" + "00" * tx_bytes,
             "nonce": nonce,
         }
-        signed = sign_transaction(w3, tx, KEYS["validator"])
+        signed = sign_transaction(w3, tx, KEYS["community"])
         txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
         return txhash
 

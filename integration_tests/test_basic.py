@@ -25,6 +25,7 @@ from .utils import (
     recover_community,
     send_transaction,
     transfer_via_cosmos,
+    w3_wait_for_new_blocks,
 )
 
 
@@ -42,11 +43,12 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
+        denom = cli.get_params("evm")["params"]["evm_denom"]
         addr = cli.address("reserve")
         account = cli.account(addr)["account"]
         assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
         assert account["value"]["base_vesting_account"]["original_vesting"] == [
-            {"denom": DEFAULT_DENOM, "amount": "100000000000000000000"}
+            {"denom": denom, "amount": "100000000000000000000"}
         ]
 
 
@@ -158,27 +160,28 @@ async def test_minimal_gas_price(mantra, connect_mantra):
     assert receipt.status == 1
 
 
-@pytest.mark.flaky(max_runs=3)
 def test_transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price
     gas = 21000
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
 
     # send transaction
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
-    txhash_1 = send_transaction(w3, data, KEYS["validator"])["transactionHash"]
+    txhash_1 = send_transaction(w3, data)["transactionHash"]
     tx1 = w3.eth.get_transaction(txhash_1)
     assert tx1["transactionIndex"] == 0
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
-        data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"]) - 1
-        send_transaction(w3, data, KEYS["validator"])
+        data["nonce"] = w3.eth.get_transaction_count(sender) - 1
+        send_transaction(w3, data)
 
-    data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"]) + 1
-    txhash = send_transaction(w3, data, KEYS["validator"], check=False)
+    data["nonce"] = w3.eth.get_transaction_count(sender) + 1
+    txhash = send_transaction(w3, data, check=False)
 
-    data["nonce"] = w3.eth.get_transaction_count(ADDRS["validator"])
-    receipt = send_transaction(w3, data, KEYS["validator"])
+    data["nonce"] = w3.eth.get_transaction_count(sender)
+    receipt = send_transaction(w3, data)
     assert receipt["status"] == 1
 
     # tx queued due to nonce gap should be success now
@@ -189,24 +192,22 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": w3.eth.gas_price,
                 "gas": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="insufficient fee"):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gas": gas,
                 "gasPrice": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
 
     # Deploy multiple contracts
@@ -229,6 +230,7 @@ def test_transaction(mantra):
         ),
     }
 
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         future_to_contract = {
             executor.submit(contract.deploy, w3): name
@@ -238,6 +240,7 @@ def test_transaction(mantra):
         assert_receipt_transaction_and_block(w3, future_to_contract)
 
     # Do Multiple contract calls
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         futures = []
         futures.append(
@@ -251,14 +254,10 @@ def test_transaction(mantra):
 
         assert_receipt_transaction_and_block(w3, futures)
 
-        # revert transaction
-        assert futures[0].result()["status"] == 0
-        # normal transaction
-        assert futures[1].result()["status"] == 1
-        # normal transaction
-        assert futures[2].result()["status"] == 1
-        # normal transaction
-        assert futures[3].result()["status"] == 1
+        # revert transaction for 1st, normal transaction for others
+        statuses = [0, 1, 1, 1]
+        for i, future in enumerate(futures):
+            assert future.result()["status"] == statuses[i]
 
 
 def assert_receipt_transaction_and_block(w3, futures):

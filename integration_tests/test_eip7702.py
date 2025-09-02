@@ -20,7 +20,10 @@ def cluster(request, mantra, geth):
 @pytest.mark.asyncio
 async def test_eoa(cluster):
     w3 = cluster.async_w3
-    acct = ACCOUNTS["validator"]
+    name = "validator"
+    acct = ACCOUNTS[name]
+    sender = ADDRS[name]
+    key = KEYS[name]
     chain_id = await w3.eth.chain_id
     nonce = await w3.eth.get_transaction_count(acct.address)
     authz = acct.sign_authorization(
@@ -51,10 +54,10 @@ async def test_eoa(cluster):
 
     gas_price = cluster.w3.eth.gas_price
     gas = 21000
-    data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
-    data["nonce"] = cluster.w3.eth.get_transaction_count(ADDRS["validator"]) + 1
+    data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}
+    data["nonce"] = cluster.w3.eth.get_transaction_count(sender) + 1
 
-    hash = send_transaction_sync(cluster.w3, data, KEYS["validator"], check=False)
+    hash = send_transaction_sync(cluster.w3, data, key=key, check=False)
 
     if isinstance(cluster, Geth):
         with pytest.raises(web3.exceptions.TransactionNotFound):
@@ -81,3 +84,7 @@ async def test_eoa(cluster):
     assert res.status == 1
     reset_code = await w3.eth.get_code(acct.address)
     assert reset_code.hex().startswith(""), "Code was not clear!"
+
+    # TODO: https://github.com/cosmos/evm/issues/493
+    data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}
+    send_transaction_sync(cluster.w3, data, key=key)["transactionHash"]

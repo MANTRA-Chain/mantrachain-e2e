@@ -7,7 +7,6 @@ from pystarport import cluster, ports
 
 from .utils import (
     ADDRS,
-    KEYS,
     Greeter,
     get_sync_info,
     send_transaction,
@@ -20,14 +19,14 @@ def test_statesync(mantra):
     w3 = mantra.w3
     tx_value = 10000
     gas_price = w3.eth.gas_price
-    initial_balance = w3.eth.get_balance(ADDRS["community"])
-    tx = {"to": ADDRS["community"], "value": tx_value, "gasPrice": gas_price}
-    txhash_0 = send_transaction(w3, tx, KEYS["validator"])["transactionHash"].hex()
+    initial_balance = w3.eth.get_balance(ADDRS["signer1"])
+    tx = {"to": ADDRS["signer1"], "value": tx_value, "gasPrice": gas_price}
+    txhash_0 = send_transaction(w3, tx)["transactionHash"].hex()
 
-    greeter = Greeter("Greeter", KEYS["validator"])
+    greeter = Greeter("Greeter")
     txhash_1 = greeter.deploy(w3)["transactionHash"].hex()
 
-    assert w3.eth.get_balance(ADDRS["community"]) == initial_balance + tx_value
+    assert w3.eth.get_balance(ADDRS["signer1"]) == initial_balance + tx_value
 
     # Wait 5 more block (sometimes not enough blocks can not work)
     cli0 = mantra.cosmos_cli(0)
@@ -82,7 +81,7 @@ def test_statesync(mantra):
         statesync_w3.eth.get_transaction(txhash_1)
 
     # execute new transactions
-    txhash_2 = send_transaction(w3, tx, KEYS["validator"])["transactionHash"].hex()
+    txhash_2 = send_transaction(w3, tx)["transactionHash"].hex()
     txhash_3 = greeter.transfer("world")["transactionHash"].hex()
     # Wait 1 more block
     wait_for_block(clustercli.cosmos_cli(i), cli0.block_height() + 1)
@@ -94,7 +93,7 @@ def test_statesync(mantra):
     assert statesync_w3.eth.get_transaction(txhash_2) is not None
     assert statesync_w3.eth.get_transaction(txhash_3) is not None
     assert (
-        statesync_w3.eth.get_balance(ADDRS["community"])
+        statesync_w3.eth.get_balance(ADDRS["signer1"])
         == initial_balance + tx_value + tx_value
     )
 
