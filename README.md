@@ -47,7 +47,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```
    or specific binary
    ```sh
-   export EVM_DENOM="atest" && pytest -vv -s test_basic.py::test_simple --chain-config evmd
+   pytest -vv -s test_basic.py::test_simple --chain-config evmd
    ```
 
 ### Nix Build Targets

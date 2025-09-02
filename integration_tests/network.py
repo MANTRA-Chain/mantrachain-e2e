@@ -2,7 +2,6 @@ import json
 import os
 import signal
 import subprocess
-import tempfile
 from pathlib import Path
 
 import _jsonnet

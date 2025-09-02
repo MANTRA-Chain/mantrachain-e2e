@@ -43,11 +43,12 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
+        denom = cli.get_params("evm")["params"]["evm_denom"]
         addr = cli.address("reserve")
         account = cli.account(addr)["account"]
         assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
         assert account["value"]["base_vesting_account"]["original_vesting"] == [
-            {"denom": DEFAULT_DENOM, "amount": "100000000000000000000"}
+            {"denom": denom, "amount": "100000000000000000000"}
         ]
 
 
