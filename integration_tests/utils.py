@@ -57,7 +57,7 @@ ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = "uom"
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
-EVM_CHAIN_ID = os.getenv("EVM_CHAIN_ID", 5887)
+EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 5887))
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = 0.01
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
