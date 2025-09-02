@@ -159,7 +159,6 @@ async def test_minimal_gas_price(mantra, connect_mantra):
     assert receipt.status == 1
 
 
-@pytest.mark.flaky(max_runs=3)
 def test_transaction(mantra):
     w3 = mantra.w3
     gas_price = w3.eth.gas_price

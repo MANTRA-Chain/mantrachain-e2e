@@ -105,6 +105,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
         evm: {
           params: {
             evm_denom: chain.evm_denom,
+            allow_unprotected_txs: true,
             active_static_precompiles: [
               '0x0000000000000000000000000000000000000807',
             ],
