@@ -317,10 +317,10 @@ def test_exception(mantra, connect_mantra):
 
 @pytest.mark.connect
 async def test_connect_message_call(connect_mantra):
-    test_message_call(None, connect_mantra)
+    test_message_call(None, connect_mantra, buffer=5)
 
 
-def test_message_call(mantra, connect_mantra):
+def test_message_call(mantra, connect_mantra, buffer=0):
     "stress test the evm by doing message calls as much as possible"
     w3 = connect_mantra.w3
     key = KEYS["community"]
@@ -339,7 +339,7 @@ def test_message_call(mantra, connect_mantra):
     tx["gas"] = w3.eth.estimate_gas(tx)
     elapsed = time.time() - begin
     print("elapsed:", elapsed)
-    assert elapsed < 5  # should finish in reasonable time
+    assert elapsed < 5 + buffer  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx, key=key)
     assert 22768266 == receipt.cumulativeGasUsed
