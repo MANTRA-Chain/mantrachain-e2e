@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -353,8 +354,8 @@ async def test_deploy_multi(mantra):
     assert allowance == amt - dec_amt
 
 
-async def test_transfer_multi(mantra):
-    w3 = mantra.async_w3
+async def test_transfer_multi(geth):
+    w3 = geth.async_w3
     contract = await build_and_deploy_contract_async(
         w3, "TestERC20A", key=KEYS["validator"]
     )
@@ -366,7 +367,7 @@ async def test_transfer_multi(mantra):
     tasks = []
 
     receivers = [derive_new_account(4 + i).address for i in range(8)]
-    # geth 1 passed, 2 warnings in 52.25s
+    begin = time.time()
     for i in range(10000):
         receiver = receivers[i % 8]
         nonce = nonce_start + i
@@ -376,6 +377,5 @@ async def test_transfer_multi(mantra):
                 w3, owner, to=token, nonce=nonce, gasPrice=gas_price
             )
         )
-    results = await asyncio.gather(*tasks)
-    for i, res in enumerate(results):
-        print("mm-hash", res.transactionHash.hex())
+    await asyncio.gather(*tasks)
+    print("total time", time.time() - begin)
