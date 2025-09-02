@@ -13,7 +13,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
     'app-config': {
       chain_id: 'mantra-canary-net-1',
       evm: {
-        'evm-chain-id': 5887,
+        'evm-chain-id': chain.evm_chain_id,
       },
       grpc: {
         'skip-check-header': true,
