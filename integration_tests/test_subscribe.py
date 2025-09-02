@@ -134,11 +134,12 @@ def test_subscribe_basic(mantra: Mantra):
         iterations = 10000
         tx = contract.functions.test(iterations).build_transaction()
         raw_transactions = []
-        for key_from in KEYS.values():
-            signed = sign_transaction(w3, tx, key_from)
-            raw_transactions.append(signed.raw_transaction)
+        for key in KEYS.values():
+            if key != "reserve":
+                signed = sign_transaction(w3, tx, key)
+                raw_transactions.append(signed.raw_transaction)
         send_raw_transactions(w3, raw_transactions)
-        total = len(KEYS) * iterations
+        total = len(raw_transactions) * iterations
         msgs = [await c.recv_subscription(sub_id) for i in range(total)]
         assert len(msgs) == total
         assert all(msg["topics"] == [f"0x{TEST_EVENT_TOPIC.hex()}"] for msg in msgs)
