@@ -42,10 +42,12 @@ class BankMethod(enum.IntEnum):
 @pytest.mark.asyncio
 async def test_bank_precompile(mantra):
     w3 = mantra.async_w3
-    await ensure_multicall3_deployed(w3, ACCOUNTS["validator"], gasPrice=GAS_PRICE)
+    acct = ACCOUNTS["community"]
+    validator = ACCOUNTS["validator"]
+    await ensure_multicall3_deployed(w3, validator, gasPrice=GAS_PRICE)
 
     bank = to_checksum_address("0x0000000000000000000000000000000000000807")
-    user = ADDRS["community"]
+    user = acct.address
     denom = "atoken"
     calls = [
         Call3(bank, data=BankMethod.NAME.args(denom.encode())),
@@ -75,35 +77,31 @@ async def test_bank_precompile(mantra):
         amount.to_bytes(32, "big"),
         denom.encode(),
     )
-    await send_transaction(
-        w3, ACCOUNTS["community"], to=bank, data=data, gasPrice=GAS_PRICE
-    )
+    await send_transaction(w3, acct, to=bank, data=data, gasPrice=GAS_PRICE)
 
     with pytest.raises(web3.exceptions.ContractLogicError):
         # wrong user fail
-        await send_transaction(
-            w3, ACCOUNTS["validator"], to=bank, data=data, gasPrice=GAS_PRICE
-        )
+        await send_transaction(w3, validator, to=bank, data=data, gasPrice=GAS_PRICE)
 
 
 @pytest.mark.asyncio
 async def test_bank_erc20(mantra):
     w3 = mantra.async_w3
-    await ensure_create2_deployed(w3, ACCOUNTS["validator"], gasPrice=GAS_PRICE)
-    await ensure_multicall3_deployed(w3, ACCOUNTS["validator"], gasPrice=GAS_PRICE)
+    acct = ACCOUNTS["community"]
+    validator = ACCOUNTS["validator"]
+    await ensure_create2_deployed(w3, validator, gasPrice=GAS_PRICE)
+    await ensure_multicall3_deployed(w3, validator, gasPrice=GAS_PRICE)
 
     bank = to_checksum_address("0x0000000000000000000000000000000000000807")
-    user = ADDRS["community"]
+    user = acct.address
     denom = "atoken"
 
     initcode = ERC20Bin + encode(["string", "address"], [denom, bank])
-    token = await create2_deploy(
-        w3, ACCOUNTS["validator"], initcode, ERC20Salt, gasPrice=GAS_PRICE
-    )
+    token = await create2_deploy(w3, validator, initcode, ERC20Salt, gasPrice=GAS_PRICE)
 
     test_user = to_checksum_address(b"\x01" * 20)
     await ERC20.fns.transfer(test_user, 1).transact(
-        w3, ACCOUNTS["community"], to=token, gasPrice=GAS_PRICE
+        w3, acct, to=token, gasPrice=GAS_PRICE
     )
 
     expected = ["Test Coin", "ATOKEN", 18, 1000000000000, 1]
@@ -118,14 +116,14 @@ async def test_bank_erc20(mantra):
     assert expected == result
 
     # owner can transfer funds on bank precompile directly
-    recipient = ADDRS["validator"]
+    recipient = validator.address
     amount = 1000
     before = (
         await ERC20.fns.balanceOf(user).call(w3, to=token),
         await ERC20.fns.balanceOf(recipient).call(w3, to=token),
     )
     await ERC20.fns.transfer(recipient, amount).transact(
-        w3, ACCOUNTS["community"], to=token, gasPrice=GAS_PRICE
+        w3, acct, to=token, gasPrice=GAS_PRICE
     )
     after = (
         await ERC20.fns.balanceOf(user).call(w3, to=token),
