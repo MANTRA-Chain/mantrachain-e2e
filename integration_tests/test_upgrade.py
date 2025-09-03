@@ -16,6 +16,7 @@ from .utils import (
     DEFAULT_DENOM,
     DEFAULT_FEE,
     DEFAULT_GAS_PRICE,
+    EVM_CHAIN_ID,
     Greeter,
     assert_create_tokenfactory_denom,
     assert_set_tokenfactory_denom,
@@ -52,6 +53,16 @@ def patch_app_mempool(path, max_txs):
     path.write_text(tomlkit.dumps(cfg))
 
 
+def patch_app_evm_chain_ids(c):
+    for i in range(3):
+        path = c.cosmos_cli(i=i).data_dir / "config/app.toml"
+        cfg = tomlkit.parse(path.read_text())
+        cfg["evm"] = {
+            "evm-chain-id": EVM_CHAIN_ID,
+        }
+        path.write_text(tomlkit.dumps(cfg))
+
+
 def get_tx(base_port, hash):
     p = ports.api_port(base_port)
     url = f"http://127.0.0.1:{p}/cosmos/tx/v1beta1/txs/{hash}"
@@ -71,6 +82,7 @@ def is_subset(small, big):
 
 
 def exec(c, tmp_path):
+    legacy_chain_id = 5887
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     community = "community"
@@ -128,7 +140,7 @@ def exec(c, tmp_path):
     amt = int(balance - DEFAULT_FEE - 1e6)
     assert_transfer(cli, addr_a, addr_b, amt=amt)
     # check set contract tx works
-    greeter = Greeter("Greeter", acc_b.key)
+    greeter = Greeter("Greeter", acc_b.key, chain_id=legacy_chain_id)
     greeter.deploy(c.w3)
     contract = greeter.contract
     assert "Hello" == contract.caller.greet()
@@ -209,6 +221,22 @@ def exec(c, tmp_path):
 
     cli = do_upgrade(c, "v5.0.0-rc7", target_height, gas_prices=DEFAULT_GAS_PRICE)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc7")
+
+    height = cli.block_height()
+    target_height = height + 15
+
+    cli = do_upgrade(c, "v5.0.0-rc8", target_height, gas_prices=DEFAULT_GAS_PRICE)
+
+    print(c.supervisorctl("stop", "all"))
+    patch_app_evm_chain_ids(c)
+    c.supervisorctl(
+        "start",
+        "mantra-canary-net-1-node0",
+        "mantra-canary-net-1-node1",
+        "mantra-canary-net-1-node2",
+    )
+    wait_for_new_blocks(cli, 1)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc8")
 
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
