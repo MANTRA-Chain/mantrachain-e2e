@@ -134,8 +134,8 @@ def test_subscribe_basic(mantra: Mantra):
         iterations = 10000
         tx = contract.functions.test(iterations).build_transaction()
         raw_transactions = []
-        for key in KEYS.values():
-            if key != "reserve":
+        for name, key in KEYS.items():
+            if name != "reserve":
                 signed = sign_transaction(w3, tx, key)
                 raw_transactions.append(signed.raw_transaction)
         send_raw_transactions(w3, raw_transactions)

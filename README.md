@@ -27,8 +27,6 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```
    or config with other binary 
    ```sh
-   cd evmd; go build -tags pebbledb -o ../build/evmd ./cmd/evmd; cd ..
-   cp build/evmd $GOROOT/bin
    jsonnet --ext-str CHAIN_CONFIG=evmd integration_tests/configs/default.jsonnet | jq
    ```
 
@@ -53,6 +51,8 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```
    or specific binary
    ```sh
+   cd evmd; go build -tags pebbledb -o ../build/evmd ./cmd/evmd; cd ..
+   cp build/evmd $GOROOT/bin
    pytest -vv -s test_basic.py::test_simple --chain-config evmd
    ```
 
