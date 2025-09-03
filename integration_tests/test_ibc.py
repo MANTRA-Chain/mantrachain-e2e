@@ -35,11 +35,12 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="module")
-def ibc(tmp_path_factory):
+def ibc(request, tmp_path_factory):
     "prepare-network"
     name = "ibc"
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp(name)
-    yield from prepare_network(path, name)
+    yield from prepare_network(path, name, chain)
 
 
 def assert_dynamic_fee(cli):

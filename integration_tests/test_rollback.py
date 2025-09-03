@@ -37,7 +37,8 @@ def post_init(broken_binary):
 
 
 @pytest.fixture(scope="module")
-def custom_mantra(tmp_path_factory):
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("rollback")
 
     cmd = [
@@ -58,6 +59,7 @@ def custom_mantra(tmp_path_factory):
         Path(__file__).parent / "configs/rollback.jsonnet",
         post_init=post_init(broken_binary),
         wait_port=False,
+        chain=chain,
     )
 
 

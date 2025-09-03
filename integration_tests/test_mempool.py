@@ -15,10 +15,14 @@ from .utils import (
 
 
 @pytest.fixture(scope="module")
-def mantra_mempool(tmp_path_factory):
+def mantra_mempool(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra-mempool")
     yield from setup_custom_mantra(
-        path, 26300, Path(__file__).parent / "configs/long_timeout_commit.jsonnet"
+        path,
+        26300,
+        Path(__file__).parent / "configs/long_timeout_commit.jsonnet",
+        chain=chain,
     )
 
 
@@ -92,7 +96,7 @@ def test_mempool_nonce(mantra_mempool):
     w3: Web3 = mantra_mempool.w3
     cli = mantra_mempool.cosmos_cli(0)
     wait_for_new_blocks(cli, 1, sleep=0.1)
-    sender = ADDRS["validator"]
+    sender = ADDRS["community"]
     orig_nonce = w3.eth.get_transaction_count(sender)
     height = w3.eth.get_block_number()
     local_nonce = orig_nonce
@@ -100,13 +104,13 @@ def test_mempool_nonce(mantra_mempool):
 
     def send_with_nonce(nonce):
         tx = {
-            "to": ADDRS["community"],
+            "to": ADDRS["signer1"],
             "value": 1,
             "gas": 4121000,
             "data": "0x" + "00" * tx_bytes,
             "nonce": nonce,
         }
-        signed = sign_transaction(w3, tx, KEYS["validator"])
+        signed = sign_transaction(w3, tx, KEYS["community"])
         txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
         return txhash
 

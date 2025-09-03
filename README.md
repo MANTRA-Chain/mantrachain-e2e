@@ -23,7 +23,11 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 
 2. **Configuration (config to set up local nodes):**
    ```sh
-   jsonnet integration_tests/configs/default.jsonnet | jq
+   jsonnet --ext-str CHAIN_CONFIG=mantrachaind integration_tests/configs/default.jsonnet | jq
+   ```
+   or config with other binary 
+   ```sh
+   jsonnet --ext-str CHAIN_CONFIG=evmd integration_tests/configs/default.jsonnet | jq
    ```
 
 3. **Run tests:**
@@ -44,6 +48,12 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    or more specific
    ```sh
    pytest -vv -s test_basic.py::test_multisig
+   ```
+   or specific binary
+   ```sh
+   cd evmd; go build -tags pebbledb -o ../build/evmd ./cmd/evmd; cd ..
+   cp build/evmd $GOROOT/bin
+   pytest -vv -s test_basic.py::test_simple --chain-config evmd
    ```
 
 ### Nix Build Targets

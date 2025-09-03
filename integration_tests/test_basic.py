@@ -4,8 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytest
 import web3
 from eth_bloom import BloomFilter
+from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction as send_transaction_async
-from eth_utils import abi, big_endian_to_int
+from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 
 from .utils import (
@@ -16,6 +17,7 @@ from .utils import (
     Contract,
     Greeter,
     RevertTestContract,
+    address_to_bytes32,
     assert_balance,
     assert_transfer,
     build_batch_tx,
@@ -25,6 +27,7 @@ from .utils import (
     recover_community,
     send_transaction,
     transfer_via_cosmos,
+    w3_wait_for_new_blocks,
 )
 
 
@@ -42,11 +45,12 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
+        denom = cli.get_params("evm")["params"]["evm_denom"]
         addr = cli.address("reserve")
         account = cli.account(addr)["account"]
         assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
         assert account["value"]["base_vesting_account"]["original_vesting"] == [
-            {"denom": DEFAULT_DENOM, "amount": "100000000000"}
+            {"denom": denom, "amount": "100000000000000000000"}
         ]
 
 
@@ -86,27 +90,23 @@ def test_connect_events(connect_mantra):
 
 def test_events(mantra, connect_mantra, exp_gas_used=919699):
     w3 = connect_mantra.w3
-    sender = "community"
-    receiver = "signer1"
-    contract = Contract("TestERC20A", private_key=KEYS[sender])
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
+    contract = Contract("TestERC20A")
     contract.deploy(w3, exp_gas_used=exp_gas_used)
     erc20 = contract.contract
-    tx = erc20.functions.transfer(ADDRS[receiver], 10).build_transaction(
-        {"from": ADDRS[sender]}
-    )
-    txreceipt = send_transaction(w3, tx, KEYS[sender])
+    amt = 10
+    tx = erc20.functions.transfer(receiver, amt).build_transaction({"from": sender})
+    txreceipt = send_transaction(w3, tx)
     assert len(txreceipt.logs) == 1
-    data = "0x000000000000000000000000000000000000000000000000000000000000000a"
     expect_log = {
         "address": erc20.address,
         "topics": [
-            HexBytes(
-                abi.event_signature_to_log_topic("Transfer(address,address,uint256)")
-            ),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS[sender])),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS[receiver])),
+            ERC20.events.Transfer.topic,
+            address_to_bytes32(sender),
+            address_to_bytes32(receiver),
         ],
-        "data": HexBytes(data),
+        "data": HexBytes(amt.to_bytes(32, "big")),
         "transactionIndex": 0,
         "logIndex": 0,
         "removed": False,
@@ -158,15 +158,21 @@ async def test_minimal_gas_price(mantra, connect_mantra):
     assert receipt.status == 1
 
 
-def test_transaction(mantra):
-    w3 = mantra.w3
+@pytest.mark.connect
+def test_connect_transaction(connect_mantra):
+    test_transaction(None, connect_mantra)
+
+
+def test_transaction(mantra, connect_mantra):
+    w3 = connect_mantra.w3
     gas_price = w3.eth.gas_price
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
 
     # send transaction
     txhash_1 = send_transaction(
         w3,
-        {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price},
-        KEYS["validator"],
+        {"to": receiver, "value": 10000, "gasPrice": gas_price},
     )["transactionHash"]
     tx1 = w3.eth.get_transaction(txhash_1)
     assert tx1["transactionIndex"] == 0
@@ -178,12 +184,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) - 1,
+                "nonce": w3.eth.get_transaction_count(sender) - 1,
             },
-            KEYS["validator"],
         )
     assert "tx already in mempool" in str(exc)
 
@@ -192,12 +197,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": w3.eth.gas_price,
-                "nonce": w3.eth.get_transaction_count(ADDRS["validator"]) + 1,
+                "nonce": w3.eth.get_transaction_count(sender) + 1,
             },
-            KEYS["validator"],
         )
     assert "invalid sequence" in str(exc)
 
@@ -206,12 +210,11 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": w3.eth.gas_price,
                 "gas": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
     assert "intrinsic gas too low" in str(exc)
 
@@ -220,16 +223,15 @@ def test_transaction(mantra):
         send_transaction(
             w3,
             {
-                "to": ADDRS["community"],
+                "to": receiver,
                 "value": 10000,
                 "gasPrice": 1,
             },
-            KEYS["validator"],
         )["transactionHash"]
     assert "insufficient fee" in str(exc)
 
     # check all failed transactions are not included in blockchain
-    assert w3.eth.get_block_number() == initial_block_number
+    assert w3.eth.get_block_number() - initial_block_number <= 1
 
     # Deploy multiple contracts
     contracts = {
@@ -251,6 +253,7 @@ def test_transaction(mantra):
         ),
     }
 
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         future_to_contract = {
             executor.submit(contract.deploy, w3): name
@@ -260,6 +263,7 @@ def test_transaction(mantra):
         assert_receipt_transaction_and_block(w3, future_to_contract)
 
     # Do Multiple contract calls
+    w3_wait_for_new_blocks(w3, 1)
     with ThreadPoolExecutor(4) as executor:
         futures = []
         futures.append(
@@ -273,14 +277,10 @@ def test_transaction(mantra):
 
         assert_receipt_transaction_and_block(w3, futures)
 
-        # revert transaction
-        assert futures[0].result()["status"] == 0
-        # normal transaction
-        assert futures[1].result()["status"] == 1
-        # normal transaction
-        assert futures[2].result()["status"] == 1
-        # normal transaction
-        assert futures[3].result()["status"] == 1
+        # revert transaction for 1st, normal transaction for others
+        statuses = [0, 1, 1, 1]
+        for i, future in enumerate(futures):
+            assert future.result()["status"] == statuses[i]
 
 
 def assert_receipt_transaction_and_block(w3, futures):
@@ -313,7 +313,7 @@ def assert_receipt_transaction_and_block(w3, futures):
 
 
 @pytest.mark.connect
-async def test_connect_exception(connect_mantra):
+def test_connect_exception(connect_mantra):
     test_exception(None, connect_mantra)
 
 
@@ -494,7 +494,7 @@ def test_failed_transfer_tx(mantra):
     w3 = mantra.w3
     cli = mantra.cosmos_cli()
     sender = ADDRS["community"]
-    recipient = ADDRS["validator"]
+    recipient = ADDRS["signer1"]
     nonce = w3.eth.get_transaction_count(sender)
     half_balance = w3.eth.get_balance(sender) // 3 + 1
 

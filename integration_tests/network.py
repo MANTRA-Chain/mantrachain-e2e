@@ -4,9 +4,11 @@ import signal
 import subprocess
 from pathlib import Path
 
+import _jsonnet
 import tomlkit
 import web3
 from pystarport import cluster, ports
+from pystarport.expansion import expand
 from requests.exceptions import (
     HTTPError,
     Timeout,
@@ -165,9 +167,9 @@ class ConnectMantra:
         self._use_websockets = use
 
 
-def setup_mantra(path, base_port):
+def setup_mantra(path, base_port, chain):
     cfg = Path(__file__).parent / ("configs/default.jsonnet")
-    yield from setup_custom_mantra(path, base_port, cfg)
+    yield from setup_custom_mantra(path, base_port, cfg, chain=chain)
 
 
 def setup_custom_mantra(
@@ -179,7 +181,18 @@ def setup_custom_mantra(
     wait_port=True,
     relayer=cluster.Relayer.HERMES.value,
     genesis=None,
+    chain=None,
 ):
+    assert config.suffix == ".jsonnet"
+
+    # expand jsonnet with ext vars
+    data = json.loads(
+        _jsonnet.evaluate_file(str(config), ext_vars={"CHAIN_CONFIG": chain})
+    )
+    data = expand(data, None, config)
+    config = path / "expanded_config.json"
+    config.write_text(json.dumps(data, indent=2))
+
     cmd = [
         "pystarport",
         "init",
@@ -206,7 +219,7 @@ def setup_custom_mantra(
     try:
         if wait_port:
             wait_for_port(ports.rpc_port(base_port))
-        c = Mantra(path / CHAIN_ID, chain_binary=chain_binary or "mantrachaind")
+        c = Mantra(path / CHAIN_ID, chain_binary=chain_binary or chain)
         wait_for_block(c.cosmos_cli(), 1)
         yield c
     finally:

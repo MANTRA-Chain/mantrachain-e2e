@@ -13,6 +13,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    DEFAULT_DENOM,
     DEFAULT_FEE,
     DEFAULT_GAS_PRICE,
     Greeter,
@@ -32,9 +33,14 @@ pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
-def custom_mantra(tmp_path_factory):
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     yield from setup_mantra_upgrade(
-        tmp_path_factory, "upgrade-test-package", "cosmovisor", "genesis"
+        tmp_path_factory,
+        "upgrade-test-package",
+        "cosmovisor",
+        "genesis",
+        chain=chain,
     )
 
 
@@ -80,7 +86,7 @@ def exec(c, tmp_path):
     addr_a = cli.address(community)
 
     subdenom = f"admin{time.time()}"
-    gas_prices = "1uom"
+    gas_prices = f"1{DEFAULT_DENOM}"
 
     p = cli.get_params("feemarket")
     p["min_base_gas_price"] = "0.010000000000000000"

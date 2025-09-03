@@ -22,10 +22,14 @@ pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
-def custom_mantra(tmp_path_factory):
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("fee-history")
     yield from setup_custom_mantra(
-        path, 26500, Path(__file__).parent / "configs/fee-history.jsonnet"
+        path,
+        26500,
+        Path(__file__).parent / "configs/fee-history.jsonnet",
+        chain=chain,
     )
 
 

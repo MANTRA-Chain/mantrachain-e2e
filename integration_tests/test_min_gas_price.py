@@ -15,26 +15,38 @@ from .utils import (
 
 
 @pytest.fixture(scope="module")
-def custom_mantra_eq(tmp_path_factory):
+def custom_mantra_eq(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("min-gas-price-eq")
     yield from setup_custom_mantra(
-        path, 26500, Path(__file__).parent / "configs/min_gas_price_eq.jsonnet"
+        path,
+        26500,
+        Path(__file__).parent / "configs/min_gas_price_eq.jsonnet",
+        chain=chain,
     )
 
 
 @pytest.fixture(scope="module")
-def custom_mantra(tmp_path_factory):
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("min-gas-price")
     yield from setup_custom_mantra(
-        path, 26530, Path(__file__).parent / "configs/min_gas_price.jsonnet"
+        path,
+        26530,
+        Path(__file__).parent / "configs/min_gas_price.jsonnet",
+        chain=chain,
     )
 
 
 @pytest.fixture(scope="module")
-def custom_mantra_lte(tmp_path_factory):
+def custom_mantra_lte(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("min-gas-price-lte")
     yield from setup_custom_mantra(
-        path, 26560, Path(__file__).parent / "configs/min_gas_price_lte.jsonnet"
+        path,
+        26560,
+        Path(__file__).parent / "configs/min_gas_price_lte.jsonnet",
+        chain=chain,
     )
 
 

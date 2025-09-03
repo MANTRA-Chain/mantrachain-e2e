@@ -99,8 +99,13 @@ def test_override_state(mantra):
     assert ("",) == w3.codec.decode(("string",), result)
 
 
+@pytest.mark.connect
+async def test_connect_opcode(connect_mantra):
+    await test_opcode(None, connect_mantra)
+
+
 @pytest.mark.asyncio
-async def test_opcode(mantra):
-    contract = await build_and_deploy_contract_async(mantra.async_w3, "Random")
+async def test_opcode(mantra, connect_mantra):
+    contract = await build_and_deploy_contract_async(connect_mantra.async_w3, "Random")
     res = await contract.caller.randomTokenId()
     assert res > 0, res
