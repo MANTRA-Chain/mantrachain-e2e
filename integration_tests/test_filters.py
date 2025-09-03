@@ -18,7 +18,7 @@ async def test_get_logs_by_topic(mantra):
     contract = await build_and_deploy_contract_async(w3, "Greeter")
     topic = f"0x{Web3.keccak(text='ChangeGreeting(address,string)').hex()}"
     tx = await contract.functions.setGreeting("world").build_transaction()
-    await send_transaction(w3, ACCOUNTS["validator"], **tx)
+    await send_transaction(w3, ACCOUNTS["community"], **tx)
 
     current = await w3.eth.block_number
     # invalid block ranges
@@ -81,7 +81,7 @@ async def test_pending_transaction_filter(mantra):
     flt = await w3.eth.filter("pending")
     assert await flt.get_new_entries() == []
     tx = {"to": ADDRS["signer1"], "value": 1000}
-    receipt = await send_transaction(w3, ACCOUNTS["validator"], **tx)
+    receipt = await send_transaction(w3, ACCOUNTS["community"], **tx)
     assert receipt.status == 1
     assert receipt["transactionHash"] in await flt.get_new_entries()
 
@@ -92,7 +92,7 @@ async def test_block_filter(mantra):
     # new blocks
     await w3_wait_for_new_blocks_async(w3, 1)
     tx = {"to": ADDRS["signer1"], "value": 1000}
-    receipt = await send_transaction(w3, ACCOUNTS["validator"], **tx)
+    receipt = await send_transaction(w3, ACCOUNTS["community"], **tx)
     assert receipt.status == 1
     blocks = await flt.get_new_entries()
     assert len(blocks) >= 1
@@ -107,7 +107,7 @@ async def test_event_log_filter(mantra):
         from_block=current_height
     )
     tx = await contract.functions.setGreeting("world").build_transaction()
-    tx_receipt = await send_transaction(w3, ACCOUNTS["validator"], **tx)
+    tx_receipt = await send_transaction(w3, ACCOUNTS["community"], **tx)
     log = contract.events.ChangeGreeting().process_receipt(tx_receipt)[0]
     assert log["event"] == "ChangeGreeting"
     new_entries = await event_filter.get_new_entries()

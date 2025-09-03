@@ -87,4 +87,4 @@ async def test_transfers_not_allowed(custom_mantra):
     ]
 
     await asyncio.gather(*user_tasks)
-    assert_transfer(cli, cli.address("validator"), cli.address("community"))
+    assert_transfer(cli, cli.address("community"), cli.address("signer1"))
