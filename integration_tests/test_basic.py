@@ -4,8 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytest
 import web3
 from eth_bloom import BloomFilter
+from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction as send_transaction_async
-from eth_utils import abi, big_endian_to_int
+from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 
 from .utils import (
@@ -16,6 +17,7 @@ from .utils import (
     Contract,
     Greeter,
     RevertTestContract,
+    address_to_bytes32,
     assert_balance,
     assert_transfer,
     build_batch_tx,
@@ -88,27 +90,23 @@ def test_connect_events(connect_mantra):
 
 def test_events(mantra, connect_mantra, exp_gas_used=919699):
     w3 = connect_mantra.w3
-    sender = "community"
-    receiver = "signer1"
-    contract = Contract("TestERC20A", private_key=KEYS[sender])
+    sender = ADDRS["community"]
+    receiver = ADDRS["signer1"]
+    contract = Contract("TestERC20A")
     contract.deploy(w3, exp_gas_used=exp_gas_used)
     erc20 = contract.contract
-    tx = erc20.functions.transfer(ADDRS[receiver], 10).build_transaction(
-        {"from": ADDRS[sender]}
-    )
-    txreceipt = send_transaction(w3, tx, KEYS[sender])
+    amt = 10
+    tx = erc20.functions.transfer(receiver, amt).build_transaction({"from": sender})
+    txreceipt = send_transaction(w3, tx)
     assert len(txreceipt.logs) == 1
-    data = "0x000000000000000000000000000000000000000000000000000000000000000a"
     expect_log = {
         "address": erc20.address,
         "topics": [
-            HexBytes(
-                abi.event_signature_to_log_topic("Transfer(address,address,uint256)")
-            ),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS[sender])),
-            HexBytes(b"\x00" * 12 + HexBytes(ADDRS[receiver])),
+            ERC20.events.Transfer.topic,
+            address_to_bytes32(sender),
+            address_to_bytes32(receiver),
         ],
-        "data": HexBytes(data),
+        "data": HexBytes(amt.to_bytes(32, "big")),
         "transactionIndex": 0,
         "logIndex": 0,
         "removed": False,

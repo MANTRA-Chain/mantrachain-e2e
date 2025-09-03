@@ -2,6 +2,11 @@ local config = import 'default.jsonnet';
 
 config {
   'mantra-canary-net-1'+: {
+    'app-config'+: {
+      evm+: {
+        'evm-chain-id': 5887,
+      },
+    },
     validators: [validator {
       'coin-type':: validator['coin-type'],
       'app-config'+: {

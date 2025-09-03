@@ -42,7 +42,8 @@ def test_pruned_node(mantra):
     erc20 = contract.contract
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
-    tx = erc20.functions.transfer(receiver, 10).build_transaction({"from": sender})
+    amt = 10
+    tx = erc20.functions.transfer(receiver, amt).build_transaction({"from": sender})
     nonce = w3.eth.get_transaction_count(sender)
     signed = sign_transaction(w3, tx)
     txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -55,7 +56,6 @@ def test_pruned_node(mantra):
     txreceipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert txreceipt.gasUsed == exp_gas_used
     assert len(txreceipt.logs) == 1
-    data = "0x000000000000000000000000000000000000000000000000000000000000000a"
     expect_log = {
         "address": erc20.address,
         "topics": [
@@ -63,7 +63,7 @@ def test_pruned_node(mantra):
             address_to_bytes32(sender),
             address_to_bytes32(receiver),
         ],
-        "data": HexBytes(data),
+        "data": HexBytes((amt).to_bytes(32, "big")),
         "transactionIndex": 0,
         "logIndex": 0,
         "removed": False,
