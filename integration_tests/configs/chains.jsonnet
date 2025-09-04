@@ -2,7 +2,6 @@
   evmd: {
     evm_denom: 'atest',
     cmd: 'evmd',
-    chain_id: 9001,
     evm_chain_id: 262144,
     evm: {},
     feemarket: {
@@ -15,7 +14,6 @@
   mantrachaind: {
     evm_denom: 'uom',
     cmd: 'mantrachaind',
-    chain_id: 'mantra-canary-net-1',
     evm_chain_id: 7888,
     evm: {
       params: {
