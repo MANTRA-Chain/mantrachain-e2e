@@ -13,6 +13,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
     'app-config': {
       evm: {
         'evm-chain-id': chain.evm_chain_id,
+        'block-executor': 'block-stm',
       },
       grpc: {
         'skip-check-header': true,

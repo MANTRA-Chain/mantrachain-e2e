@@ -1,7 +1,7 @@
 {
   lib,
   stdenv,
-  buildGo123Module,
+  buildGo124Module,
   fetchFromGitHub,
   rev ? "dirty",
   nativeByteOrder ? true, # nativeByteOrder mode will panic on big endian machines
@@ -14,9 +14,9 @@ let
   wasmvmVersion = "v3.0.0";
 
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo123Module; };
+  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo124Module; };
   buildStdenv = buildPackages.stdenv;
-  buildGo123Module' = if stdenv.isLinux then buildPackages.buildGo123Module else buildGo123Module;
+  buildGo124Module' = if stdenv.isLinux then buildPackages.buildGo124Module else buildGo124Module;
 
   # Download wasmvm libraries as fixed-output derivations
   wasmvmLibs = {
@@ -73,7 +73,7 @@ let
     ];
 
 in
-buildGo123Module' rec {
+buildGo124Module' rec {
   inherit
     pname
     version
@@ -84,10 +84,10 @@ buildGo123Module' rec {
   src = fetchFromGitHub {
     owner = "mmsqe";
     repo = pname;
-    rev = "d7590d9bf3d35c390f31f82a6b423a6dde806c07";
-    hash = "sha256-/1e7/mDvtuw5MDMMyhuHlUax2Gpl61uf26r62DlVYx8=";
+    rev = "a1cb3e4cfa5436ae24eb58ca69b1548735a9fa19";
+    hash = "sha256-zNsXZi2fzDZPkMRIAU/e4d2k/8K9QSrIPW1yTSI1sfA=";
   };
-  vendorHash = "sha256-4OG4ZvHoXtlGMYWN5ubCBUyc0nTQro3tbxiq9Z12RUU=";
+  vendorHash = "sha256-wxcdj3qmTJJb2sLE6xCRafMj1YwwspIBwP9rn4bKyTs=";
   proxyVendor = true;
   subPackages = [ "cmd/mantrachaind" ];
   CGO_ENABLED = "1";
