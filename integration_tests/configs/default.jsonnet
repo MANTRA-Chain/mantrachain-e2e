@@ -11,7 +11,6 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
       },
     },
     'app-config': {
-      chain_id: 'mantra-canary-net-1',
       evm: {
         'evm-chain-id': chain.evm_chain_id,
       },
