@@ -22,6 +22,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unmarked: fallback mark for unmarked tests")
     config.addinivalue_line("markers", "slow: marks tests as slow")
     config.addinivalue_line("markers", "asyncio: marks tests as asyncio")
+    config.addinivalue_line("markers", "wasm: marks tests as wasm")
     config.addinivalue_line("markers", "connect: marks connect related tests")
 
 

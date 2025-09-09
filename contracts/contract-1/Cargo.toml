@@ -1,0 +1,31 @@
+[package]
+authors.workspace       = true
+description             = "Contract 1 of the wasm testing framework"
+documentation.workspace = true
+edition.workspace       = true
+homepage.workspace      = true
+license.workspace       = true
+name                    = "contract-1"
+publish.workspace       = true
+repository.workspace    = true
+version                 = "0.2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cosmwasm-schema.workspace         = true
+cosmwasm-std.workspace            = true
+cw-migrate-error-derive.workspace = true
+cw-ownable.workspace              = true
+cw-storage-plus.workspace         = true
+cw-utils.workspace                = true
+cw2.workspace                     = true
+mantra-utils.workspace            = true
+schemars.workspace                = true
+semver.workspace                  = true
+serde.workspace                   = true
+thiserror.workspace               = true
+
+[dev-dependencies]
+cw-multi-test.workspace = true
