@@ -12,11 +12,16 @@ pkgs.mkShell {
     pkgs.cosmovisor
     pkgs.start-scripts
     pkgs.hermes
+    pkgs.cargo
+    pkgs.rustc
+    pkgs.rustfmt
     pkgs.solc
   ] ++ pkgs.lib.optionals includeMantrachaind [
     pkgs.mantrachaind
   ];
   shellHook = ''
     export TMPDIR=/tmp
+    # Add wasm32-unknown-unknown target
+    rustup target add wasm32-unknown-unknown 2>/dev/null || true
   '';
 }

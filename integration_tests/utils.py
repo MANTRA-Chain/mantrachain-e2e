@@ -375,7 +375,7 @@ def build_contract(name) -> dict:
         "--abi",
         "--bin",
         "--bin-runtime",
-        f"contracts/contracts/{name}.sol",
+        f"integration_tests/contracts/contracts/{name}.sol",
         "-o",
         "build",
         "--overwrite",
@@ -387,9 +387,9 @@ def build_contract(name) -> dict:
         "none",
         "--no-cbor-metadata",
         "--base-path",
-        "contracts",
+        "integration_tests/contracts",
         "--include-path",
-        "contracts/openzeppelin/contracts",
+        "integration_tests/contracts/openzeppelin/contracts",
     ]
     print(*cmd)
     subprocess.run(cmd, check=True)
@@ -1010,3 +1010,17 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert receiver_balance == receiver_balance_bf + approve_amt
     receiver_balance_bf = receiver_balance
+
+
+def modify_command_in_supervisor_config(ini: Path, fn, chain_binary, **kwargs):
+    "replace the first node with the instrumented binary"
+    pattern = rf"^command = ({re.escape(chain_binary)} .*$)"
+    ini.write_text(
+        re.sub(
+            pattern,
+            lambda m: f"command = {fn(m.group(1))}",
+            ini.read_text(),
+            flags=re.M,
+            **kwargs,
+        )
+    )
