@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 from pystarport import ports
 
+from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
     KEYS,
@@ -12,9 +15,21 @@ from .utils import (
 origin_cmd = None
 
 
+@pytest.fixture(scope="module")
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("default")
+    yield from setup_custom_mantra(
+        path,
+        27100,
+        Path(__file__).parent / "configs/default.jsonnet",
+        chain=chain,
+    )
+
+
 @pytest.mark.unmarked
 @pytest.mark.parametrize("max_gas_wanted", [80000000, 40000000, 25000000, 500000, None])
-def test_tx_inclusion(mantra, max_gas_wanted):
+def test_tx_inclusion(custom_mantra, max_gas_wanted):
     """
     - send multiple heavy transactions at the same time.
     - check they are included in consecutively blocks without failure.
@@ -31,19 +46,19 @@ def test_tx_inclusion(mantra, max_gas_wanted):
         return f"{origin_cmd} --evm.max-tx-gas-wanted {max_gas_wanted}"
 
     modify_command_in_supervisor_config(
-        mantra.base_dir / "tasks.ini",
+        custom_mantra.base_dir / "tasks.ini",
         lambda cmd: fn(cmd),
-        mantra.chain_binary,
+        custom_mantra.chain_binary,
     )
-    mantra.supervisorctl("update")
-    wait_for_port(ports.evmrpc_port(mantra.base_port(0)))
+    custom_mantra.supervisorctl("update")
+    wait_for_port(ports.evmrpc_port(custom_mantra.base_port(0)))
 
     # reset to origin_cmd only
     if max_gas_wanted is None:
         return
 
-    cli = mantra.cosmos_cli()
-    w3 = mantra.w3
+    cli = custom_mantra.cosmos_cli()
+    w3 = custom_mantra.w3
     block_gas_limit = 81500000
     tx_gas_limit = 80000000
     max_tx_in_block = block_gas_limit // min(max_gas_wanted, tx_gas_limit)
