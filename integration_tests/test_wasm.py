@@ -1,52 +1,53 @@
 import os
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from .utils import DEFAULT_DENOM
+from .utils import find_log_event_attrs
 
 pytestmark = pytest.mark.wasm
 
 
 def test_wasm(mantra):
-    # Set up environment variables
-    env = os.environ.copy()
-
     cli = mantra.cosmos_cli()
-    chain_obj = mantra
-    # For local/ci tests, use SIGNER1_MNEMONIC
-    env["SEED_PHRASE"] = os.getenv("SIGNER1_MNEMONIC")
+    name = "signer1"
+    wallet = cli.address(name)
 
-    # Extract connection parameters
-    rpc = cli.node_rpc
-    chain_id = cli.chain_id
-    denom = DEFAULT_DENOM
-    binary = chain_obj.chain_binary  # Get binary from the appropriate object
+    # Compiling smart contracts
+    res = subprocess.run(
+        [os.path.join("scripts", "build_release.sh")], capture_output=True, text=True
+    )
+    assert res.returncode == 0, f"Contract compilation failed\n{res.stderr}"
 
-    # Path to the test script
-    script_path = Path(__file__).parent.parent / "scripts" / "test_ci.sh"
+    CONTRACT_DIR = "artifacts"
+    wasm_files = [f for f in os.listdir(CONTRACT_DIR) if f.endswith(".wasm")]
+    assert wasm_files, "No WASM files found"
 
-    # Build the command
-    cmd = [str(script_path), "-r", rpc, "-c", chain_id, "-d", denom, "-b", binary]
+    code_ids = []
+    for contract in wasm_files:
+        print(f"Uploading contract: {contract}")
+        res = cli.wasm_store(
+            os.path.join(CONTRACT_DIR, contract),
+            wallet,
+            _from=name,
+            gas=2500000,
+        )
+        attr = "code_id"
+        code_id = find_log_event_attrs(
+            res["events"], "store_code", lambda attrs: attr in attrs
+        ).get(attr)
+        code_ids.append(code_id)
 
-    # Add wallet parameter only if it exists
-    if hasattr(chain_obj, "wallet") and chain_obj.wallet:
-        cmd.extend(["-w", chain_obj.wallet])
+    print(f"All contracts uploaded. Code IDs: {code_ids}")
 
-    print(f"Running test_ci.sh with args: {' '.join(cmd)}")
-    print(f"RPC: {rpc}, Chain ID: {chain_id}, Denom: {denom}, Binary: {binary}")
+    contract_addresses = []
+    for code_id in code_ids:
+        print(f"Instantiating contract with code_id {code_id}")
+        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=2500000)
+        attr = "_contract_address"
+        contract_address = find_log_event_attrs(
+            res["events"], "instantiate", lambda attrs: attr in attrs
+        ).get(attr)
+        contract_addresses.append(contract_address)
 
-    # Run the script
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-
-    # Print output for debugging
-    if result.stdout:
-        print("STDOUT:", result.stdout)
-    if result.stderr:
-        print("STDERR:", result.stderr)
-
-    # Check if the script succeeded (return code 0)
-    assert (
-        result.returncode == 0
-    ), f"test_ci.sh failed with return code {result.returncode}"
+    print(f"All contracts instantiated. Addresses: {contract_addresses}")

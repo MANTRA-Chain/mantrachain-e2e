@@ -824,3 +824,40 @@ class CosmosCLI:
         if idx == -1:
             raise ValueError("No JSON object found in export output")
         return json.loads(raw[idx:])
+
+    def wasm_store(self, path, wallet, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "store",
+                path,
+                "--instantiate-anyof-addresses",
+                wallet,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def wasm_instantiate(self, code_id, wallet, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "instantiate",
+                code_id,
+                "{}",
+                "--label",
+                "test",
+                "--admin",
+                wallet,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
