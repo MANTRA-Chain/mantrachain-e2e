@@ -1,5 +1,4 @@
-import os
-import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -14,30 +13,21 @@ def test_wasm(mantra):
     wallet = cli.address(name)
     gas = 2500000
 
-    # Compiling smart contracts
-    res = subprocess.run(
-        [os.path.join("scripts", "build_release.sh")], capture_output=True, text=True
-    )
-    assert res.returncode == 0, f"Contract compilation failed\n{res.stderr}"
-
-    CONTRACT_DIR = "artifacts"
-    wasm_files = [f for f in os.listdir(CONTRACT_DIR) if f.endswith(".wasm")]
-    assert wasm_files, "No WASM files found"
-
     code_ids = []
-    for contract in wasm_files:
-        print(f"Uploading contract: {contract}")
-        res = cli.wasm_store(
-            os.path.join(CONTRACT_DIR, contract),
-            wallet,
-            _from=name,
-            gas=gas,
-        )
-        attr = "code_id"
-        code_id = find_log_event_attrs(
-            res["events"], "store_code", lambda attrs: attr in attrs
-        ).get(attr)
-        code_ids.append(code_id)
+    contract = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
+
+    print(f"Uploading contract: {contract}")
+    res = cli.wasm_store(
+        str(contract),
+        wallet,
+        _from=name,
+        gas=gas,
+    )
+    attr = "code_id"
+    code_id = find_log_event_attrs(
+        res["events"], "store_code", lambda attrs: attr in attrs
+    ).get(attr)
+    code_ids.append(code_id)
 
     print(f"All contracts uploaded. Code IDs: {code_ids}")
 

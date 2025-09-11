@@ -374,7 +374,7 @@ def build_contract(name) -> dict:
         "--abi",
         "--bin",
         "--bin-runtime",
-        f"integration_tests/contracts/contracts/{name}.sol",
+        f"contracts/contracts/{name}.sol",
         "-o",
         "build",
         "--overwrite",
@@ -386,9 +386,9 @@ def build_contract(name) -> dict:
         "none",
         "--no-cbor-metadata",
         "--base-path",
-        "integration_tests/contracts",
+        "contracts",
         "--include-path",
-        "integration_tests/contracts/openzeppelin/contracts",
+        "contracts/openzeppelin/contracts",
     ]
     print(*cmd)
     subprocess.run(cmd, check=True)
