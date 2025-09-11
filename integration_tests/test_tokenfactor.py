@@ -73,6 +73,7 @@ def test_setup_hooks_denom(mantra):
         _from=community,
         gas=gas,
     )
+    assert res["code"] == 0
     attr = "code_id"
     code_id = find_log_event_attrs(
         res["events"], "store_code", lambda attrs: attr in attrs
@@ -89,6 +90,19 @@ def test_setup_hooks_denom(mantra):
     res = cli.set_tokenfactory_before_send_hook(denom, contract_address, _from=addr_a)
     assert res["code"] == 0
 
+    before = (
+        cli.balance(addr_a, denom),
+        cli.balance(addr_b, denom),
+    )
     res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP+1}{denom}")
     assert res["code"] != 0
     assert "Transfer amount exceeds the maximum" in res["raw_log"]
+
+    res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP}{denom}", gas=250000)
+    assert res["code"] == 0
+
+    after = (
+        cli.balance(addr_a, denom),
+        cli.balance(addr_b, denom),
+    )
+    assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
