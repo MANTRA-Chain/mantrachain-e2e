@@ -12,14 +12,13 @@ def test_wasm(mantra):
     gas = 2500000
 
     contract = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
-
-    print(f"Uploading contract: {contract}")
     res = cli.wasm_store(
         str(contract),
         wallet,
         _from=name,
         gas=gas,
     )
+    assert res["code"] == 0
     attr = "code_id"
     code_id = find_log_event_attrs(
         res["events"], "store_code", lambda attrs: attr in attrs
@@ -30,7 +29,8 @@ def test_wasm(mantra):
     contract_addresses = []
     print(f"Instantiating contract with code_id {code_id} twice")
     for i in range(2):
-        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas, label="test")
+        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas)
+        assert res["code"] == 0
         attr = "_contract_address"
         contract_address = find_log_event_attrs(
             res["events"], "instantiate", lambda attrs: attr in attrs

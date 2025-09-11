@@ -664,6 +664,22 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def set_tokenfactory_before_send_hook(self, denom, address, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "tokenfactory",
+                "set-before-send-hook",
+                denom,
+                address,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
     def set_withdraw_addr(self, bech32_addr, **kwargs):
         rsp = json.loads(
             self.raw(
@@ -842,7 +858,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def wasm_instantiate(self, code_id, wallet, **kwargs):
+    def wasm_instantiate(self, code_id, wallet, label="test", **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -852,6 +868,8 @@ class CosmosCLI:
                 "{}",
                 "--admin",
                 wallet,
+                "--label",
+                label,
                 "-y",
                 **(self.get_kwargs_with_gas() | kwargs),
             )
