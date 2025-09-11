@@ -66,43 +66,63 @@ def test_setup_hooks_denom(mantra):
     gas = 2500000
     denom = assert_create_tokenfactory_denom(cli, subdenom, _from=addr_a, gas=620000)
     assert_mint_tokenfactory_denom(cli, denom, amt, _from=addr_a, gas=gas)
-    contract = Path(__file__).parent / "contracts/contracts/transfer_cap.wasm"
-    res = cli.wasm_store(
-        str(contract),
-        addr_a,
-        _from=community,
-        gas=gas,
-    )
-    assert res["code"] == 0
-    attr = "code_id"
-    code_id = find_log_event_attrs(
-        res["events"], "store_code", lambda attrs: attr in attrs
-    ).get(attr)
+    for contract in ["transfer_cap", "track_before_send"]:
+        contract = Path(__file__).parent / f"contracts/contracts/{contract}.wasm"
+        res = cli.wasm_store(
+            str(contract),
+            addr_a,
+            _from=community,
+            gas=gas,
+        )
+        assert res["code"] == 0
+        attr = "code_id"
+        code_id = find_log_event_attrs(
+            res["events"], "store_code", lambda attrs: attr in attrs
+        ).get(attr)
 
-    res = cli.wasm_instantiate(code_id, community, _from=community, gas=gas)
-    assert res["code"] == 0
-    attr = "_contract_address"
-    contract_address = find_log_event_attrs(
-        res["events"], "instantiate", lambda attrs: attr in attrs
-    ).get(attr)
+        res = cli.wasm_instantiate(code_id, community, _from=community, gas=gas)
+        assert res["code"] == 0
+        attr = "_contract_address"
+        contract_address = find_log_event_attrs(
+            res["events"], "instantiate", lambda attrs: attr in attrs
+        ).get(attr)
 
-    denom = f"factory/{addr_a}/{subdenom}"
-    res = cli.set_tokenfactory_before_send_hook(denom, contract_address, _from=addr_a)
-    assert res["code"] == 0
+        denom = f"factory/{addr_a}/{subdenom}"
+        res = cli.set_tokenfactory_before_send_hook(
+            denom, contract_address, _from=addr_a
+        )
+        assert res["code"] == 0
 
-    before = (
-        cli.balance(addr_a, denom),
-        cli.balance(addr_b, denom),
-    )
-    res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP+1}{denom}")
-    assert res["code"] != 0
-    assert "Transfer amount exceeds the maximum" in res["raw_log"]
-
-    res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP}{denom}", gas=250000)
-    assert res["code"] == 0
-
-    after = (
-        cli.balance(addr_a, denom),
-        cli.balance(addr_b, denom),
-    )
-    assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
+        if contract == "transfer_cap":
+            before = (
+                cli.balance(addr_a, denom),
+                cli.balance(addr_b, denom),
+            )
+            res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP+1}{denom}")
+            assert res["code"] != 0
+            assert "Transfer amount exceeds the maximum" in res["raw_log"]
+            res = cli.transfer(addr_a, addr_b, f"{TRANSFER_CAP}{denom}", gas=250000)
+            assert res["code"] == 0
+            after = (
+                cli.balance(addr_a, denom),
+                cli.balance(addr_b, denom),
+            )
+            assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
+        else:
+            amt = 10
+            res = cli.wasm_execute(
+                contract_address,
+                {
+                    "track_before_send": {
+                        "from": addr_a,
+                        "to": addr_b,
+                        "amount": {
+                            "amount": str(amt),
+                            "denom": denom,
+                        },
+                    }
+                },
+                _from=community,
+                gas=gas,
+            )
+            print("mm-res", res)
