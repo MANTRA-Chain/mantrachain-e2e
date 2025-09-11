@@ -12,6 +12,7 @@ def test_wasm(mantra):
     cli = mantra.cosmos_cli()
     name = "signer1"
     wallet = cli.address(name)
+    gas = 2500000
 
     # Compiling smart contracts
     res = subprocess.run(
@@ -30,7 +31,7 @@ def test_wasm(mantra):
             os.path.join(CONTRACT_DIR, contract),
             wallet,
             _from=name,
-            gas=2500000,
+            gas=gas,
         )
         attr = "code_id"
         code_id = find_log_event_attrs(
@@ -43,7 +44,7 @@ def test_wasm(mantra):
     contract_addresses = []
     for code_id in code_ids:
         print(f"Instantiating contract with code_id {code_id}")
-        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=2500000)
+        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas)
         attr = "_contract_address"
         contract_address = find_log_event_attrs(
             res["events"], "instantiate", lambda attrs: attr in attrs
