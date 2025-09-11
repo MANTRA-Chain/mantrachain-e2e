@@ -850,8 +850,6 @@ class CosmosCLI:
                 "instantiate",
                 code_id,
                 "{}",
-                "--label",
-                "test",
                 "--admin",
                 wallet,
                 "-y",
@@ -861,3 +859,34 @@ class CosmosCLI:
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def wasm_execute(self, addr, msg, amt=None, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        cmd = ["tx", "wasm", "execute", addr, msg, "-y"]
+        if amt:
+            cmd += ["--amount", amt]
+        rsp = json.loads(
+            self.raw(
+                *cmd,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def query_wasm_contract_state(self, addr, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        return json.loads(
+            self.raw(
+                "q",
+                "wasm",
+                "contract-state",
+                "smart",
+                addr,
+                msg,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )

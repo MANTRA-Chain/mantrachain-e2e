@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from .utils import find_log_event_attrs
+from .utils import DEFAULT_DENOM, find_log_event_attrs
 
 pytestmark = pytest.mark.wasm
 
@@ -43,12 +43,49 @@ def test_wasm(mantra):
 
     contract_addresses = []
     for code_id in code_ids:
-        print(f"Instantiating contract with code_id {code_id}")
-        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas)
-        attr = "_contract_address"
-        contract_address = find_log_event_attrs(
-            res["events"], "instantiate", lambda attrs: attr in attrs
-        ).get(attr)
-        contract_addresses.append(contract_address)
+        print(f"Instantiating contract with code_id {code_id} twice")
+        for i in range(2):
+            res = cli.wasm_instantiate(
+                code_id, wallet, _from=name, gas=gas, label="test"
+            )
+            attr = "_contract_address"
+            contract_address = find_log_event_attrs(
+                res["events"], "instantiate", lambda attrs: attr in attrs
+            ).get(attr)
+            print(f"Instantiated contract {i} at: {contract_address}")
+            contract_addresses.append(contract_address)
 
     print(f"All contracts instantiated. Addresses: {contract_addresses}")
+
+    # Testing instantiation with unauthorized wallet (should fail)
+    unauthorized = "signer2"
+    unauthorized_wallet = cli.address(unauthorized)
+    res = cli.wasm_instantiate(
+        code_ids[0], unauthorized_wallet, _from=unauthorized, gas=gas, label="test_fail"
+    )
+    assert res["code"] != 0
+    assert "can not instantiate: unauthorized" in res["raw_log"]
+
+    # Testing contract executions
+    contract0 = contract_addresses[0]
+    contract1 = contract_addresses[1]
+    amt = f"10{DEFAULT_DENOM}"
+
+    def execute_tx(msg, amount=None, gas_limit=gas, success=True):
+        res = (
+            cli.wasm_execute(contract0, msg, amount, _from=name, gas=gas_limit)
+            if amount
+            else cli.wasm_execute(contract0, msg, _from=name, gas=gas_limit)
+        )
+        assert (res["code"] == 0) if success else (res["code"] != 0)
+
+    execute_tx({"modify_state": {}})
+    execute_tx({"send_funds": {"receipient": contract1}}, amt)
+    execute_tx({"send_funds": {"receipient": contract1}}, success=False)
+    execute_tx({"call_contract": {"contract": contract1, "reply": True}}, amt)
+    execute_tx({"call_contract": {"contract": contract1, "reply": False}}, amt)
+    execute_tx({"delete_entry_on_map": {"key": 1}})
+    execute_tx({"fill_map": {"limit": 100}})
+    execute_tx({"fill_map": {"limit": 1010}}, gas_limit=4000000)
+    execute_tx({"fill_map": {"limit": 1000000000000}}, success=False)
+    execute_tx({"invalid": {}}, success=False)
