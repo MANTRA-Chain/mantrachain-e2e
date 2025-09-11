@@ -89,3 +89,39 @@ def test_wasm(mantra):
     execute_tx({"fill_map": {"limit": 1010}}, gas_limit=4000000)
     execute_tx({"fill_map": {"limit": 1000000000000}}, success=False)
     execute_tx({"invalid": {}}, success=False)
+
+    # Query contract
+    queries = [
+        {"get_count": {}},
+        {"iterate_over_map": {"limit": 5}},
+        {"iterate_over_map": {"limit": 500}},
+        {"get_entry_from_map": {"entry": 1}},
+        {"get_entry_from_map": {"entry": 250}},
+    ]
+    for query_msg in queries:
+        assert "data" in cli.query_wasm_contract_state(contract0, query_msg)
+
+    assert "data" in cli.query_wasm_contract_state(contract0, "Y291bnQ=", cmd="raw")
+
+    # Test migration
+    res = cli.wasm_migrate(contract0, code_ids[0], {}, _from=name, gas=gas)
+    assert res["code"] == 0
+    res = cli.wasm_migrate(contract0, code_ids[0], {}, _from=unauthorized, gas=gas)
+    assert res["code"] != 0
+    assert "can not migrate: unauthorized" in res["raw_log"]
+
+    # Test second contract
+    queries = [
+        {"get_count": {}},
+        {"iterate_over_map": {"limit": 5}},
+        {"iterate_over_map": {"limit": 500}},
+        {"iterate_over_map": {"limit": 1001}},
+    ]
+    for query_msg in queries:
+        assert "data" in cli.query_wasm_contract_state(contract1, query_msg)
+
+    for entry in [1, 250]:
+        with pytest.raises(AssertionError, match="not found"):
+            cli.query_wasm_contract_state(
+                contract1, {"get_entry_from_map": {"entry": entry}}
+            )

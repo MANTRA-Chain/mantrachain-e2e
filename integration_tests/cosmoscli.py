@@ -876,7 +876,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def query_wasm_contract_state(self, addr, msg, **kwargs):
+    def query_wasm_contract_state(self, addr, msg, cmd="smart", **kwargs):
         if isinstance(msg, dict):
             msg = json.dumps(msg)
         return json.loads(
@@ -884,9 +884,29 @@ class CosmosCLI:
                 "q",
                 "wasm",
                 "contract-state",
-                "smart",
+                cmd,
+                "--b64" if cmd == "raw" else None,
                 addr,
                 msg,
                 **(self.get_base_kwargs() | kwargs),
             )
         )
+
+    def wasm_migrate(self, addr, code_id, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "migrate",
+                addr,
+                code_id,
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
