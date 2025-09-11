@@ -9,6 +9,7 @@ from .utils import (
     KEYS,
     modify_command_in_supervisor_config,
     send_txs,
+    wait_for_new_blocks,
     wait_for_port,
 )
 
@@ -52,12 +53,13 @@ def test_tx_inclusion(custom_mantra, max_gas_wanted):
     )
     custom_mantra.supervisorctl("update")
     wait_for_port(ports.evmrpc_port(custom_mantra.base_port(0)))
+    cli = custom_mantra.cosmos_cli()
+    wait_for_new_blocks(cli, 2)
 
     # reset to origin_cmd only
     if max_gas_wanted is None:
         return
 
-    cli = custom_mantra.cosmos_cli()
     w3 = custom_mantra.w3
     block_gas_limit = 81500000
     tx_gas_limit = 80000000
