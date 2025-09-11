@@ -4,8 +4,6 @@ import pytest
 
 from .utils import DEFAULT_DENOM, find_log_event_attrs
 
-pytestmark = pytest.mark.wasm
-
 
 def test_wasm(mantra):
     cli = mantra.cosmos_cli()
@@ -13,7 +11,6 @@ def test_wasm(mantra):
     wallet = cli.address(name)
     gas = 2500000
 
-    code_ids = []
     contract = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
 
     print(f"Uploading contract: {contract}")
@@ -27,23 +24,19 @@ def test_wasm(mantra):
     code_id = find_log_event_attrs(
         res["events"], "store_code", lambda attrs: attr in attrs
     ).get(attr)
-    code_ids.append(code_id)
 
-    print(f"All contracts uploaded. Code IDs: {code_ids}")
+    print(f"All contracts uploaded. Code IDs: {code_id}")
 
     contract_addresses = []
-    for code_id in code_ids:
-        print(f"Instantiating contract with code_id {code_id} twice")
-        for i in range(2):
-            res = cli.wasm_instantiate(
-                code_id, wallet, _from=name, gas=gas, label="test"
-            )
-            attr = "_contract_address"
-            contract_address = find_log_event_attrs(
-                res["events"], "instantiate", lambda attrs: attr in attrs
-            ).get(attr)
-            print(f"Instantiated contract {i} at: {contract_address}")
-            contract_addresses.append(contract_address)
+    print(f"Instantiating contract with code_id {code_id} twice")
+    for i in range(2):
+        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas, label="test")
+        attr = "_contract_address"
+        contract_address = find_log_event_attrs(
+            res["events"], "instantiate", lambda attrs: attr in attrs
+        ).get(attr)
+        print(f"Instantiated contract {i} at: {contract_address}")
+        contract_addresses.append(contract_address)
 
     print(f"All contracts instantiated. Addresses: {contract_addresses}")
 
@@ -51,7 +44,7 @@ def test_wasm(mantra):
     unauthorized = "signer2"
     unauthorized_wallet = cli.address(unauthorized)
     res = cli.wasm_instantiate(
-        code_ids[0], unauthorized_wallet, _from=unauthorized, gas=gas, label="test_fail"
+        code_id, unauthorized_wallet, _from=unauthorized, gas=gas, label="test_fail"
     )
     assert res["code"] != 0
     assert "can not instantiate: unauthorized" in res["raw_log"]
@@ -94,9 +87,9 @@ def test_wasm(mantra):
     assert "data" in cli.query_wasm_contract_state(contract0, "Y291bnQ=", cmd="raw")
 
     # Test migration
-    res = cli.wasm_migrate(contract0, code_ids[0], {}, _from=name, gas=gas)
+    res = cli.wasm_migrate(contract0, code_id, {}, _from=name, gas=gas)
     assert res["code"] == 0
-    res = cli.wasm_migrate(contract0, code_ids[0], {}, _from=unauthorized, gas=gas)
+    res = cli.wasm_migrate(contract0, code_id, {}, _from=unauthorized, gas=gas)
     assert res["code"] != 0
     assert "can not migrate: unauthorized" in res["raw_log"]
 
