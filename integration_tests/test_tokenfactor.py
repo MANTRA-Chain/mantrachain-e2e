@@ -11,6 +11,8 @@ from .utils import (
     assert_transfer,
     find_log_event_attrs,
     get_balance,
+    module_address,
+    submit_gov_proposal,
     wait_for_new_blocks,
 )
 
@@ -54,7 +56,7 @@ def test_connect_tokenfactory(connect_mantra, tmp_path):
     test_tokenfactory_admin(None, connect_mantra, tmp_path, need_prune=False)
 
 
-def test_setup_hooks_denom(mantra):
+def test_setup_hooks_denom(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     community = "community"
     signer2 = "signer2"
@@ -110,19 +112,25 @@ def test_setup_hooks_denom(mantra):
             assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
         else:
             amt = 10
-            res = cli.wasm_execute(
-                contract_address,
-                {
-                    "track_before_send": {
-                        "from": addr_a,
-                        "to": addr_b,
-                        "amount": {
-                            "amount": str(amt),
-                            "denom": denom,
+            submit_gov_proposal(
+                mantra,
+                tmp_path,
+                messages=[
+                    {
+                        "@type": "/cosmwasm.wasm.v1.MsgSudoContract",
+                        "authority": module_address("gov"),
+                        "contract": contract_address,
+                        "msg": {
+                            "track_before_send": {
+                                "from": addr_a,
+                                "to": addr_b,
+                                "amount": {
+                                    "amount": str(amt),
+                                    "denom": denom,
+                                },
+                            }
                         },
                     }
-                },
-                _from=community,
+                ],
                 gas=gas,
             )
-            print("mm-res", res)
