@@ -74,6 +74,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 - `test_fee_history.py`: Tests eth_feeHistory with various scenarios including concurrent requests, parameter changes, and edge cases like beyond-head blocks and invalid percentiles.
 - `test_contract.py`: Tests deploy contract with create2 create3 and multicall.
 - `test_ibc.py` Tests IBC cross-chain transactions covering OnRecvPacket packet handling (token pairs with IBC coins, tokenfactory coins, native ERC20 tokens) and callback contract interactions.
+- `test_wasm.py`: Tests WASM contract upload, instantiation and execution flows.
 
 ## Notes
 

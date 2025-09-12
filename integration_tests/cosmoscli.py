@@ -664,6 +664,22 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def set_tokenfactory_before_send_hook(self, denom, address, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "tokenfactory",
+                "set-before-send-hook",
+                denom,
+                address,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
     def set_withdraw_addr(self, bech32_addr, **kwargs):
         rsp = json.loads(
             self.raw(
@@ -824,3 +840,91 @@ class CosmosCLI:
         if idx == -1:
             raise ValueError("No JSON object found in export output")
         return json.loads(raw[idx:])
+
+    def wasm_store(self, path, wallet, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "store",
+                path,
+                "--instantiate-anyof-addresses",
+                wallet,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def wasm_instantiate(self, code_id, wallet, label="test", **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "instantiate",
+                code_id,
+                "{}",
+                "--admin",
+                wallet,
+                "--label",
+                label,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def wasm_execute(self, addr, msg, amt=None, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        cmd = ["tx", "wasm", "execute", addr, msg, "-y"]
+        if amt:
+            cmd += ["--amount", amt]
+        rsp = json.loads(
+            self.raw(
+                *cmd,
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def query_wasm_contract_state(self, addr, msg, cmd="smart", **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        return json.loads(
+            self.raw(
+                "q",
+                "wasm",
+                "contract-state",
+                cmd,
+                "--b64" if cmd == "raw" else None,
+                addr,
+                msg,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def wasm_migrate(self, addr, code_id, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "wasm",
+                "migrate",
+                addr,
+                code_id,
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
