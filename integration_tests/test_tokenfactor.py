@@ -109,15 +109,7 @@ def test_setup_hooks_denom(mantra):
             )
             assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
         else:
-            before = (
-                cli.balance(addr_a, denom),
-                cli.balance(contract_address, denom),
-            )
             amt = 10
             res = cli.transfer(addr_a, contract_address, f"{amt}{denom}", gas=gas)
-            assert res["code"] == 0
-            after = (
-                cli.balance(addr_a, denom),
-                cli.balance(contract_address, denom),
-            )
-            assert after == (before[0] - amt, before[1] + amt)
+            assert res["code"] != 0
+            assert "gas meter hit maximum limit" in res["raw_log"]
