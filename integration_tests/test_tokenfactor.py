@@ -11,8 +11,6 @@ from .utils import (
     assert_transfer,
     find_log_event_attrs,
     get_balance,
-    module_address,
-    submit_gov_proposal,
     wait_for_new_blocks,
 )
 
@@ -56,7 +54,7 @@ def test_connect_tokenfactory(connect_mantra, tmp_path):
     test_tokenfactory_admin(None, connect_mantra, tmp_path, need_prune=False)
 
 
-def test_setup_hooks_denom(mantra, tmp_path):
+def test_setup_hooks_denom(mantra):
     cli = mantra.cosmos_cli()
     community = "community"
     signer2 = "signer2"
@@ -111,26 +109,15 @@ def test_setup_hooks_denom(mantra, tmp_path):
             )
             assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
         else:
-            amt = 10
-            submit_gov_proposal(
-                mantra,
-                tmp_path,
-                messages=[
-                    {
-                        "@type": "/cosmwasm.wasm.v1.MsgSudoContract",
-                        "authority": module_address("gov"),
-                        "contract": contract_address,
-                        "msg": {
-                            "track_before_send": {
-                                "from": addr_a,
-                                "to": addr_b,
-                                "amount": {
-                                    "amount": str(amt),
-                                    "denom": denom,
-                                },
-                            }
-                        },
-                    }
-                ],
-                gas=gas,
+            before = (
+                cli.balance(addr_a, denom),
+                cli.balance(contract_address, denom),
             )
+            amt = 10
+            res = cli.transfer(addr_a, contract_address, f"{amt}{denom}", gas=gas)
+            assert res["code"] == 0
+            after = (
+                cli.balance(addr_a, denom),
+                cli.balance(contract_address, denom),
+            )
+            assert after == (before[0] - amt, before[1] + amt)
