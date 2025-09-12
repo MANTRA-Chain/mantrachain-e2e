@@ -238,6 +238,12 @@ def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc8")
 
+    height = cli.block_height()
+    target_height = height + 15
+
+    cli = do_upgrade(c, "v5.0.0-rc9", target_height, gas_prices=DEFAULT_GAS_PRICE)
+    check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc9")
+
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     exec(custom_mantra, tmp_path)
