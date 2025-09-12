@@ -116,6 +116,7 @@ def test_setup_hooks_denom(mantra):
             amt = 10
             res = cli.transfer(addr_a, contract_address, f"{amt}{denom}", gas=gas)
             assert res["code"] == 0
+            assert res["gas_used"] > 700000
             after = (
                 cli.balance(addr_a, denom),
                 cli.balance(contract_address, denom),
