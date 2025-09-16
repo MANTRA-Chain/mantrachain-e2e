@@ -50,8 +50,17 @@ jobs:
           organization: ${{ secrets.CLOUDFLARE_ORGANIZATION }}
           auth_client_id: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_ID }}
           auth_client_secret: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_SECRET }}
-      - name: Restore network.env
+      - name: Restore .env and network.env
         run: |
+          # Restore .env
+          IFS=',' read -ra ADDR <<< "${{ secrets.MNEMONIC_ENVS }}"
+          for kv in "${ADDR[@]}"; do
+            key="${kv%%=*}"
+            val="${kv#*=}"
+            echo "export $key=\"$val\""
+          done > ./scripts/.env
+
+          # Restore network.env
           IFS=',' read -ra ADDR <<< "${{ secrets.NETWORK_ENVS }}"
           for kv in "${ADDR[@]}"; do
             key="${kv%%=*}"

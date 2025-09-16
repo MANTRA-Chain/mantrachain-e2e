@@ -20,7 +20,7 @@ pwdfile=$(mktemp /tmp/password.XXXXXX)
 tmpfile=$(mktemp /tmp/validator-key.XXXXXX)
 
 cat > $pwdfile << EOF
-$PASSWORD
+123456
 EOF
 
 # import validator key

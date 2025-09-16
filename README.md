@@ -21,7 +21,13 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    nix-shell integration_tests/shell.nix 
    ```
 
-2. **Configuration (config to set up local nodes):**
+2. **Create env file from template:**
+   ```sh
+   cp scripts/env.template scripts/.env
+   cp scripts/network.env.template scripts/network.env
+   ```
+
+3. **Configuration (config to set up local nodes):**
    ```sh
    jsonnet --ext-str CHAIN_CONFIG=mantrachaind integration_tests/configs/default.jsonnet | jq
    ```
@@ -30,7 +36,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    jsonnet --ext-str CHAIN_CONFIG=evmd integration_tests/configs/default.jsonnet | jq
    ```
 
-3. **Run tests:**
+4. **Run tests:**
    ensure all git submodules are initialized and updated:
    ```sh
    git submodule update --init --depth 1 --recursive
