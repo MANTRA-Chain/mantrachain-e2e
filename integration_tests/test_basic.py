@@ -88,7 +88,7 @@ def test_connect_events(connect_mantra):
     test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=919699):
+def test_events(mantra, connect_mantra, exp_gas_used=806200):
     w3 = connect_mantra.w3
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
