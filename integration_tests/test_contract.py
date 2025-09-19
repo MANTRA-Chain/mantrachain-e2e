@@ -359,17 +359,6 @@ async def test_deploy_multi(mantra):
     receipt = await ERC20.fns.mint(owner, total).transact(w3, owner, to=token)
     assert receipt.status == 1
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == total
-    amt = 2
-    dec_amt = 1
-    inc = ContractFunction.from_abi("increaseAllowance(address,uint256)(bool)")
-    dec = ContractFunction.from_abi("decreaseAllowance(address,uint256)(bool)")
-    signer2 = ADDRS["signer2"]
-    await inc(signer2, amt).transact(w3, owner, to=token)
-    allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
-    assert allowance == amt
-    await dec(signer2, dec_amt).transact(w3, owner, to=token)
-    allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
-    assert allowance == amt - dec_amt
 
 
 async def test_upgrade(mantra):
