@@ -33,6 +33,7 @@ from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_tran
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_bytes
 from web3 import AsyncWeb3
+from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
 
 from .utils import (
@@ -44,6 +45,7 @@ from .utils import (
     MockERC20_ARTIFACT,
     address_to_bytes32,
     assert_weth_flow,
+    build_and_deploy_contract_async,
     build_contract,
     build_deploy_contract_async,
     w3_wait_for_new_blocks_async,
@@ -368,3 +370,28 @@ async def test_deploy_multi(mantra):
     await dec(signer2, dec_amt).transact(w3, owner, to=token)
     allowance = await ERC20.fns.allowance(owner, signer2).call(w3, to=token)
     assert allowance == amt - dec_amt
+
+
+async def test_upgrade(mantra):
+    w3 = mantra.async_w3
+    owner = ADDRS["community"]
+    token = await build_and_deploy_contract_async(w3, "MyToken")
+    proxy = await build_and_deploy_contract_async(
+        w3,
+        "ERC1967Proxy",
+        args=(
+            token.address,
+            encode_transaction_data(
+                w3, "initialize", token.abi, args=[owner], kwargs={}
+            ),
+        ),
+        dir="openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/proxy/ERC1967",  # noqa: E501
+    )
+    token2 = await build_and_deploy_contract_async(w3, "MyToken2")
+    proxy = w3.eth.contract(address=proxy.address, abi=token.abi)
+    hash = await proxy.functions.upgradeToAndCall(token2.address, b"").transact(
+        {"from": owner}
+    )
+    assert (await w3.eth.wait_for_transaction_receipt(hash)).status == 1
+    proxy = w3.eth.contract(address=proxy.address, abi=token2.abi)
+    assert (await proxy.functions.newFeature().call()) == "Upgraded!"

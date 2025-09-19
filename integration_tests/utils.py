@@ -366,7 +366,7 @@ def send_txs(w3, cli, to, keys, params):
 CONTRACTS = {}
 
 
-def build_contract(name) -> dict:
+def build_contract(name, dir="contracts") -> dict:
     if name in CONTRACTS:
         return CONTRACTS[name]
     cmd = [
@@ -374,7 +374,7 @@ def build_contract(name) -> dict:
         "--abi",
         "--bin",
         "--bin-runtime",
-        f"contracts/contracts/{name}.sol",
+        f"contracts/{dir}/{name}.sol",
         "-o",
         "build",
         "--overwrite",
@@ -386,10 +386,13 @@ def build_contract(name) -> dict:
         "none",
         "--no-cbor-metadata",
         "--base-path",
-        "contracts",
-        "--include-path",
-        "contracts/openzeppelin/contracts",
+        "./contracts",
+        # "$(cat contracts/remappings.txt)",
     ]
+    with open("contracts/remappings.txt", "r") as f:
+        remappings = f.read().strip().split()
+
+    cmd.extend(remappings)
     print(*cmd)
     subprocess.run(cmd, check=True)
     bytecode = Path(f"build/{name}.bin").read_text().strip()
@@ -404,9 +407,14 @@ def build_contract(name) -> dict:
 
 
 async def build_and_deploy_contract_async(
-    w3: AsyncWeb3, name, args=(), key=KEYS["community"], exp_gas_used=None
+    w3: AsyncWeb3,
+    name,
+    args=(),
+    key=KEYS["community"],
+    exp_gas_used=None,
+    dir="contracts",
 ):
-    res = build_contract(name)
+    res = build_contract(name, dir=dir)
     contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
     acct = Account.from_key(key)
     tx = await contract.constructor(*args).build_transaction({"from": acct.address})
