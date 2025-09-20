@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 import web3
+from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction as send_transaction_async
@@ -20,6 +21,7 @@ from .utils import (
     address_to_bytes32,
     assert_balance,
     assert_transfer,
+    bech32_to_eth,
     build_batch_tx,
     build_contract,
     contract_address,
@@ -572,3 +574,17 @@ def test_textual(mantra, connect_mantra, tmp_path):
         sign_mode="textual",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
+
+
+@pytest.mark.connect
+def test_connect_key_source(connect_mantra, tmp_path):
+    test_key_src(None, connect_mantra, tmp_path)
+
+
+def test_key_src(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    acct, mnemonic = Account.create_with_mnemonic(num_words=24)
+    src = tmp_path / "mnemonic.txt"
+    src.write_text(mnemonic)
+    addr = cli.create_account("user", source=src)["address"]
+    assert bech32_to_eth(addr) == acct.address
