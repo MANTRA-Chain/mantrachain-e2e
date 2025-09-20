@@ -16,15 +16,15 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 
 ### Running Tests
 
-1. **Build environment and dependencies:**
-   ```sh
-   nix-shell integration_tests/shell.nix 
-   ```
-
-2. **Create env file from template:**
+1. **Create env file from template:**
    ```sh
    cp scripts/env.template scripts/.env
    cp scripts/network.env.template scripts/network.env
+   ```
+
+2. **Build environment and dependencies:**
+   ```sh
+   nix-shell integration_tests/shell.nix 
    ```
 
 3. **Configuration (config to set up local nodes):**

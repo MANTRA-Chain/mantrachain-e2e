@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import pytest
 import web3
@@ -6,6 +7,7 @@ from eth_account import Account
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.utils import sign_transaction as sign_transaction_async
 
+from .network import setup_custom_mantra
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
@@ -134,8 +136,20 @@ def conver_gas_prices(base_fee, value):
     return base_fee + (value * PRIORITY_REDUCTION) / WEI_PER_UOM
 
 
-def test_native_tx_priority(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.fixture(scope="module")
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("default")
+    yield from setup_custom_mantra(
+        path,
+        27100,
+        Path(__file__).parent / "configs/default.jsonnet",
+        chain=chain,
+    )
+
+
+def test_native_tx_priority(custom_mantra):
+    cli = custom_mantra.cosmos_cli()
     base_fee = float(cli.query_base_fee())
     amt = f"1000{DEFAULT_DENOM}"
     test_cases = [

@@ -168,7 +168,7 @@ class ConnectMantra:
 
 
 def setup_mantra(path, base_port, chain):
-    cfg = Path(__file__).parent / ("configs/default.jsonnet")
+    cfg = Path(__file__).parent / ("configs/enable-indexer.jsonnet")
     yield from setup_custom_mantra(path, base_port, cfg, chain=chain)
 
 
