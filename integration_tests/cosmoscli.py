@@ -219,7 +219,8 @@ class CosmosCLI:
             fp.flush()
             return self.sign_tx(fp.name, signer, **kwargs)
 
-    def create_account(self, name, mnemonic=None, coin_type=60, **kwargs):
+    def create_account(self, name, mnemonic=None, **kwargs):
+        coin_type = kwargs.get("coin_type")
         "create new keypair in node's keyring"
         if coin_type == 60:
             kwargs["key_type"] = "eth_secp256k1"

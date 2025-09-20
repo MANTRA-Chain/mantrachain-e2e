@@ -6,12 +6,14 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
+import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
 
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
+    EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
     edit_ini_sections,
@@ -169,3 +171,13 @@ def check_basic_eth_tx(w3, contract, from_acc, to, msg):
         key=from_acc.key,
     )
     assert receipt.status == 1
+
+
+def patch_app_evm_chain_ids(c):
+    for i in range(3):
+        path = c.cosmos_cli(i=i).data_dir / "config/app.toml"
+        cfg = tomlkit.parse(path.read_text())
+        cfg["evm"] = {
+            "evm-chain-id": EVM_CHAIN_ID,
+        }
+        path.write_text(tomlkit.dumps(cfg))

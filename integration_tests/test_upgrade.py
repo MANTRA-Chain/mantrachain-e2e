@@ -10,13 +10,13 @@ from .upgrade_utils import (
     check_basic_eth_tx,
     cleanup_upgrades_folder,
     do_upgrade,
+    patch_app_evm_chain_ids,
     setup_mantra_upgrade,
 )
 from .utils import (
     DEFAULT_DENOM,
     DEFAULT_FEE,
     DEFAULT_GAS_PRICE,
-    EVM_CHAIN_ID,
     Greeter,
     assert_create_tokenfactory_denom,
     assert_set_tokenfactory_denom,
@@ -51,16 +51,6 @@ def patch_app_mempool(path, max_txs):
         "max-txs": max_txs,
     }
     path.write_text(tomlkit.dumps(cfg))
-
-
-def patch_app_evm_chain_ids(c):
-    for i in range(3):
-        path = c.cosmos_cli(i=i).data_dir / "config/app.toml"
-        cfg = tomlkit.parse(path.read_text())
-        cfg["evm"] = {
-            "evm-chain-id": EVM_CHAIN_ID,
-        }
-        path.write_text(tomlkit.dumps(cfg))
 
 
 def get_tx(base_port, hash):
