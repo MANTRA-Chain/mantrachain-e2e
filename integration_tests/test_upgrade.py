@@ -235,7 +235,7 @@ def exec(c, tmp_path):
         "mantra-canary-net-1-node1",
         "mantra-canary-net-1-node2",
     )
-    wait_for_new_blocks(cli, 1)
+    wait_for_new_blocks(cli, 2)
     check_basic_eth_tx(c.w3, contract, acc_b, addr_a, "world rc8")
 
     height = cli.block_height()

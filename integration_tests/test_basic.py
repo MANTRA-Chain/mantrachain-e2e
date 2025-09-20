@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 import web3
+from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction as send_transaction_async
@@ -20,6 +21,7 @@ from .utils import (
     address_to_bytes32,
     assert_balance,
     assert_transfer,
+    bech32_to_eth,
     build_batch_tx,
     build_contract,
     contract_address,
@@ -166,47 +168,32 @@ def test_connect_transaction(connect_mantra):
 def test_transaction(mantra, connect_mantra, diff=1):
     w3 = connect_mantra.w3
     gas_price = w3.eth.gas_price
+    gas = 21000
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
 
     # send transaction
-    txhash_1 = send_transaction(
-        w3,
-        {"to": receiver, "value": 10000, "gasPrice": gas_price},
-    )["transactionHash"]
+    data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
+    txhash_1 = send_transaction(w3, data)["transactionHash"]
     tx1 = w3.eth.get_transaction(txhash_1)
     assert tx1["transactionIndex"] == 0
 
-    initial_block_number = w3.eth.get_block_number()
+    with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
+        data["nonce"] = w3.eth.get_transaction_count(sender) - 1
+        send_transaction(w3, data)
 
-    # tx already in mempool
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
-        send_transaction(
-            w3,
-            {
-                "to": receiver,
-                "value": 10000,
-                "gasPrice": gas_price,
-                "nonce": w3.eth.get_transaction_count(sender) - 1,
-            },
-        )
-    assert "tx already in mempool" in str(exc)
+    data["nonce"] = w3.eth.get_transaction_count(sender) + 1
+    txhash = send_transaction(w3, data, check=False)
 
-    # invalid sequence
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
-        send_transaction(
-            w3,
-            {
-                "to": receiver,
-                "value": 10000,
-                "gasPrice": w3.eth.gas_price,
-                "nonce": w3.eth.get_transaction_count(sender) + 1,
-            },
-        )
-    assert "invalid sequence" in str(exc)
+    data["nonce"] = w3.eth.get_transaction_count(sender)
+    receipt = send_transaction(w3, data)
+    assert receipt["status"] == 1
 
-    # out of gas
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
+    # tx queued due to nonce gap should be success now
+    receipt = w3.eth.wait_for_transaction_receipt(txhash)
+    assert receipt["status"] == 1
+
+    with pytest.raises(web3.exceptions.Web3RPCError, match="intrinsic gas too low"):
         send_transaction(
             w3,
             {
@@ -216,22 +203,17 @@ def test_transaction(mantra, connect_mantra, diff=1):
                 "gas": 1,
             },
         )["transactionHash"]
-    assert "intrinsic gas too low" in str(exc)
 
-    # insufficient fee
-    with pytest.raises(web3.exceptions.Web3RPCError) as exc:
+    with pytest.raises(web3.exceptions.Web3RPCError, match="insufficient fee"):
         send_transaction(
             w3,
             {
                 "to": receiver,
                 "value": 10000,
+                "gas": gas,
                 "gasPrice": 1,
             },
         )["transactionHash"]
-    assert "insufficient fee" in str(exc)
-
-    # check all failed transactions are not included in blockchain
-    assert w3.eth.get_block_number() - initial_block_number <= diff
 
     # Deploy multiple contracts
     contracts = {
@@ -592,3 +574,17 @@ def test_textual(mantra, connect_mantra, tmp_path):
         sign_mode="textual",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
+
+
+@pytest.mark.connect
+def test_connect_key_source(connect_mantra, tmp_path):
+    test_key_src(None, connect_mantra, tmp_path)
+
+
+def test_key_src(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    acct, mnemonic = Account.create_with_mnemonic(num_words=24)
+    src = tmp_path / "mnemonic.txt"
+    src.write_text(mnemonic)
+    addr = cli.create_account("user", source=src)["address"]
+    assert bech32_to_eth(addr) == acct.address

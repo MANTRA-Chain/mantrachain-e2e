@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,7 @@ from .utils import (
     build_and_deploy_contract_async,
     build_contract,
     build_deploy_contract_async,
+    derive_new_account,
     w3_wait_for_new_blocks_async,
 )
 
@@ -315,14 +317,12 @@ async def test_4337(mantra, connect_mantra):
     )
 
 
-# TODO: rm flaky and enlarge num after evm mempool is ready
-@pytest.mark.flaky(max_runs=5)
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
     name = "community"
     key = KEYS[name]
     owner = ADDRS[name]
-    num = 2
+    num = 10
     res = build_contract("ERC20MinterBurnerDecimals")
     args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
     tx_results = await asyncio.gather(
@@ -342,6 +342,33 @@ async def test_deploy_multi(mantra):
     receipt = await ERC20.fns.mint(owner, total).transact(w3, owner, to=token)
     assert receipt.status == 1
     assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == total
+
+
+async def test_transfer_multi(geth):
+    w3 = geth.async_w3
+    contract = await build_and_deploy_contract_async(
+        w3, "TestERC20A", key=KEYS["validator"]
+    )
+    token = contract.address
+    owner = ACCOUNTS["validator"]
+    transfer_amt = 1
+    base_gas_price = await w3.eth.gas_price
+    nonce_start = await w3.eth.get_transaction_count(owner.address)
+    tasks = []
+
+    receivers = [derive_new_account(4 + i).address for i in range(8)]
+    begin = time.time()
+    for i in range(10000):
+        receiver = receivers[i % 8]
+        nonce = nonce_start + i
+        gas_price = base_gas_price
+        tasks.append(
+            ERC20.fns.transfer(receiver, transfer_amt).transact(
+                w3, owner, to=token, nonce=nonce, gasPrice=gas_price
+            )
+        )
+    await asyncio.gather(*tasks)
+    print("total time", time.time() - begin)
 
 
 async def test_upgrade(mantra):

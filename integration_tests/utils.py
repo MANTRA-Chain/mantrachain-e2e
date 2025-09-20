@@ -35,6 +35,7 @@ from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from pystarport import ports
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
@@ -955,6 +956,9 @@ def assert_register_erc20_denom(c, addr, tmp_path):
     erc20_denom = f"erc20:{addr}"
     res = c.cosmos_cli().query_erc20_token_pair(erc20_denom)
     assert res["erc20_address"] == addr, res
+    p = ports.api_port(c.base_port(0))
+    url = f"http://127.0.0.1:{p}/cosmos/evm/erc20/v1/token_pairs/{erc20_denom}"
+    assert requests.get(url).json()["token_pair"] == res
 
 
 async def assert_weth_flow(w3, weth_addr, owner, account):
@@ -1014,3 +1018,17 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert receiver_balance == receiver_balance_bf + approve_amt
     receiver_balance_bf = receiver_balance
+
+
+def modify_command_in_supervisor_config(ini: Path, fn, chain_binary, **kwargs):
+    "replace the first node with the instrumented binary"
+    pattern = rf"^command = ({re.escape(chain_binary)} .*$)"
+    ini.write_text(
+        re.sub(
+            pattern,
+            lambda m: f"command = {fn(m.group(1))}",
+            ini.read_text(),
+            flags=re.M,
+            **kwargs,
+        )
+    )

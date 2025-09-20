@@ -5,6 +5,7 @@ import pytest
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from eth_utils import to_hex
+from hexbytes import HexBytes
 from py_ecc.bls12_381 import G1, G2, add, multiply
 from py_ecc.fields import FQ
 
@@ -612,3 +613,42 @@ async def test_bls12381_map_g2(mantra, field_pair):
         }
     )
     assert len(res) == 256, f"G2 map result should be 256 bytes, got {len(res)}"
+
+
+async def test_move_precompile_to(mantra):
+    w3 = mantra.async_w3
+    moved = w3.to_checksum_address("0x00000000000000000000000000000000deadbeef")
+    input = 1
+    code = "0x60003560010160005260206000f3"  # bytecode: adds one to input
+    res = await w3.eth.call(
+        {
+            "to": PRECOMPILE_ECRECOVER,
+            "data": input.to_bytes(32, byteorder="big"),
+        },
+        "latest",
+        {
+            PRECOMPILE_ECRECOVER: {
+                "code": code,
+                "movePrecompileToAddress": moved,
+            },
+        },
+    )
+    output = 2
+    assert res == output.to_bytes(32, byteorder="big")
+
+    input = "0x82f3df49d3645876de6313df2bbe9fbce593f21341a7b03acdb9423bc171fcc9000000000000000000000000000000000000000000000000000000000000001cba13918f50da910f2d55a7ea64cf716ba31dad91856f45908dde900530377d8a112d60f36900d18eb8f9d3b4f85a697b545085614509e3520e4b762e35d0d6bd"  # noqa: E501
+    res = await w3.eth.call(
+        {
+            "to": moved,
+            "data": HexBytes(input),
+        },
+        "latest",
+        {
+            PRECOMPILE_ECRECOVER: {
+                "code": code,
+                "movePrecompileToAddress": moved,
+            },
+        },
+    )
+    output = "0x000000000000000000000000c6e93f4c1920eaeaa1e699f76a7a8c18e3056074"
+    assert res == HexBytes(output)

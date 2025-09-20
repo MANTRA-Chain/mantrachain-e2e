@@ -1,4 +1,6 @@
+import pytest
 import requests
+import web3
 from pystarport import ports
 
 from .utils import (
@@ -34,8 +36,14 @@ def test_traceblock(mantra):
             "nonce": nonce + n,
         }
         signed = sign_transaction(w3, tx, acc.key)
-        txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        txhashes.append(txhash)
+        if n == total - 1:
+            with pytest.raises(
+                web3.exceptions.Web3RPCError, match="insufficient funds"
+            ):
+                w3.eth.send_raw_transaction(signed.raw_transaction)
+        else:
+            txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
+            txhashes.append(txhash)
     for txhash in txhashes[0 : total - 1]:
         res = w3.eth.wait_for_transaction_receipt(txhash)
         assert res.status == 1

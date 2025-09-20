@@ -57,11 +57,14 @@ async def test_eoa(cluster):
     data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}
     data["nonce"] = cluster.w3.eth.get_transaction_count(sender) + 1
 
+    hash = send_transaction_sync(cluster.w3, data, key=key, check=False)
+
     if isinstance(cluster, Geth):
-        send_transaction_sync(cluster.w3, data, key=key, check=False)
+        with pytest.raises(web3.exceptions.TransactionNotFound):
+            await cluster.w3.eth.get_transaction_receipt(hash)
     else:
-        with pytest.raises(web3.exceptions.Web3RPCError, match="invalid sequence"):
-            send_transaction_sync(cluster.w3, data, key=key, check=False)
+        with pytest.raises(web3.exceptions.RequestTimedOut):
+            await cluster.w3.eth.get_transaction_receipt(hash)
 
     # clear code
     clear_tx = dict(tx)
@@ -83,5 +86,5 @@ async def test_eoa(cluster):
     assert reset_code.hex().startswith(""), "Code was not clear!"
 
     # TODO: https://github.com/cosmos/evm/issues/493
-    # data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}
-    # send_transaction_sync(cluster.w3, data, key=key)["transactionHash"]
+    data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}
+    send_transaction_sync(cluster.w3, data, key=key)["transactionHash"]
