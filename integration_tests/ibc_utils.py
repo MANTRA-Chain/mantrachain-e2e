@@ -37,7 +37,7 @@ def call_hermes_cmd(hermes, incentivized, version):
             "--a-chain",
             CHAIN_ID,
             "--b-chain",
-            "mantra-canary-net-2",
+            "mantra-1",
             "--new-client-connection",
             "--yes",
         ]
@@ -62,7 +62,7 @@ def prepare_network(tmp_path, name, chain):
         chain=chain,
     ) as ibc1:
         cli = ibc1.cosmos_cli()
-        ibc2 = Mantra(ibc1.base_dir.parent / "mantra-canary-net-2")
+        ibc2 = Mantra(ibc1.base_dir.parent / "mantra-1")
         # wait for grpc ready
         wait_for_port(ports.grpc_port(ibc2.base_port(0)))
         wait_for_port(ports.grpc_port(ibc1.base_port(0)))
