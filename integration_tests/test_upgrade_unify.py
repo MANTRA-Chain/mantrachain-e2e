@@ -182,12 +182,7 @@ def patch_chain_id(path):
     cfg["evm"] = {}
     cfg_file.write_text(tomlkit.dumps(cfg))
 
-    cfg_file = path / "config.toml"
-    cfg = tomlkit.parse(cfg_file.read_text())
-    cfg["statesync"]["enable"] = False
-    cfg_file.write_text(tomlkit.dumps(cfg))
-
     genesis_path = path / "genesis.json"
     genesis = json.loads(genesis_path.read_text())
-    genesis["chain_id"] = "mantra-1"
+    genesis["chain_id"] = "mantra-test-1"
     genesis_path.write_text(json.dumps(genesis, indent=2))
