@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -101,6 +102,7 @@ async def exec(c, tmp_path):
 
     config_dir = clustercli.cosmos_cli(i).data_dir / "config"
     patch_chain_id(config_dir)
+    patch_genesis(config_dir, "mantra-test-1")
 
     ini = c.base_dir / "tasks.ini"
     cmd = "command = mantrachaind start --home . --trace --chain-id mantra-canary-net-1"
@@ -114,9 +116,12 @@ async def exec(c, tmp_path):
     )
     c.supervisorctl("update")
     nodes = [f"mantra-canary-net-1-node{i}" for i in range(4)]
-    c.supervisorctl("start", *nodes)
+    with pytest.raises(subprocess.CalledProcessError):
+        c.supervisorctl("start", *nodes)
 
-    wait_for_new_blocks(clustercli.cosmos_cli(i), 2)
+    patch_genesis(config_dir, "mantra-canary-net-1")
+    c.supervisorctl("start", *nodes)
+    wait_for_new_blocks(cli, 1)
 
     # check set contract tx works
     acc_c = derive_new_account(101)
@@ -127,12 +132,6 @@ async def exec(c, tmp_path):
     greeter.deploy(w3)
     contract = greeter.contract
     assert "Hello" == contract.caller.greet()
-
-    with pytest.raises(TimeoutError):
-        wait_for_new_blocks(clustercli.cosmos_cli(i), 2, timeout=10)
-
-    log = (c.base_dir / f"node{i}.log").read_text()
-    assert "wrong Block.Header.AppHash" in log
 
     addr_b = cli.create_account("recover")["address"]
     sender = bech32_to_eth(addr_b)
@@ -170,6 +169,9 @@ async def exec(c, tmp_path):
     balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert balance == balance_eth == transfer_amt2
 
+    # check sync node health
+    assert clustercli.cosmos_cli(i).block_height() == cli.block_height()
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     await exec(custom_mantra, tmp_path)
@@ -182,7 +184,9 @@ def patch_chain_id(path):
     cfg["evm"] = {}
     cfg_file.write_text(tomlkit.dumps(cfg))
 
+
+def patch_genesis(path, chain_id):
     genesis_path = path / "genesis.json"
     genesis = json.loads(genesis_path.read_text())
-    genesis["chain_id"] = "mantra-test-1"
+    genesis["chain_id"] = chain_id
     genesis_path.write_text(json.dumps(genesis, indent=2))
