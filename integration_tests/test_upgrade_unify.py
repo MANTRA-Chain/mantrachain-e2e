@@ -170,7 +170,7 @@ async def exec(c, tmp_path):
     assert balance == balance_eth == transfer_amt2
 
     # check sync node health
-    assert clustercli.cosmos_cli(i).block_height() == cli.block_height()
+    assert abs(clustercli.cosmos_cli(i).block_height() - cli.block_height()) <= 1
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):

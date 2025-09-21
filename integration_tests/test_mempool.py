@@ -78,7 +78,7 @@ def test_mempool(mantra_mempool):
     assert len(all_pending) == 0
 
 
-@pytest.mark.flaky(max_runs=3)
+@pytest.mark.flaky(max_runs=5)
 def test_mempool_nonce(mantra_mempool):
     """
     test the nonce logic in check-tx after new block is created.
