@@ -123,9 +123,9 @@ async def test_ibc_transfer(ibc):
     signer2 = ADDRS["signer2"]
     addr_signer1 = eth_to_bech32(signer1)
 
-    # mantra-1 signer2 -> mantra-canary-net-1 signer1 100uom
+    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
     transfer_amt = 100
-    src_chain = "mantra-1"
+    src_chain = "mantra-canary-net-2"
     dst_chain = "mantra-canary-net-1"
     path, escrow_addr = hermes_transfer(
         ibc, src_chain, dst_chain, transfer_amt, addr_signer1
@@ -185,10 +185,10 @@ async def test_ibc_cb(ibc, tmp_path):
     # check native erc20 transfer
     assert_register_erc20_denom(ibc.ibc1, WETH_ADDRESS, tmp_path)
 
-    # mantra-canary-net-1 signer1 -> mantra-1 signer2 50erc20_denom
+    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50erc20_denom
     transfer_amt = total // 2
     src_chain = "mantra-canary-net-1"
-    dst_chain = "mantra-1"
+    dst_chain = "mantra-canary-net-2"
     channel = "channel-0"
     isolated = generate_isolated_address(channel, addr_signer2)
 
@@ -228,8 +228,8 @@ async def test_ibc_cb(ibc, tmp_path):
     cb_contract, dest_cb = await prepare_dest_callback(w3, signer1, transfer_amt)
     cb_balance_bf = await ERC20.fns.balanceOf(cb_contract).call(w3, to=WETH_ADDRESS)
 
-    # mantra-1 signer2 -> mantra-canary-net-1 signer1 50erc20_denom
-    src_chain = "mantra-1"
+    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50erc20_denom
+    src_chain = "mantra-canary-net-2"
     dst_chain = "mantra-canary-net-1"
     hermes_transfer(
         ibc, src_chain, dst_chain, transfer_amt, isolated, denom=dst_denom, memo=dest_cb

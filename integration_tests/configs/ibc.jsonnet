@@ -44,7 +44,7 @@ config {
   'mantra-canary-net-1'+: common {
     key_name: 'signer1',
   },
-  'mantra-1'+: basic + common {
+  'mantra-canary-net-2'+: basic + common {
     key_name: 'signer2',
     validators: [validator {
       base_port: 26800 + i * 10,
@@ -78,7 +78,7 @@ config {
         id: 'mantra-canary-net-1',
       },
       rly {
-        id: 'mantra-1',
+        id: 'mantra-canary-net-2',
       },
     ],
   },
