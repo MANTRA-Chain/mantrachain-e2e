@@ -7,6 +7,7 @@ from pystarport import cluster, ports
 
 from .utils import (
     ADDRS,
+    EVM_CHAIN_ID,
     Greeter,
     get_sync_info,
     send_transaction,
@@ -51,6 +52,9 @@ def test_statesync(mantra):
         clustercli.home(i) / "config/app.toml",
         clustercli.base_port(i),
         {
+            "evm": {
+                "evm-chain-id": EVM_CHAIN_ID,
+            },
             "json-rpc": {
                 "enable": True,
                 "address": "127.0.0.1:{EVMRPC_PORT}",

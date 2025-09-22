@@ -9,5 +9,10 @@ config {
     genesis+: {
       chain_id+: chain_id,
     },
+    'app-config'+: {
+      evm+: {
+        'evm-chain-id': 9001,
+      },
+    },
   },
 }
