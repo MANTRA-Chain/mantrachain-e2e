@@ -193,13 +193,11 @@ async def test_ibc_transfer(ibc):
 
         return await wait_for_fn_async("balance change", check_balance)
 
-    cb_balance = await wait_for_balance_change_async(
+    balance_af = await wait_for_balance_change_async(
         w3, signer1, tf_erc20_addr, balance_bf
     )
-    assert cb_balance == balance_bf + transfer_amt
-    assert cli2.balance(addr_signer2, dst_denom) == 0
-    balance_af = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance_af == cli.balance(addr_signer1, denom) == balance_bf + transfer_amt
+    assert cli2.balance(addr_signer2, dst_denom) == 0
 
 
 async def prepare_dest_callback(w3, sender, amt):
