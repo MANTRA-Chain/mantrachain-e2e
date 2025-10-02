@@ -112,7 +112,7 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     balance = cli.balance(addr_receiver, denom)
     signer1_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == transfer_amt
-    return denom
+    return denom, tf_erc20_addr
 
 
 async def test_ibc_transfer(ibc):
@@ -151,7 +151,7 @@ async def test_ibc_transfer(ibc):
     # check the approve transfer and transferFrom flow of tf tokens
     await assert_tf_flow(w3, receiver, signer1, signer2, ibc_erc20_addr)
     # check create mint transfer and burn tokenfactory denom
-    denom = await assert_tokenfactory_flow(cli, w3, signer1, receiver)
+    denom, tf_erc20_addr = await assert_tokenfactory_flow(cli, w3, signer1, receiver)
 
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50 tf_token
     transfer_amt = 50
@@ -170,6 +170,36 @@ async def test_ibc_transfer(ibc):
     assert signer2_balance == signer2_balance_bf + transfer_amt
     assert cli2.ibc_denom_hash(path) == denom_hash
     signer2_balance_bf = signer2_balance
+
+    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50 tf_token
+    balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    assert balance_bf == cli.balance(addr_signer1, denom)
+    src_chain = "mantra-canary-net-2"
+    dst_chain = "mantra-canary-net-1"
+    hermes_transfer(
+        ibc,
+        src_chain,
+        dst_chain,
+        transfer_amt,
+        addr_signer1,
+        denom=dst_denom,
+    )
+    assert cli2.balance(addr_signer2, dst_denom) == signer2_balance_bf - transfer_amt
+
+    async def wait_for_balance_change_async(w3, addr, token_addr, init_balance):
+        async def check_balance():
+            current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
+            return current_balance if current_balance != init_balance else None
+
+        return await wait_for_fn_async("balance change", check_balance)
+
+    cb_balance = await wait_for_balance_change_async(
+        w3, signer1, tf_erc20_addr, balance_bf
+    )
+    assert cb_balance == balance_bf + transfer_amt
+    assert cli2.balance(addr_signer2, dst_denom) == 0
+    balance_af = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    assert balance_af == cli.balance(addr_signer1, denom) == balance_bf + transfer_amt
 
 
 async def prepare_dest_callback(w3, sender, amt):
