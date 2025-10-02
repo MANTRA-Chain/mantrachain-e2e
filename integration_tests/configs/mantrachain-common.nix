@@ -63,6 +63,22 @@ let
         linux-amd64 = "sha256-wYd+I+qfZNRrwiTy3wGnC/W8Zt+AUD5nsXy9habkzy8=";
       };
     };
+    "v5.0.0-rc9" = {
+      filename = "mantrachaind-5.0.0-rc9-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-87ZFkqmSbI5RcVvSMAKOCc72hzrbgDKtlC/vG4Tq9XI=";
+        linux-arm64 = "sha256-JPYm3zjf+5wDVydhglDfXrlCm9apCXIfUsfQ4O7jfhw=";
+        linux-amd64 = "sha256-JPYm3zjf+5wDVydhglDfXrlCm9apCXIfUsfQ4O7jfhw=";
+      };
+    };
+    "v5.0.0" = {
+      filename = "mantrachaind-5.0.0-${platform}.tar.gz";
+      sha256 = {
+        darwin-amd64 = "sha256-PUXb9BG6/Dao7fvC0btOtPJhGAMDi74P6sG7zkkzKQY=";
+        linux-arm64 = "sha256-2kyy5wegogsWHD4ntI+oFxTTu0ATq2iLPxJ8ahUjejY=";
+        linux-amd64 = "sha256-2kyy5wegogsWHD4ntI+oFxTTu0ATq2iLPxJ8ahUjejY=";
+      };
+    };
   };
 
   mkMantrachain = { version, name ? "mantrachaind-${version}" }: 

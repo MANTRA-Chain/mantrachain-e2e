@@ -10,17 +10,15 @@ let
     "v5.0.0-rc6" = common.mkMantrachain { version = "v5.0.0-rc6"; };
     "v5.0.0-rc7" = common.mkMantrachain { version = "v5.0.0-rc7"; };
     "v5.0.0-rc8" = common.mkMantrachain { version = "v5.0.0-rc8"; };
+    "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
+    "v5.0.0-rc9" = common.mkMantrachain { version = "v5.0.0-rc9"; };
   } // (
     pkgs.lib.optionalAttrs includeMantrachaind {
-      "v5.0" = pkgs.callPackage ../../nix/mantrachain { };
-      "v5.0.0-rc9" = pkgs.callPackage ../../nix/mantrachain { };
+      "v6.0.0-rc0" = pkgs.callPackage ../../nix/mantrachain { };
     }
   ) // (
     pkgs.lib.optionalAttrs (!includeMantrachaind) {
-      "v5.0" = pkgs.writeShellScriptBin "mantrachaind" ''
-        exec mantrachaind "$@"
-      '';
-      "v5.0.0-rc9" = pkgs.writeShellScriptBin "mantrachaind" ''
+      "v6.0.0-rc0" = pkgs.writeShellScriptBin "mantrachaind" ''
         exec mantrachaind "$@"
       '';
     }

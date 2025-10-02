@@ -110,6 +110,13 @@ async def exec(c):
 
     cli = do_upgrade(c, "v5.0.0-rc9", target_height)
 
+    height = cli.block_height()
+    target_height = height + 15
+    cli = do_upgrade(c, "v6.0.0-rc0", target_height)
+
+    pair = cli.query_erc20_token_pair(denom)
+    assert pair["contract_owner"] == "OWNER_MODULE"
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     await exec(custom_mantra)
