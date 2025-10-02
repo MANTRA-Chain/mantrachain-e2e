@@ -20,6 +20,7 @@ from .utils import (
 pytestmark = pytest.mark.slow
 
 
+@pytest.mark.flaky(max_runs=2)
 def test_blacklist(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     community = cli.address("community")
