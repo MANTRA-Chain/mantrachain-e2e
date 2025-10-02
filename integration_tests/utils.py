@@ -579,7 +579,7 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
             "erc20_address": erc20_address,
             "denom": denom,
             "enabled": True,
-            "contract_owner": "OWNER_EXTERNAL",
+            "contract_owner": "OWNER_MODULE",
         }
     assert expected.items() <= event.items()
     meta = {"denom_units": [{"denom": denom}], "base": denom}

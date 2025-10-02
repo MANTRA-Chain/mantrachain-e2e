@@ -112,6 +112,7 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     balance = cli.balance(addr_receiver, denom)
     signer1_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == transfer_amt
+    return denom
 
 
 async def test_ibc_transfer(ibc):
@@ -120,6 +121,7 @@ async def test_ibc_transfer(ibc):
     cli2 = ibc.ibc2.cosmos_cli()
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
+    addr_signer2 = eth_to_bech32(signer2)
     addr_signer1 = eth_to_bech32(signer1)
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
@@ -149,7 +151,25 @@ async def test_ibc_transfer(ibc):
     # check the approve transfer and transferFrom flow of tf tokens
     await assert_tf_flow(w3, receiver, signer1, signer2, ibc_erc20_addr)
     # check create mint transfer and burn tokenfactory denom
-    await assert_tokenfactory_flow(cli, w3, signer1, receiver)
+    denom = await assert_tokenfactory_flow(cli, w3, signer1, receiver)
+
+    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50 tf_token
+    transfer_amt = 50
+    src_chain = "mantra-canary-net-1"
+    dst_chain = "mantra-canary-net-2"
+
+    path, escrow_addr = hermes_transfer(
+        ibc, src_chain, dst_chain, transfer_amt, addr_signer2, denom=denom
+    )
+    denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
+    dst_denom = f"ibc/{denom_hash}"
+    signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
+    signer2_balance = wait_for_balance_change(
+        cli2, addr_signer2, dst_denom, signer2_balance_bf
+    )
+    assert signer2_balance == signer2_balance_bf + transfer_amt
+    assert cli2.ibc_denom_hash(path) == denom_hash
+    signer2_balance_bf = signer2_balance
 
 
 async def prepare_dest_callback(w3, sender, amt):
