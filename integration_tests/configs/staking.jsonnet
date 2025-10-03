@@ -9,6 +9,7 @@ config {
       staked: '10000000000000000000' + chain.evm_denom,
       gas_prices: '0.01' + chain.evm_denom,
       min_self_delegation: 1000000000000000000,
+      mnemonic: '${VALIDATOR4_MNEMONIC}',
     }],
   },
 }

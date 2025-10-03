@@ -13,6 +13,7 @@ from eth_contract.contract import ContractFunction
 from eth_utils import to_checksum_address
 from pystarport import cluster
 
+from .network import setup_custom_mantra
 from .utils import (
     ACCOUNTS,
     DEFAULT_DENOM,
@@ -21,6 +22,7 @@ from .utils import (
     find_log_event_attrs,
     wait_for_block,
     wait_for_block_time,
+    wait_for_new_blocks,
 )
 
 DELEGATE = ContractFunction.from_abi("delegate(address,string,uint256)")
@@ -38,6 +40,18 @@ EDIT_VALIDATOR = ContractFunction.from_abi(
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(scope="module")
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("staking")
+    yield from setup_custom_mantra(
+        path,
+        27200,
+        Path(__file__).parent / "configs/staking.jsonnet",
+        chain=chain,
+    )
 
 
 async def test_staking_delegate(mantra):
@@ -131,7 +145,7 @@ async def test_join_validator(mantra):
     w3 = mantra.async_w3
     cli = mantra.cosmos_cli()
     mnemonic = os.getenv("VALIDATOR4_MNEMONIC")
-    validator = Account.from_mnemonic(mnemonic)
+    acct = Account.from_mnemonic(mnemonic)
     data = Path(mantra.base_dir).parent
     chain_id = mantra.config["chain_id"]
     clustercli = cluster.ClusterCLI(data, cmd="mantrachaind", chain_id=chain_id)
@@ -182,8 +196,8 @@ async def test_join_validator(mantra):
     ]
     min_self_delegation = 1
     res = await CREATE_VALIDATOR(
-        desc, commission, min_self_delegation, validator.address, pubkey, staked
-    ).transact(w3, validator, to=STAKING, gas=200_000)
+        desc, commission, min_self_delegation, acct.address, pubkey, staked
+    ).transact(w3, acct, to=STAKING, gas=200_000)
     assert res.status == 1
 
     time.sleep(2)
@@ -203,12 +217,34 @@ async def test_join_validator(mantra):
     msg = "commission cannot be changed more than once in 24h"
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
         await EDIT_VALIDATOR(
-            desc, validator.address, commission[0] * 2, min_self_delegation
-        ).transact(w3, validator, to=STAKING)
+            desc, acct.address, commission[0] * 2, min_self_delegation
+        ).transact(w3, acct, to=STAKING)
 
     desc[0] = "awesome node"
-    res = await EDIT_VALIDATOR(desc, validator.address, -1, -1).transact(
-        w3, validator, to=STAKING
+    res = await EDIT_VALIDATOR(desc, acct.address, -1, -1).transact(
+        w3, acct, to=STAKING
     )
     assert res.status == 1
     assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
+
+
+async def test_min_self_delegation(custom_mantra):
+    mnemonic = os.getenv("VALIDATOR4_MNEMONIC")
+    acct = Account.from_mnemonic(mnemonic)
+    cli = custom_mantra.cosmos_cli(i=3)
+    w3 = custom_mantra.async_w3
+    val = cli.address("validator", bech="val")
+    amt = 9_000_000_000_000_000_000
+    gas = 400_000
+    res = await UNDELEGATE(acct.address, val, amt).transact(
+        w3, acct, to=STAKING, gas=gas
+    )
+    assert res.status == 1
+    assert cli.validator(val).get("status") == "BOND_STATUS_BONDED"
+    amt = 1
+    res = await UNDELEGATE(acct.address, val, amt).transact(
+        w3, acct, to=STAKING, gas=gas
+    )
+    assert res.status == 1
+    wait_for_new_blocks(cli, 2)
+    assert cli.validator(val).get("status") == "BOND_STATUS_UNBONDING"
