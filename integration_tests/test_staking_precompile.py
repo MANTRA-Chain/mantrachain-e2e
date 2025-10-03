@@ -1,15 +1,25 @@
+import json
+import os
+import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 import requests
 from dateutil.parser import isoparse
+from eth_account import Account
 from eth_contract.contract import ContractFunction
 from eth_utils import to_checksum_address
+from pystarport import cluster
 
 from .utils import (
     ACCOUNTS,
+    DEFAULT_DENOM,
+    DEFAULT_GAS_PRICE,
+    WEI_PER_ETH,
     WEI_PER_UOM,
     find_log_event_attrs,
+    wait_for_block,
     wait_for_block_time,
 )
 
@@ -20,6 +30,9 @@ DELEGATION = ContractFunction.from_abi(
 UNDELEGATE = ContractFunction.from_abi("undelegate(address,string,uint256)(int64)")
 REDELEGATE = ContractFunction.from_abi(
     "redelegate(address,string,string,uint256)(int64)"
+)
+CREATE_VALIDATOR = ContractFunction.from_abi(
+    "createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256)(bool)"  # noqa: E501
 )
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
 
@@ -111,3 +124,91 @@ async def test_staking_redelegate(mantra):
     fee += res["gasUsed"] * res["effectiveGasPrice"]
     _, balance = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
     assert balance_bf[1] == balance[1] + redelegate_amt
+
+
+async def test_join_validator(mantra):
+    w3 = mantra.async_w3
+    cli = mantra.cosmos_cli()
+    mnemonic = os.getenv("VALIDATOR4_MNEMONIC")
+    validator = Account.from_mnemonic(mnemonic)
+    data = Path(mantra.base_dir).parent
+    chain_id = mantra.config["chain_id"]
+    clustercli = cluster.ClusterCLI(data, cmd="mantrachaind", chain_id=chain_id)
+    moniker = "new joined"
+    node_index = clustercli.create_node(moniker=moniker, mnemonic=mnemonic)
+    cli = clustercli.cosmos_cli(node_index)
+    cli0 = mantra.cosmos_cli()
+    staked = 10_000_000_000_000_000_000
+    fund = f"{staked + 1_000_000}{DEFAULT_DENOM}"
+    val_addr = cli.address("validator", bech="val")
+    addr = cli.address("validator")
+
+    res = cli0.transfer(cli0.address("community"), addr, fund)
+    assert res["code"] == 0, res
+    # Modify the json-rpc addresses to avoid conflict
+    cluster.edit_app_cfg(
+        clustercli.home(node_index) / "config/app.toml",
+        clustercli.base_port(node_index),
+        {
+            "json-rpc": {
+                "enable": True,
+                "address": "127.0.0.1:{EVMRPC_PORT}",
+                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+            }
+        },
+    )
+    clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
+    wait_for_block(cli, cli0.block_height() + 1)
+    time.sleep(1)
+    wait_for_block(cli, cli.block_height())
+
+    count = len(cli.validators())
+    gas = 420_000
+
+    pubkey = (
+        cli.raw(
+            "comet",
+            "show-validator",
+            home=cli.data_dir,
+        )
+        .strip()
+        .decode()
+    )
+    pubkey = json.loads(pubkey)["key"]
+    print("mm-pubkey", pubkey)
+    desc = [moniker, "identity", "website", "securityContact", "details"]
+    commission = [
+        int(0.1 * WEI_PER_ETH),
+        int(0.2 * WEI_PER_ETH),
+        int(0.01 * WEI_PER_ETH),
+    ]
+    min_self_delegation = 1
+    res = await CREATE_VALIDATOR(
+        desc, commission, min_self_delegation, validator.address, pubkey, staked
+    ).transact(w3, validator, to=STAKING)
+    assert res.status == 1
+
+    opts = {"gas_prices": DEFAULT_GAS_PRICE, "gas": gas}
+    time.sleep(2)
+    assert len(cli.validators()) == count + 1
+
+    val = cli.validator(val_addr)
+    assert not val.get("jailed")
+    assert val["status"] == "BOND_STATUS_BONDED"
+    assert val["tokens"] == str(staked)
+    assert val["description"]["moniker"] == moniker
+    assert val["commission"]["commission_rates"] == {
+        "rate": "0.100000000000000000",
+        "max_rate": "0.200000000000000000",
+        "max_change_rate": "0.010000000000000000",
+    }
+    rsp = cli.edit_validator(commission_rate="0.2", **opts)
+    if rsp.get("code") == 0:
+        rsp = cli.event_query_tx_for(rsp["txhash"])
+    assert rsp["code"] == 12
+    assert "commission cannot be changed more than once in 24h" in rsp["raw_log"]
+    rsp = cli.edit_validator(new_moniker="awesome node", **opts)
+    if rsp.get("code") == 0:
+        rsp = cli.event_query_tx_for(rsp["txhash"])
+    assert rsp["code"] == 0
+    assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
