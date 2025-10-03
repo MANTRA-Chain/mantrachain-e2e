@@ -325,7 +325,6 @@ class CosmosCLI:
         return int(res["bonded_tokens" if bonded else "not_bonded_tokens"])
 
     def delegate_amount(self, validator_address, amt, generate_only=False, **kwargs):
-        default_kwargs = self.get_kwargs()
         rsp = json.loads(
             self.raw(
                 "tx",
@@ -335,12 +334,42 @@ class CosmosCLI:
                 amt,
                 "--generate-only" if generate_only else None,
                 "-y",
-                **(default_kwargs | kwargs),
+                **(self.get_kwargs_with_gas() | kwargs),
             )
         )
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def unbond_amount(self, to_addr, amt, generate_only=False, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "staking",
+                "unbond",
+                to_addr,
+                amt,
+                "-y",
+                "--generate-only" if generate_only else None,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def validator(self, addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "staking",
+                "validator",
+                addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("validator") or res
 
     def tx_simulate(self, tx, **kwargs):
         default_kwargs = self.get_kwargs()
