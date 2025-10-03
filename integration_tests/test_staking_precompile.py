@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import requests
+import web3
 from dateutil.parser import isoparse
 from eth_account import Account
 from eth_contract.contract import ContractFunction
@@ -15,7 +16,6 @@ from pystarport import cluster
 from .utils import (
     ACCOUNTS,
     DEFAULT_DENOM,
-    DEFAULT_GAS_PRICE,
     WEI_PER_ETH,
     WEI_PER_UOM,
     find_log_event_attrs,
@@ -23,16 +23,17 @@ from .utils import (
     wait_for_block_time,
 )
 
-DELEGATE = ContractFunction.from_abi("delegate(address,string,uint256)(bool)")
+DELEGATE = ContractFunction.from_abi("delegate(address,string,uint256)")
 DELEGATION = ContractFunction.from_abi(
     "delegation(address,string)(uint256,(string,uint256))"
 )
-UNDELEGATE = ContractFunction.from_abi("undelegate(address,string,uint256)(int64)")
-REDELEGATE = ContractFunction.from_abi(
-    "redelegate(address,string,string,uint256)(int64)"
-)
+UNDELEGATE = ContractFunction.from_abi("undelegate(address,string,uint256)")
+REDELEGATE = ContractFunction.from_abi("redelegate(address,string,string,uint256)")
 CREATE_VALIDATOR = ContractFunction.from_abi(
-    "createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256)(bool)"  # noqa: E501
+    "createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256)"  # noqa: E501
+)
+EDIT_VALIDATOR = ContractFunction.from_abi(
+    "editValidator((string,string,string,string,string),address,int256,int256)"
 )
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
 
@@ -163,8 +164,6 @@ async def test_join_validator(mantra):
     wait_for_block(cli, cli.block_height())
 
     count = len(cli.validators())
-    gas = 420_000
-
     pubkey = (
         cli.raw(
             "comet",
@@ -175,7 +174,6 @@ async def test_join_validator(mantra):
         .decode()
     )
     pubkey = json.loads(pubkey)["key"]
-    print("mm-pubkey", pubkey)
     desc = [moniker, "identity", "website", "securityContact", "details"]
     commission = [
         int(0.1 * WEI_PER_ETH),
@@ -185,10 +183,9 @@ async def test_join_validator(mantra):
     min_self_delegation = 1
     res = await CREATE_VALIDATOR(
         desc, commission, min_self_delegation, validator.address, pubkey, staked
-    ).transact(w3, validator, to=STAKING)
+    ).transact(w3, validator, to=STAKING, gas=200_000)
     assert res.status == 1
 
-    opts = {"gas_prices": DEFAULT_GAS_PRICE, "gas": gas}
     time.sleep(2)
     assert len(cli.validators()) == count + 1
 
@@ -202,13 +199,16 @@ async def test_join_validator(mantra):
         "max_rate": "0.200000000000000000",
         "max_change_rate": "0.010000000000000000",
     }
-    rsp = cli.edit_validator(commission_rate="0.2", **opts)
-    if rsp.get("code") == 0:
-        rsp = cli.event_query_tx_for(rsp["txhash"])
-    assert rsp["code"] == 12
-    assert "commission cannot be changed more than once in 24h" in rsp["raw_log"]
-    rsp = cli.edit_validator(new_moniker="awesome node", **opts)
-    if rsp.get("code") == 0:
-        rsp = cli.event_query_tx_for(rsp["txhash"])
-    assert rsp["code"] == 0
+
+    msg = "commission cannot be changed more than once in 24h"
+    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
+        await EDIT_VALIDATOR(
+            desc, validator.address, commission[0] * 2, min_self_delegation
+        ).transact(w3, validator, to=STAKING)
+
+    desc[0] = "awesome node"
+    res = await EDIT_VALIDATOR(desc, validator.address, -1, -1).transact(
+        w3, validator, to=STAKING
+    )
+    assert res.status == 1
     assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
