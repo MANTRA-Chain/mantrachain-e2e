@@ -14,11 +14,18 @@ from .utils import (
 )
 
 DELEGATE = ContractFunction.from_abi("delegate(address,string,uint256)(bool)")
+DELEGATION = ContractFunction.from_abi(
+    "delegation(address,string)(uint256,(string,uint256))"
+)
 UNDELEGATE = ContractFunction.from_abi("undelegate(address,string,uint256)(int64)")
+REDELEGATE = ContractFunction.from_abi(
+    "redelegate(address,string,string,uint256)(int64)"
+)
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
+
 async def test_staking_delegate(mantra):
     cli = mantra.cosmos_cli()
     name = "signer1"
@@ -38,7 +45,6 @@ async def test_staking_delegate(mantra):
     assert balance_bf == balance + amt * WEI_PER_UOM + fee
 
 
-@pytest.mark.asyncio
 async def test_staking_unbond(mantra):
     cli = mantra.cosmos_cli()
     name = "signer1"
@@ -78,3 +84,30 @@ async def test_staking_unbond(mantra):
     wait_for_block_time(cli, isoparse(data["completion_time"]) + timedelta(seconds=1))
     balance = await w3.eth.get_balance(acct.address)
     assert balance == balance_bf - (sum(amounts) - unbonded_amt) * WEI_PER_UOM - fee
+
+
+async def test_staking_redelegate(mantra):
+    cli = mantra.cosmos_cli()
+    name = "signer1"
+    acct = ACCOUNTS[name]
+    val_ops = [v["operator_address"] for v in cli.validators()[:2]]
+    w3 = mantra.async_w3
+    amounts = [3, 4]
+    fee = 0
+
+    for i, amt in enumerate(amounts):
+        res = await DELEGATE(acct.address, val_ops[i], amt).transact(
+            w3, acct.address, to=STAKING
+        )
+        assert res.status == 1
+        fee += res["gasUsed"] * res["effectiveGasPrice"]
+
+    _, balance_bf = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
+    redelegate_amt = 2
+    res = await REDELEGATE(
+        acct.address, val_ops[0], val_ops[1], redelegate_amt
+    ).transact(w3, acct.address, to=STAKING)
+    assert res.status == 1
+    fee += res["gasUsed"] * res["effectiveGasPrice"]
+    _, balance = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
+    assert balance_bf[1] == balance[1] + redelegate_amt

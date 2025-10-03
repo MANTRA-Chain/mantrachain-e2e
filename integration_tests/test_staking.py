@@ -50,3 +50,31 @@ def test_staking_unbond(mantra):
     )
     wait_for_block_time(cli, isoparse(data["completion_time"]) + timedelta(seconds=1))
     assert cli.balance(signer1) == balance_bf - (sum(amounts) - unbonded_amt) - fee
+
+
+def test_staking_redelegate(mantra):
+    cli = mantra.cosmos_cli()
+    name = "signer1"
+    signer1 = cli.address(name)
+    validators = cli.validators()
+    val_ops = [v["operator_address"] for v in validators[:2]]
+    amounts = [3, 4]
+    fee = 0
+
+    for i, amt in enumerate(amounts):
+        rsp = cli.delegate_amount(val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name)
+        assert rsp["code"] == 0, rsp["raw_log"]
+        fee += find_fee(rsp)
+
+    balance_bf = cli.delegation(signer1, val_ops[0])["balance"]["amount"]
+    redelegate_amt = 2
+    rsp = cli.redelegate(
+        val_ops[0],
+        val_ops[1],
+        f"{redelegate_amt}{DEFAULT_DENOM}",
+        _from=name,
+        gas=320_000,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    balance = cli.delegation(signer1, val_ops[0])["balance"]["amount"]
+    assert int(balance_bf) == int(balance) + redelegate_amt

@@ -359,6 +359,56 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def delegation(self, del_addr, val_addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "staking",
+                "delegation",
+                del_addr,
+                val_addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("delegation_response") or res
+
+    def delegations(self, del_addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "staking",
+                "delegations",
+                del_addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("delegation_responses") or res
+
+    def redelegate(
+        self,
+        from_validator,
+        to_validator,
+        amt,
+        generate_only=False,
+        **kwargs,
+    ):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "staking",
+                "redelegate",
+                from_validator,
+                to_validator,
+                amt,
+                "--generate-only" if generate_only else None,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
     def validator(self, addr, **kwargs):
         res = json.loads(
             self.raw(
