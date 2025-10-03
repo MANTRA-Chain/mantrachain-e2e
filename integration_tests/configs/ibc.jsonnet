@@ -15,6 +15,11 @@ local common = {
           min_gas_price: '0',
         },
       },
+      staking+: {
+        params+: {
+          unbonding_time: '1814400s',
+        },
+      },
     },
   },
 };

@@ -2,9 +2,11 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
 from dateutil.parser import isoparse
 from pystarport import cluster
 
+from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
@@ -12,20 +14,22 @@ from .utils import (
     find_log_event_attrs,
     wait_for_block,
     wait_for_block_time,
+    wait_for_new_blocks,
 )
 
+pytestmark = pytest.mark.slow
 
-def test_staking_delegate(mantra):
-    cli = mantra.cosmos_cli()
-    name = "signer1"
-    amt = 2
-    bonded_bf = cli.staking_pool()
-    balance_bf = cli.balance(name)
-    validator = cli.validators()[0]["operator_address"]
-    rsp = cli.delegate_amount(validator, f"{amt}{DEFAULT_DENOM}", _from=name)
-    fee = find_fee(rsp)
-    assert cli.staking_pool() == bonded_bf + amt
-    assert balance_bf == cli.balance(name) + amt + fee
+
+@pytest.fixture(scope="module")
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("staking")
+    yield from setup_custom_mantra(
+        path,
+        26800,
+        Path(__file__).parent / "configs/staking.jsonnet",
+        chain=chain,
+    )
 
 
 def test_staking_unbond(mantra):
@@ -150,3 +154,19 @@ def test_join_validator(mantra):
         rsp = cli.event_query_tx_for(rsp["txhash"])
     assert rsp["code"] == 0
     assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
+
+
+def test_min_self_delegation(custom_mantra):
+    cli = custom_mantra.cosmos_cli(i=3)
+    val = cli.address("validator", bech="val")
+    addr = cli.address("validator")
+    gas = 320_000
+    amt = 9_000_000_000_000_000_000
+    assert (
+        cli.unbond_amount(val, f"{amt}{DEFAULT_DENOM}", _from=addr, gas=gas)["code"]
+        == 0
+    )
+    assert cli.validator(val).get("status") == "BOND_STATUS_BONDED"
+    assert cli.unbond_amount(val, f"1{DEFAULT_DENOM}", _from=addr, gas=gas)["code"] == 0
+    wait_for_new_blocks(cli, 2)
+    assert cli.validator(val).get("status") == "BOND_STATUS_UNBONDING"
