@@ -359,6 +359,51 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
+    def create_validator(
+        self,
+        amt,
+        options,
+        generate_only=False,
+        **kwargs,
+    ):
+        options = {
+            "commission-max-change-rate": "0.01",
+            "commission-rate": "0.1",
+            "commission-max-rate": "0.2",
+            "min-self-delegation": "1",
+            "amount": amt,
+        } | options
+
+        if "pubkey" not in options:
+            pubkey = (
+                self.raw(
+                    "comet",
+                    "show-validator",
+                    home=self.data_dir,
+                )
+                .strip()
+                .decode()
+            )
+            options["pubkey"] = json.loads(pubkey)
+
+        with tempfile.NamedTemporaryFile("w") as fp:
+            json.dump(options, fp)
+            fp.flush()
+            raw = self.raw(
+                "tx",
+                "staking",
+                "create-validator",
+                fp.name,
+                "-y",
+                "--generate-only" if generate_only else None,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        rsp = json.loads(raw)
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
     def delegation(self, del_addr, val_addr, **kwargs):
         res = json.loads(
             self.raw(
