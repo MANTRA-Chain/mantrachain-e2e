@@ -13,6 +13,7 @@ import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
 from itertools import takewhile
 from pathlib import Path
 from urllib.parse import urlparse
@@ -75,6 +76,13 @@ WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
 )
+
+
+class BondStatus(Enum):
+    UNSPECIFIED = "BOND_STATUS_UNSPECIFIED"
+    UNBONDED = "BOND_STATUS_UNBONDED"
+    UNBONDING = "BOND_STATUS_UNBONDING"
+    BONDED = "BOND_STATUS_BONDED"
 
 
 class Contract:

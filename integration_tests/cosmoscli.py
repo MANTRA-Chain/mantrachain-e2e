@@ -126,6 +126,14 @@ class CosmosCLI:
                 raise
         return output.strip().decode()
 
+    def debug_addr(self, eth_addr, bech="acc"):
+        output = self.raw("debug", "addr", eth_addr).decode().strip().split("\n")
+        prefix = "Bech32 Val" if bech == "val" else "Bech32 Acc"
+        for line in output:
+            if line.startswith(prefix):
+                return line.split()[-1]
+        return eth_addr
+
     def account(self, addr, **kwargs):
         return json.loads(
             self.raw("q", "auth", "account", addr, **(self.get_base_kwargs() | kwargs))

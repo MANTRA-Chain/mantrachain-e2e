@@ -10,6 +10,7 @@ from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
+    BondStatus,
     find_fee,
     find_log_event_attrs,
     wait_for_block,
@@ -136,7 +137,7 @@ def test_join_validator(mantra):
 
     val = cli.validator(val_addr)
     assert not val.get("jailed")
-    assert val["status"] == "BOND_STATUS_BONDED"
+    assert val["status"] == BondStatus.BONDED.value
     assert val["tokens"] == str(staked)
     assert val["description"]["moniker"] == moniker
     assert val["commission"]["commission_rates"] == {
@@ -166,7 +167,7 @@ def test_min_self_delegation(custom_mantra):
         cli.unbond_amount(val, f"{amt}{DEFAULT_DENOM}", _from=addr, gas=gas)["code"]
         == 0
     )
-    assert cli.validator(val).get("status") == "BOND_STATUS_BONDED"
+    assert cli.validator(val).get("status") == BondStatus.BONDED.value
     assert cli.unbond_amount(val, f"1{DEFAULT_DENOM}", _from=addr, gas=gas)["code"] == 0
     wait_for_new_blocks(cli, 2)
-    assert cli.validator(val).get("status") == "BOND_STATUS_UNBONDING"
+    assert cli.validator(val).get("status") == BondStatus.UNBONDING.value

@@ -19,6 +19,7 @@ from .utils import (
     DEFAULT_DENOM,
     WEI_PER_ETH,
     WEI_PER_UOM,
+    BondStatus,
     find_log_event_attrs,
     wait_for_block,
     wait_for_block_time,
@@ -26,18 +27,9 @@ from .utils import (
 )
 
 DELEGATE = ContractFunction.from_abi("delegate(address,string,uint256)")
-DELEGATION = ContractFunction.from_abi(
-    "delegation(address,string)(uint256,(string,uint256))"
-)
 UNDELEGATE = ContractFunction.from_abi("undelegate(address,string,uint256)")
-REDELEGATE = ContractFunction.from_abi("redelegate(address,string,string,uint256)")
-CREATE_VALIDATOR = ContractFunction.from_abi(
-    "createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256)"  # noqa: E501
-)
-EDIT_VALIDATOR = ContractFunction.from_abi(
-    "editValidator((string,string,string,string,string),address,int256,int256)"
-)
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,15 +46,26 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
+async def get_validators(w3):
+    VALIDATORS = ContractFunction.from_abi(
+        "validators(string,(bytes,uint64,uint64,bool,bool))((string,string,bool,uint8,uint256,uint256,string,int64,int64,uint256,uint256)[],(bytes,uint64))"  # noqa: E501
+    )
+    res, _ = await VALIDATORS(BondStatus.BONDED.value, [b"", 0, 10, False, False]).call(
+        w3, to=STAKING
+    )
+    return res
+
+
 async def test_staking_delegate(mantra):
     cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
     name = "signer1"
     amt = 2
     acct = ACCOUNTS[name]
     bonded = cli.staking_pool()
-    w3 = mantra.async_w3
     balance_bf = await w3.eth.get_balance(acct.address)
-    validator = cli.validators()[0]["operator_address"]
+    res = await get_validators(w3)
+    validator = cli.debug_addr(res[0][0], bech="val")
     res = await DELEGATE(acct.address, validator, amt).transact(
         w3, acct.address, to=STAKING
     )
@@ -75,10 +78,11 @@ async def test_staking_delegate(mantra):
 
 async def test_staking_unbond(mantra):
     cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
     name = "signer1"
     acct = ACCOUNTS[name]
-    val_ops = [v["operator_address"] for v in cli.validators()[:2]]
-    w3 = mantra.async_w3
+    res = await get_validators(w3)
+    val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
     balance_bf = await w3.eth.get_balance(acct.address)
     bonded_bf = cli.staking_pool()
     amounts = [3, 4]
@@ -116,10 +120,11 @@ async def test_staking_unbond(mantra):
 
 async def test_staking_redelegate(mantra):
     cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
     name = "signer1"
     acct = ACCOUNTS[name]
-    val_ops = [v["operator_address"] for v in cli.validators()[:2]]
-    w3 = mantra.async_w3
+    res = await get_validators(w3)
+    val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
     amounts = [3, 4]
     fee = 0
 
@@ -130,8 +135,12 @@ async def test_staking_redelegate(mantra):
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
 
+    DELEGATION = ContractFunction.from_abi(
+        "delegation(address,string)(uint256,(string,uint256))"
+    )
     _, balance_bf = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
     redelegate_amt = 2
+    REDELEGATE = ContractFunction.from_abi("redelegate(address,string,string,uint256)")
     res = await REDELEGATE(
         acct.address, val_ops[0], val_ops[1], redelegate_amt
     ).transact(w3, acct.address, to=STAKING)
@@ -195,6 +204,9 @@ async def test_join_validator(mantra):
         int(0.01 * WEI_PER_ETH),
     ]
     min_self_delegation = 1
+    CREATE_VALIDATOR = ContractFunction.from_abi(
+        "createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256)"  # noqa: E501
+    )
     res = await CREATE_VALIDATOR(
         desc, commission, min_self_delegation, acct.address, pubkey, staked
     ).transact(w3, acct, to=STAKING, gas=200_000)
@@ -205,7 +217,7 @@ async def test_join_validator(mantra):
 
     val = cli.validator(val_addr)
     assert not val.get("jailed")
-    assert val["status"] == "BOND_STATUS_BONDED"
+    assert val["status"] == BondStatus.BONDED.value
     assert val["tokens"] == str(staked)
     assert val["description"]["moniker"] == moniker
     assert val["commission"]["commission_rates"] == {
@@ -214,6 +226,9 @@ async def test_join_validator(mantra):
         "max_change_rate": "0.010000000000000000",
     }
 
+    EDIT_VALIDATOR = ContractFunction.from_abi(
+        "editValidator((string,string,string,string,string),address,int256,int256)"
+    )
     msg = "commission cannot be changed more than once in 24h"
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
         await EDIT_VALIDATOR(
@@ -240,11 +255,11 @@ async def test_min_self_delegation(custom_mantra):
         w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
-    assert cli.validator(val).get("status") == "BOND_STATUS_BONDED"
+    assert cli.validator(val).get("status") == BondStatus.BONDED.value
     amt = 1
     res = await UNDELEGATE(acct.address, val, amt).transact(
         w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
     wait_for_new_blocks(cli, 2)
-    assert cli.validator(val).get("status") == "BOND_STATUS_UNBONDING"
+    assert cli.validator(val).get("status") == BondStatus.UNBONDING.value
