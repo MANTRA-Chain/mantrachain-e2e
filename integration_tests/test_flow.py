@@ -25,7 +25,7 @@ def test_connect_flow(connect_mantra, tmp_path):
 def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
     community = "community"
     recover = "recover"
-    amt = 4000
+    amt = 4_000_000_000_000_000 // WEI_PER_DENOM
     # recover cosmos addr outside from node
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.w3
@@ -50,7 +50,7 @@ def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
     addr_test1 = eth_to_bech32(acc_test1.address)
     balance_recover = get_balance(cli, recover)
     balance1 = get_balance(cli, addr_test1)
-    amt = amt - DEFAULT_FEE
+    amt = amt - DEFAULT_FEE // WEI_PER_DENOM
     fee = transfer_via_cosmos(cli, addr_recover, addr_test1, amt)
     assert assert_balance(cli, w3, recover) == balance_recover - amt - fee
     assert assert_balance(cli, w3, addr_test1) == balance1 + amt
