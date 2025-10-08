@@ -1004,6 +1004,13 @@ class CosmosCLI:
             raise ValueError("No JSON object found in export output")
         return json.loads(raw[idx:])
 
+    def has_module(self, module):
+        try:
+            self.raw("q", module)
+            return True
+        except AssertionError:
+            return False
+
     def wasm_store(self, path, wallet, **kwargs):
         rsp = json.loads(
             self.raw(

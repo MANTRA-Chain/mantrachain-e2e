@@ -56,6 +56,8 @@ def test_connect_tokenfactory(connect_mantra, tmp_path):
 
 def test_setup_hooks_denom(mantra):
     cli = mantra.cosmos_cli()
+    if not cli.has_module("wasm"):
+        pytest.skip("wasm module not enabled")
     community = "community"
     signer2 = "signer2"
     addr_a = cli.address(community)
