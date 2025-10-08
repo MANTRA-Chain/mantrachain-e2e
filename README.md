@@ -19,7 +19,6 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 1. **Create env file from template:**
    ```sh
    cp scripts/env.template scripts/.env
-   cp scripts/network.env.template scripts/network.env
    ```
 
 2. **Build environment and dependencies:**
