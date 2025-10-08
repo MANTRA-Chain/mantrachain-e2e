@@ -1,9 +1,10 @@
 local config = import 'default.jsonnet';
+local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 
 config {
   'mantra-canary-net-1'+: {
     validators: [validator {
-      gas_prices: '100uom',
+      gas_prices: '100' + chain.evm_denom,
     } for validator in super.validators],
     genesis+: {
       consensus+: {

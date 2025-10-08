@@ -1,4 +1,5 @@
 local config = import 'default.jsonnet';
+local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
 local common = {
   'account-prefix': 'mantra',
@@ -34,7 +35,7 @@ local rly = {
   },
   gas_price: {
     price: 0.1,
-    denom: 'uom',
+    denom: chain.evm_denom,
   },
   event_source: {
     batch_delay: '5000ms',

@@ -147,12 +147,12 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
         },
         crisis: {
           constant_fee: {
-            denom: 'uom',
+            denom: chain.evm_denom,
           },
         },
         mint: {
           params: {
-            mint_denom: 'uom',
+            mint_denom: chain.evm_denom,
           },
         },
         staking: {

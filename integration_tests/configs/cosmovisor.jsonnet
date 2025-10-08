@@ -1,4 +1,5 @@
 local config = import 'default.jsonnet';
+local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 
 config {
   'mantra-canary-net-1'+: {
@@ -39,7 +40,7 @@ config {
             max_learning_rate: '0.125000000000000000',
             max_block_utilization: '75000000',
             window: '1',
-            fee_denom: 'uom',
+            fee_denom: chain.evm_denom,
             enabled: true,
             distribute_fees: false,
           },
