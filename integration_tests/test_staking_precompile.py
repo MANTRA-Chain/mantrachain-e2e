@@ -202,7 +202,7 @@ async def test_join_validator(mantra):
     cli = clustercli.cosmos_cli(node_index)
     cli0 = mantra.cosmos_cli()
     staked = 10_000_000_000_000_000_000
-    fund = f"{staked + 1_000_000}{DEFAULT_DENOM}"
+    fund = f"{staked + 1_000_000_000_000_000_000//WEI_PER_DENOM}{DEFAULT_DENOM}"
     val_addr = cli.address("validator", bech="val")
     addr = cli0.debug_addr(val_addr, bech="hex")
 

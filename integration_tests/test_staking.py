@@ -11,6 +11,7 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
+    WEI_PER_DENOM,
     BondStatus,
     find_fee,
     find_log_event_attrs,
@@ -105,7 +106,7 @@ def test_join_validator(mantra):
     cli = clustercli.cosmos_cli(node_index)
     cli0 = mantra.cosmos_cli()
     staked = 10_000_000_000_000_000_000
-    fund = f"{staked + 1_000_000}{DEFAULT_DENOM}"
+    fund = f"{staked + 1_000_000_000_000_000_000//WEI_PER_DENOM}{DEFAULT_DENOM}"
     val_addr = cli.address("validator", bech="val")
     addr = cli.address("validator")
     res = cli0.transfer(cli0.address("community"), addr, fund)
@@ -131,8 +132,7 @@ def test_join_validator(mantra):
     gas = 420_000
     opts = {"gas_prices": DEFAULT_GAS_PRICE, "gas": gas}
     rsp = cli.create_validator(f"{staked}{DEFAULT_DENOM}", {"moniker": moniker}, **opts)
-    if rsp.get("code") == 0:
-        rsp = cli.event_query_tx_for(rsp["txhash"])
+    assert rsp["code"] == 0, rsp["raw_log"]
     time.sleep(2)
     assert len(cli.validators()) == count + 1
 
@@ -147,14 +147,10 @@ def test_join_validator(mantra):
         "max_change_rate": "0.010000000000000000",
     }
     rsp = cli.edit_validator(commission_rate="0.2", **opts)
-    if rsp.get("code") == 0:
-        rsp = cli.event_query_tx_for(rsp["txhash"])
-    assert rsp["code"] == 12
+    assert rsp["code"] == 12, rsp["raw_log"]
     assert "commission cannot be changed more than once in 24h" in rsp["raw_log"]
     rsp = cli.edit_validator(new_moniker="awesome node", **opts)
-    if rsp.get("code") == 0:
-        rsp = cli.event_query_tx_for(rsp["txhash"])
-    assert rsp["code"] == 0
+    assert rsp["code"] == 0, rsp["raw_log"]
     assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
 
 
