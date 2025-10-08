@@ -17,6 +17,8 @@ pytestmark = pytest.mark.slow
 
 def test_blacklist(mantra, tmp_path):
     cli = mantra.cosmos_cli()
+    if not cli.has_module("wasm"):
+        pytest.skip("sanction module not enabled")
     community = cli.address("community")
     user = cli.create_account("user")["address"]
     assert_transfer(cli, community, user, amt=20000)

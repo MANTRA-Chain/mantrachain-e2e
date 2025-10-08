@@ -7,6 +7,8 @@ from .utils import DEFAULT_DENOM, find_log_event_attrs
 
 def test_wasm(mantra):
     cli = mantra.cosmos_cli()
+    if not cli.has_module("wasm"):
+        pytest.skip("wasm module not enabled")
     name = "signer1"
     wallet = cli.address(name)
     gas = 2500000
