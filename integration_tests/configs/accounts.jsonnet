@@ -7,7 +7,7 @@ config {
       {
         'coin-type': 60,
         name: 'user' + i,
-        coins: '100000000000' + chain.evm_denom,
+        coins: '100000000000000000' + chain.evm_denom,
       }
       for i in std.range(0, 5)
     ],

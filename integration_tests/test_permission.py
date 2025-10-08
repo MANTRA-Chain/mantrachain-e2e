@@ -62,15 +62,18 @@ async def test_transfers_not_allowed(custom_mantra):
         "mint",
         "nft",
         "not_bonded_tokens_pool",
-        "oracle",
-        "precisebank",
         "ratelimit",
-        "sanction",
         "tax",
         "tokenfactory",
         "transfer",
+    ]
+    modules2 = [
+        "oracle",
+        "sanction",
+        "precisebank",
         "wasm",
     ]
+    modules.extend(module for module in modules2 if cli.has_module(module))
     users = cli.list_accounts()
     users = [user["name"] for user in users if user["name"] != "reserve"]
     pairs = []
