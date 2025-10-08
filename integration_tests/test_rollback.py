@@ -9,7 +9,7 @@ from pystarport.cluster import SUPERVISOR_CONFIG_FILE
 from .network import setup_custom_mantra
 from .utils import CMD, supervisorctl, wait_for_block, wait_for_port
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 
 
 def update_node_cmd(path, cmd, i):

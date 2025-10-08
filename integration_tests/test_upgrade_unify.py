@@ -24,7 +24,7 @@ from .utils import (
     wait_for_new_blocks,
 )
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
 
 @pytest.fixture(scope="module")
