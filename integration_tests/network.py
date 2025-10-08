@@ -21,6 +21,7 @@ from web3.providers.rpc.utils import ExceptionRetryConfiguration
 from .cosmoscli import CosmosCLI
 from .utils import (
     CHAIN_ID,
+    CMD,
     supervisorctl,
     wait_for_block,
     wait_for_port,
@@ -34,7 +35,7 @@ RETRY_CONFIG = ExceptionRetryConfiguration(
 
 
 class Mantra:
-    def __init__(self, base_dir, chain_binary="mantrachaind"):
+    def __init__(self, base_dir, chain_binary=CMD):
         self._w3 = None
         self._async_w3 = None
         self.base_dir = base_dir
@@ -232,11 +233,9 @@ def connect_custom_mantra():
     rpc = os.getenv("RPC", "http://127.0.0.1:26657")
     evm_rpc = os.getenv("EVM_RPC", "http://127.0.0.1:26651")
     evm_rpc_ws = os.getenv("EVM_RPC_WS", "ws://127.0.0.1:26652")
-    chain_id = os.getenv("CHAIN_ID", CHAIN_ID)
-    cmd = os.getenv("CMD", "mantrachaind")
     wait_for_url(rpc)
     wait_for_url(evm_rpc)
-    yield ConnectMantra(rpc, evm_rpc, evm_rpc_ws, chain_id, chain_binary=cmd)
+    yield ConnectMantra(rpc, evm_rpc, evm_rpc_ws, CHAIN_ID, chain_binary=CMD)
 
 
 class Geth:

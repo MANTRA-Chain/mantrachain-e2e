@@ -8,6 +8,7 @@ from pystarport import cluster
 
 from .network import setup_custom_mantra
 from .utils import (
+    CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
     BondStatus,
@@ -98,7 +99,7 @@ def test_staking_redelegate(mantra):
 def test_join_validator(mantra):
     data = Path(mantra.base_dir).parent
     chain_id = mantra.config["chain_id"]
-    clustercli = cluster.ClusterCLI(data, cmd="mantrachaind", chain_id=chain_id)
+    clustercli = cluster.ClusterCLI(data, cmd=CMD, chain_id=chain_id)
     moniker = "new joined"
     node_index = clustercli.create_node(moniker=moniker)
     cli = clustercli.cosmos_cli(node_index)

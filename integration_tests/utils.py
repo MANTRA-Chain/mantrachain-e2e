@@ -67,6 +67,7 @@ DEFAULT_FEE = int(DEFAULT_GAS_AMT * DEFAULT_GAS)
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 10**12))  # 10^12 wei == 1 uom
 ADDRESS_PREFIX = os.getenv("ADDRESS_PREFIX", "mantra")
+CMD = os.getenv("CMD", "mantrachaind")
 
 
 WETH_SALT = 999

@@ -7,6 +7,7 @@ from pystarport import cluster, ports
 
 from .utils import (
     ADDRS,
+    CMD,
     Greeter,
     get_sync_info,
     send_transaction,
@@ -41,9 +42,8 @@ def test_statesync(mantra):
     # We can only create a new node with statesync config
     data = Path(mantra.base_dir).parent  # Same data dir as mantra fixture
     chain_id = mantra.config["chain_id"]  # Same chain_id as mantra fixture
-    cmd = "mantrachaind"
     # create a clustercli object from ClusterCLI class
-    clustercli = cluster.ClusterCLI(data, cmd=cmd, chain_id=chain_id)
+    clustercli = cluster.ClusterCLI(data, cmd=CMD, chain_id=chain_id)
     # create a new node with statesync enabled
     i = clustercli.create_node(moniker="statesync", statesync=True)
     # Modify the json-rpc addresses to avoid conflict
