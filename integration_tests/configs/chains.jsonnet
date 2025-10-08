@@ -1,5 +1,6 @@
 {
   evmd: {
+    'account-prefix': 'cosmos',
     evm_denom: 'atest',
     cmd: 'evmd',
     evm_chain_id: 262144,
@@ -12,6 +13,7 @@
     },
   },
   mantrachaind: {
+    'account-prefix': 'mantra',
     evm_denom: 'uom',
     cmd: 'mantrachaind',
     evm_chain_id: 7888,
@@ -28,6 +30,7 @@
     },
   },
   inveniemd: {
+    'account-prefix': 'inveniem',
     evm_denom: 'anvnm',
     cmd: 'inveniemd',
     evm_chain_id: 7888,

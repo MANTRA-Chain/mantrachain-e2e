@@ -2,7 +2,7 @@ local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
 local common = {
-  'account-prefix': 'mantra',
+  'account-prefix': chain['account-prefix'],
   'coin-type': 60,
   'app-config'+: {
     'index-events': super['index-events'] + ['message.action'],
