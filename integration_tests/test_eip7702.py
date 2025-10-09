@@ -5,6 +5,8 @@ from .network import Geth
 from .utils import ACCOUNTS, ADDRS, KEYS
 from .utils import send_transaction as send_transaction_sync
 
+pytest.skip("https://github.com/cosmos/evm/issues/493", allow_module_level=True)
+
 
 @pytest.fixture(scope="module", params=["mantra", "geth"])
 def cluster(request, mantra, geth):
