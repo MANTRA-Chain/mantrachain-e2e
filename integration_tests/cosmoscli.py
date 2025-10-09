@@ -232,26 +232,21 @@ class CosmosCLI:
             fp.flush()
             return self.sign_tx(fp.name, signer, **kwargs)
 
-    def create_account(self, name, mnemonic=None, **kwargs):
-        "create new keypair in node's keyring"
+    def create_account(self, name, mnemonic=None, ledger=False, **kwargs):
         if kwargs.get("coin_type", 60) == 60:
             kwargs.update({"coin_type": 60, "key_type": "eth_secp256k1"})
-        default_kwargs = self.get_kwargs()
-        args = {**default_kwargs, **kwargs}
-        if mnemonic is None:
-            if kwargs.get("source"):
-                output = self.raw("keys", "add", name, "--recover", **args)
-            else:
-                output = self.raw("keys", "add", name, **args)
-        else:
-            output = self.raw(
-                "keys",
-                "add",
-                name,
-                "--recover",
-                stdin=mnemonic.encode() + b"\n",
-                **args,
-            )
+        args = {**self.get_kwargs(), **kwargs}
+        cmd = ["keys", "add", name]
+        if mnemonic is not None:
+            cmd.append("--recover")
+        if ledger:
+            cmd.append("--ledger")
+        if mnemonic is None and kwargs.get("source"):
+            cmd.append("--recover")
+        output = self.raw(
+            *cmd, stdin=(mnemonic.encode() + b"\n") if mnemonic else None, **args
+        )
+        print("mm-output", output)
         return json.loads(output)
 
     def list_accounts(self, **kwargs):
