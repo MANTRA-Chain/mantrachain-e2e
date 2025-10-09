@@ -37,7 +37,7 @@ UNDELEGATE = ContractFunction.from_abi(
     "function undelegate(address,string,uint256) external returns (int64)"
 )
 VALIDATOR = ContractFunction.from_abi(
-    "function validator(address) external returns ((string,string,bool,uint8,uint256,uint256,string,int64,int64,uint256,uint256))"  # noqa: E501
+    "function validator(address) external returns ((string,string,bool,uint8,uint256,uint256,(string,string,string,string,string),int64,int64,uint256,uint256))"  # noqa: E501
 )
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
 
@@ -59,7 +59,7 @@ def custom_mantra(request, tmp_path_factory):
 
 async def get_validators(w3):
     VALIDATORS = ContractFunction.from_abi(
-        "function validators(string,(bytes,uint64,uint64,bool,bool)) external returns ((string,string,bool,uint8,uint256,uint256,string,int64,int64,uint256,uint256)[],(bytes,uint64))"  # noqa: E501
+        "function validators(string,(bytes,uint64,uint64,bool,bool)) external returns ((string,string,bool,uint8,uint256,uint256,(string,string,string,string,string),int64,int64,uint256,uint256)[],(bytes,uint64))"  # noqa: E501
     )
     res, _ = await VALIDATORS(BondStatus.BONDED.value, [b"", 0, 10, False, False]).call(
         w3, to=STAKING
