@@ -8,8 +8,10 @@ from .utils import (
     ADDRS,
     KEYS,
     Greeter,
+    module_address,
     send_txs,
     sign_transaction,
+    submit_gov_proposal,
     wait_for_new_blocks,
 )
 
@@ -79,7 +81,7 @@ def test_mempool(mantra_mempool):
 
 
 @pytest.mark.flaky(max_runs=5)
-def test_mempool_nonce(mantra_mempool):
+def test_mempool_nonce(mantra_mempool, tmp_path):
     """
     test the nonce logic in check-tx after new block is created.
 
@@ -94,13 +96,31 @@ def test_mempool_nonce(mantra_mempool):
     transactions with local nonce.
     """
     w3: Web3 = mantra_mempool.w3
-    cli = mantra_mempool.cosmos_cli(0)
-    wait_for_new_blocks(cli, 1, sleep=0.1)
+    cli = mantra_mempool.cosmos_cli()
+    p = cli.get_params("consensus")["params"]
+    # adjust to 128KB txMaxSize to avoid oversized data when broadcast
+    max_bytes = 131072
+    p["block"]["max_bytes"] = max_bytes
+    p["evidence"]["max_bytes"] = max_bytes
+    p.pop("version", None)
+    submit_gov_proposal(
+        mantra_mempool,
+        tmp_path,
+        messages=[
+            {
+                "@type": "/cosmos.consensus.v1.MsgUpdateParams",
+                "authority": module_address("gov"),
+                **p,
+            }
+        ],
+    )
+    p = cli.get_params("consensus")["params"]
+    assert int(p["block"]["max_bytes"]) == max_bytes
     sender = ADDRS["community"]
     orig_nonce = w3.eth.get_transaction_count(sender)
     height = w3.eth.get_block_number()
     local_nonce = orig_nonce
-    tx_bytes = 1000000  # can only include one tx at a time
+    tx_bytes = max_bytes // 2 + 1  # can only include one tx at a time
 
     def send_with_nonce(nonce):
         tx = {

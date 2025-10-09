@@ -256,7 +256,7 @@ def setup_geth(path, base_port):
             "--miner.etherbase",
             "0x57f96e6B86CdeFdB3d412547816a82E3E0EbF9D2",
             "--http.api",
-            "eth,net,web3,debug",
+            "eth,net,web3,debug,txpool",
         ]
         print(*cmd)
         proc = subprocess.Popen(

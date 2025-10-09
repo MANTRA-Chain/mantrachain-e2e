@@ -18,7 +18,7 @@ async def test_get_logs_by_topic(mantra):
     contract = await build_and_deploy_contract_async(w3, "Greeter")
     topic = f"0x{Web3.keccak(text='ChangeGreeting(address,string)').hex()}"
     tx = await contract.functions.setGreeting("world").build_transaction()
-    await send_transaction(w3, ACCOUNTS["community"], **tx)
+    res = await send_transaction(w3, ACCOUNTS["community"], **tx)
 
     current = await w3.eth.block_number
     # invalid block ranges
@@ -44,7 +44,14 @@ async def test_get_logs_by_topic(mantra):
     # log exists
     logs = await w3.eth.get_logs({"topics": [topic]})
     assert len(logs) == 1
-    assert logs[0]["address"] == contract.address
+    log = logs[0]
+    assert all(
+        log[key] == res[key]
+        for key in ["transactionHash", "transactionIndex", "blockNumber", "blockHash"]
+    )
+    assert log["address"] == contract.address
+    assert log["blockTimestamp"] == res["logs"][0]["blockTimestamp"]
+    assert log["blockTimestamp"] != "0x0"
 
     # Wait and confirm log doesn't appear in new blocks
     await w3_wait_for_new_blocks_async(w3, 2)

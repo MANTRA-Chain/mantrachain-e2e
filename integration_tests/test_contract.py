@@ -317,14 +317,12 @@ async def test_4337(mantra, connect_mantra):
     )
 
 
-# TODO: rm flaky and enlarge num after evm mempool is ready
-@pytest.mark.flaky(max_runs=5)
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
     name = "community"
     key = KEYS[name]
     owner = ADDRS[name]
-    num = 2
+    num = 10
     res = build_contract("ERC20MinterBurnerDecimals")
     args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
     tx_results = await asyncio.gather(
