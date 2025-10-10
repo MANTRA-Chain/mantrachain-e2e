@@ -1,9 +1,25 @@
+import base64
+
+import aiohttp
 import pytest
+from cprotobuf import Field, ProtoEntity
+from eth_contract.erc20 import ERC20
+from eth_contract.slots import MappingSlot
 from hexbytes import HexBytes
+from pystarport import ports
 from web3 import Web3
 from web3._utils.contracts import encode_transaction_data
 
-from .utils import Greeter, build_and_deploy_contract_async
+from .utils import (
+    ADDRS,
+    WETH_ADDRESS,
+    Greeter,
+    assert_create_erc20_denom,
+    assert_create_tokenfactory_denom,
+    assert_mint_tokenfactory_denom,
+    build_and_deploy_contract_async,
+    denom_to_erc20_address,
+)
 
 
 def test_temporary_contract_code(mantra):
@@ -95,6 +111,113 @@ def test_override_state(mantra):
         },
     )
     assert ("",) == w3.codec.decode(("string",), result)
+
+
+@pytest.mark.asyncio
+async def test_override_erc20_state(mantra):
+    w3 = mantra.async_w3
+    community = ADDRS["community"]
+    _, total = await assert_create_erc20_denom(w3, community)
+    int_value = total - 1
+
+    fn = ERC20.fns.balanceOf(community)
+    fn_slot = MappingSlot(
+        slot=HexBytes(
+            "0x0000000000000000000000000000000000000000000000000000000000000003"
+        )
+    )
+    state_key = f"0x{fn_slot.value(HexBytes(community)).slot.hex()}"
+    hex_state = "0x" + HexBytes(w3.codec.encode(("uint256",), (int_value,))).hex()
+
+    state = {state_key: hex_state}
+
+    for state_type in ["stateDiff", "state"]:
+        res = await w3.eth.call(
+            {"to": WETH_ADDRESS, "data": fn.data},
+            "latest",
+            {WETH_ADDRESS: {state_type: state}},
+        )
+        assert fn.decode(res) == int_value
+
+
+class StateEntry(ProtoEntity):
+    key = Field("bytes", 1)
+    value = Field("bytes", 2)
+    delete = Field("bool", 3)
+
+
+class StoreStateDiff(ProtoEntity):
+    name = Field("string", 1)
+    entries = Field(StateEntry, 2, repeated=True)
+
+
+def create_bank_balance_key(addr_bytes, denom):
+    balances_prefix = bytes([2])
+    addr_len = bytes([len(addr_bytes)])
+    # prefix + addr_len + addr + denom
+    return balances_prefix + addr_len + addr_bytes + denom.encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_override_precompile_state(mantra):
+    w3 = mantra.async_w3
+    cli = mantra.cosmos_cli()
+    community = ADDRS["community"]
+    sender = cli.address("community")
+    subdenom = "eth_call"
+    amt = 10**6
+    denom = assert_create_tokenfactory_denom(cli, subdenom, _from=sender, gas=620000)
+    tf_erc20_addr = denom_to_erc20_address(denom)
+    assert_mint_tokenfactory_denom(cli, denom, amt, _from=sender, gas=300000)
+
+    balance = cli.balance(sender, denom)
+    balance_eth = await ERC20.fns.balanceOf(community).call(w3, to=tf_erc20_addr)
+    total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
+    assert balance == balance_eth == total == amt
+
+    int_value = 99
+    fn = ERC20.fns.balanceOf(community)
+
+    addr_bytes = bytes.fromhex(community[2:])
+    key = create_bank_balance_key(addr_bytes, denom)
+    value = str(int_value).encode("utf-8")
+    cosmos_overrides = {
+        "cosmosStateOverrides": [
+            {
+                "name": "bank",
+                "entries": [
+                    {
+                        "key": base64.b64encode(key).decode(),
+                        "value": base64.b64encode(value).decode(),
+                        "delete": False,
+                    }
+                ],
+            }
+        ]
+    }
+    rpc_url = f"http://127.0.0.1:{ports.evmrpc_port(mantra.base_port(0))}"
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "eth_call",
+        "params": [
+            {
+                "to": tf_erc20_addr,
+                "data": "0x" + fn.data.hex(),
+            },
+            "latest",
+            cosmos_overrides,
+        ],
+        "id": 1,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(rpc_url, json=payload) as response:
+            result = await response.json()
+            if "error" in result:
+                raise Exception(f"RPC error: {result['error']}")
+
+            res_hex = result["result"]
+            res_bytes = bytes.fromhex(res_hex[2:])
+            assert fn.decode(res_bytes) == int_value
 
 
 @pytest.mark.connect

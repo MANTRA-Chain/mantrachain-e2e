@@ -940,9 +940,9 @@ async def assert_create_erc20_denom(w3, signer):
         w3, signer, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
     )
     assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth_bf == 0
+    total_bf = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    balance_bf = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total_bf == balance_bf
 
     weth = WETH(to=WETH_ADDRESS)
     erc20_denom = f"erc20:{WETH_ADDRESS}"
@@ -950,9 +950,9 @@ async def assert_create_erc20_denom(w3, signer):
     res = await weth.fns.deposit().transact(w3, signer, value=deposit_amt)
     assert res.status == 1
     total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth == deposit_amt
-    signer1_balance_eth_bf = signer1_balance_eth
+    balance = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total == balance
+    assert (total - total_bf) == (balance - balance_bf) == deposit_amt
     return erc20_denom, total
 
 
