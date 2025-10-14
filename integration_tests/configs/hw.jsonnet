@@ -2,5 +2,11 @@ local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 
 config {
-  'mantra-canary-net-1'+: {},
+  'mantra-canary-net-1'+: {
+    hw_account: {
+      name: 'hw',
+      coins: '8000' + chain.evm_denom,
+      'coin-type': 118,
+    },
+  },
 }

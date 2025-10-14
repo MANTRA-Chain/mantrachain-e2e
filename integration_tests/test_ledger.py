@@ -7,7 +7,7 @@ import pytest
 from pystarport.ledger import ZEMU_GRPC_SERVER_PORT, Ledger
 
 from .network import setup_custom_mantra
-from .utils import DEFAULT_DENOM, assert_transfer, find_fee
+from .utils import DEFAULT_DENOM, find_fee
 
 pytestmark = pytest.mark.slow
 
@@ -19,7 +19,9 @@ def custom_mantra(request, tmp_path_factory):
     ledger = Ledger()
     try:
         ledger.start()
-        assert ledger.is_running(), "failed to start Ledger simulator"
+        assert (
+            ledger.is_running() and wait_for_grpc_server()
+        ), "failed to start Ledger simulator"
 
         yield from setup_custom_mantra(
             path,
@@ -35,18 +37,11 @@ def custom_mantra(request, tmp_path_factory):
 
 
 def test_ledger(custom_mantra):
-    assert wait_for_grpc_server()
     cli = custom_mantra.cosmos_cli()
-    name = "ledger"
-    res = cli.create_account(name, ledger=True, coin_type=118, key_type="secp256k1")
-    assert "address" in res
-    assert "pubkey" in res
-    assert res["name"] == name
-    assert res["type"] == "ledger"
-    community = cli.address("community")
+    name = "hw"
     hw = cli.address(name)
+    community = cli.address("community")
     amt1 = 8000
-    assert_transfer(cli, community, hw, amt=amt1)
     assert cli.balance(hw) == amt1
     community_balance = cli.balance(community)
     amt2 = 4000

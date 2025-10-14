@@ -150,6 +150,7 @@ class CosmosCLI:
         to,
         coins,
         generate_only=False,
+        event_query_tx=True,
         ledger=False,
         fees=None,
         **kwargs,
@@ -169,7 +170,7 @@ class CosmosCLI:
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
-        if rsp.get("code") == 0:
+        if rsp.get("code") == 0 and event_query_tx:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
