@@ -150,7 +150,7 @@ class CosmosCLI:
         to,
         coins,
         generate_only=False,
-        event_query_tx=True,
+        ledger=False,
         fees=None,
         **kwargs,
     ):
@@ -164,11 +164,12 @@ class CosmosCLI:
                 coins,
                 "-y",
                 "--generate-only" if generate_only else None,
+                "--ledger" if ledger else None,
                 fees=fees,
                 **(self.get_kwargs_with_gas() | kwargs),
             )
         )
-        if rsp.get("code") == 0 and event_query_tx:
+        if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
@@ -246,7 +247,6 @@ class CosmosCLI:
         output = self.raw(
             *cmd, stdin=(mnemonic.encode() + b"\n") if mnemonic else None, **args
         )
-        print("mm-output", output)
         return json.loads(output)
 
     def list_accounts(self, **kwargs):

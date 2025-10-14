@@ -1,71 +1,61 @@
-import json
 import socket
-import subprocess
 import time
+from pathlib import Path
 
 import grpc
+import pytest
 from pystarport.ledger import ZEMU_GRPC_SERVER_PORT, Ledger
 
+from .network import setup_custom_mantra
+from .utils import DEFAULT_DENOM, assert_transfer, find_fee
 
-def test_ledger(tmp_path):
+pytestmark = pytest.mark.slow
+
+
+@pytest.fixture(scope="module")
+def custom_mantra(request, tmp_path_factory):
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("hw")
     ledger = Ledger()
-    name = "ledger"
     try:
         ledger.start()
-        if not ledger.is_running() or not wait_for_grpc_server():
-            raise RuntimeError("Ledger simulator or gRPC server failed to start")
+        assert ledger.is_running(), "failed to start Ledger simulator"
 
-        cmd = [
-            "mantrachaind",
-            "keys",
-            "add",
-            name,
-            "--ledger",
-            "--output",
-            "json",
-            "--keyring-backend",
-            "test",
-            "--coin-type",
-            "118",
-            "--key-type",
-            "secp256k1",
-            "--home",
-            str(tmp_path / name),
-        ]
-
-        print(f"Running command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        yield from setup_custom_mantra(
+            path,
+            27300,
+            Path(__file__).parent / "configs/hw.jsonnet",
+            chain=chain,
         )
-        stdout, stderr = proc.communicate(timeout=60)
-        print(f"Code: {proc.returncode}, STDOUT: {stdout}, STDERR: {stderr}")
-        if proc.returncode != 0:
-            raise RuntimeError(f"mantrachaind failed: {stderr or 'Unknown error'}")
-
-        acct = json.loads(stdout)
-        assert acct["address"]
-        assert acct["name"] == name
-        assert acct["type"] == "ledger"
-        assert "pubkey" in acct
-
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        raise RuntimeError("mantrachaind command timed out")
-    except Exception as e:
-        print(f"Test failed: {e}")
-        try:
-            for container_info in ledger.containers:
-                container = ledger.client.containers.get(container_info["Id"])
-                print(f"\n=== Container {container_info['Name']} logs ===")
-                print(container.logs().decode("utf-8"))
-        except Exception as log_error:
-            print(f"Could not retrieve logs: {log_error}")
-        raise
     finally:
         try:
             ledger.stop()
         except Exception as e:
-            print(f"Error during cleanup: {e}")
+            print(f"error during ledger cleanup: {e}")
+
+
+def test_ledger(custom_mantra):
+    assert wait_for_grpc_server()
+    cli = custom_mantra.cosmos_cli()
+    name = "ledger"
+    res = cli.create_account(name, ledger=True, coin_type=118, key_type="secp256k1")
+    assert "address" in res
+    assert "pubkey" in res
+    assert res["name"] == name
+    assert res["type"] == "ledger"
+    community = cli.address("community")
+    hw = cli.address(name)
+    amt1 = 8000
+    assert_transfer(cli, community, hw, amt=amt1)
+    assert cli.balance(hw) == amt1
+    community_balance = cli.balance(community)
+    amt2 = 4000
+    rsp = cli.transfer(
+        hw, community, f"{amt2}{DEFAULT_DENOM}", ledger=True, sign_mode="amino-json"
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.balance(hw) == amt2 - find_fee(rsp)
+    assert cli.balance(community) == community_balance + amt2
 
 
 def wait_for_grpc_server(port=ZEMU_GRPC_SERVER_PORT, timeout=60):
@@ -81,12 +71,14 @@ def wait_for_grpc_server(port=ZEMU_GRPC_SERVER_PORT, timeout=60):
                         print(f"gRPC server ready after {i+1}s")
                         return True
                     except Exception as grpc_error:
-                        print(f"gRPC not ready yet ({i+1}s): {grpc_error}")
+                        if i % 10 == 0:
+                            print(f"gRPC not ready yet ({i+1}s): {grpc_error}")
                 elif i % 10 == 0:
-                    print(f"still installing grpc ({i+1}s)")
+                    print(f"wait for gRPC server ({i+1}s)")
         except Exception as e:
             if i % 15 == 0:
-                print(f"Waiting for gRPC ({i+1}s): {e}")
+                print(f"gRPC connection error ({i+1}s): {e}")
         time.sleep(1)
+
     print(f"gRPC server not ready after {timeout}s")
     return False
