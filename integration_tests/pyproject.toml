@@ -20,7 +20,6 @@ flaky = "^3.8.1"
 pytest-asyncio = "0.25.3"
 eth-contract = { git = "https://github.com/yihuang/eth-contract.git", branch = "main" }
 py-ecc = "^8.0.0"
-grpcio = "^1.75.1"
 
 [tool.poetry.dev-dependencies]
 attrs = "24.2.0"

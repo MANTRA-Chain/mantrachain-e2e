@@ -1,10 +1,7 @@
-import socket
-import time
 from pathlib import Path
 
-import grpc
 import pytest
-from pystarport.ledger import ZEMU_GRPC_SERVER_PORT, Ledger
+from pystarport.ledger import Ledger
 
 from .network import setup_custom_mantra
 from .utils import DEFAULT_DENOM, find_fee
@@ -19,9 +16,7 @@ def custom_mantra(request, tmp_path_factory):
     ledger = Ledger()
     try:
         ledger.start()
-        assert (
-            ledger.is_running() and wait_for_grpc_server()
-        ), "failed to start Ledger simulator"
+        assert ledger.is_running(), "failed to start Ledger simulator"
 
         yield from setup_custom_mantra(
             path,
@@ -52,28 +47,22 @@ def test_ledger(custom_mantra):
     assert cli.balance(hw) == amt2 - find_fee(rsp)
     assert cli.balance(community) == community_balance + amt2
 
+    cli.delete_account(name)
 
-def wait_for_grpc_server(port=ZEMU_GRPC_SERVER_PORT, timeout=60):
-    for i in range(timeout):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(1)
-                if sock.connect_ex(("127.0.0.1", port)) == 0:
-                    try:
-                        channel = grpc.insecure_channel(f"127.0.0.1:{port}")
-                        grpc.channel_ready_future(channel).result(timeout=5)
-                        channel.close()
-                        print(f"gRPC server ready after {i+1}s")
-                        return True
-                    except Exception as grpc_error:
-                        if i % 10 == 0:
-                            print(f"gRPC not ready yet ({i+1}s): {grpc_error}")
-                elif i % 10 == 0:
-                    print(f"wait for gRPC server ({i+1}s)")
-        except Exception as e:
-            if i % 15 == 0:
-                print(f"gRPC connection error ({i+1}s): {e}")
-        time.sleep(1)
+    def check_account(name):
+        res = cli.create_account(name, ledger=True, coin_type=118, key_type="secp256k1")
+        assert "address" in res
+        assert "pubkey" in res
+        assert res["type"] == "ledger"
+        cli.delete_account(name)
 
-    print(f"gRPC server not ready after {timeout}s")
-    return False
+    names = [
+        "abc 1",
+        r"\&a\)bcd*^",
+        "钱對중ガジÑá",
+        "this_is_a_very_long_long_long_long_long_long_long_long_long_long_long_long_name",  # noqa: E501
+        "1 abc &abcd*^ 钱對중ガジÑá  long_long_long_long_long_long_long_long_long_long_long_long_name",  # noqa: E501
+    ]
+
+    for name in names:
+        check_account(name)
