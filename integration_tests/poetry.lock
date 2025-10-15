@@ -2004,8 +2004,8 @@ tomlkit = "^0"
 [package.source]
 type = "git"
 url = "https://github.com/MANTRA-Chain/pystarport.git"
-reference = "ledger_evm"
-resolved_reference = "82d90accbb6dfeef2acb537e12aac84541f1b2b7"
+reference = "main"
+resolved_reference = "6bca7d029b80d0dcce3a109c33be8bf46599e5c7"
 
 [[package]]
 name = "pytest"
@@ -2864,4 +2864,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "27b775102434b46b8f7939d486473c8a7503328a5cb1c6e53af42fe0acf9cb54"
+content-hash = "d8d33ffbef7e9483b0a14e95126ec2f694eec329079961c38f7fefac23bb14ce"
