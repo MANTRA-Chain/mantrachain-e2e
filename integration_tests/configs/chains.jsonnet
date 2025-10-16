@@ -37,11 +37,7 @@
     cmd: 'mantrachaind',
     evm_chain_id: 7888,
     bank: {},
-    evm: {
-      params: {
-        allow_unprotected_txs: true,
-      },
-    },
+    evm: {},
     feemarket: {
       params: {
         base_fee: '0.010000000000000000',
