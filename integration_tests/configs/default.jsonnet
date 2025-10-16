@@ -161,9 +161,9 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
             unbonding_time: '10s',
           },
         },
-        bank: {
-          denom_metadata: [{
-            denom_units: [
+        bank: chain.bank {
+          denom_metadata+: [{
+            denom_units+: [
               {
                 denom: 'atoken',
                 exponent: 0,
