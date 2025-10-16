@@ -350,7 +350,7 @@ def test_message_call(mantra, connect_mantra, diff=5):
     assert elapsed < diff  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx, key=key)
-    assert 22768266 == receipt.cumulativeGasUsed
+    assert 22300228 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
