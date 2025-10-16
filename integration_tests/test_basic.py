@@ -91,7 +91,7 @@ def test_connect_events(connect_mantra):
     test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=778887):
+def test_events(mantra, connect_mantra, exp_gas_used=806200):
     w3 = connect_mantra.w3
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
@@ -267,8 +267,6 @@ def test_transaction(mantra, connect_mantra, diff=1):
 
 
 def assert_receipt_transaction_and_block(w3, futures):
-    # TODO: remove after https://github.com/cosmos/evm/pull/723
-    return
     receipts = []
     for future in as_completed(futures):
         data = future.result()
@@ -350,7 +348,7 @@ def test_message_call(mantra, connect_mantra, diff=5):
     assert elapsed < diff  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx, key=key)
-    assert 22300228 == receipt.cumulativeGasUsed
+    assert 22768266 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 
@@ -406,7 +404,6 @@ def test_connect_batch_tx(connect_mantra, tmp_path):
     test_batch_tx(None, connect_mantra, tmp_path)
 
 
-@pytest.mark.skip(reason="skipping https://github.com/cosmos/evm/issues/724")
 def test_batch_tx(mantra, connect_mantra, tmp_path):
     "send multiple eth txs in single cosmos tx should be disabled"
     w3 = connect_mantra.w3
