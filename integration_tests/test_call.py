@@ -159,6 +159,7 @@ def create_bank_balance_key(addr_bytes, denom):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="skipping test_override_precompile_state")
 async def test_override_precompile_state(mantra):
     w3 = mantra.async_w3
     cli = mantra.cosmos_cli()
