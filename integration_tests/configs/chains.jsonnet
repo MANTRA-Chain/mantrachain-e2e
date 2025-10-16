@@ -54,7 +54,13 @@
         symbol: 'OM',
       }],
     },
-    evm: {},
+    evm: {
+      params: {
+        extended_denom_options: {
+          extended_denom: 'aom',
+        },
+      },
+    },
     feemarket: {
       params: {
         base_fee: '0.010000000000000000',
