@@ -296,6 +296,7 @@ async def test_7702(mantra, connect_mantra):
     assert block["transactions"][0] == await w3.eth.get_transaction(
         receipt["transactionHash"]
     )
+    assert block["hash"] == block["transactions"][0]["blockHash"]
     receipts = await w3.eth.get_block_receipts(receipt["blockNumber"])
     assert receipts[0] == receipt
 
