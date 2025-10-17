@@ -125,6 +125,13 @@ async def exec(c, tmp_path):
         extended_denom = params["extended_denom_options"].get("extended_denom")
         assert extended_denom == DEFAULT_EXTENDED_DENOM
 
+    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
+        w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    balance = cli.balance(addr_b, denom)
+    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+    assert balance == balance_eth == transfer_amt - transfer_amt2 * 2
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     await exec(custom_mantra, tmp_path)
