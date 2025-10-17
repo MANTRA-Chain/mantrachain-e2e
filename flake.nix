@@ -33,6 +33,7 @@
             buildInputs = [
               packages.default.go
               pkgs.nixfmt-rfc-style
+              pkgs.solc
             ];
           };
           full = pkgs.mkShell { buildInputs = default.buildInputs ++ [ pkgs.test-env ]; };
