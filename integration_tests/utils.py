@@ -36,6 +36,7 @@ from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from pystarport import cluster
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
@@ -1013,3 +1014,19 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert receiver_balance == receiver_balance_bf + approve_amt
     receiver_balance_bf = receiver_balance
+
+
+def edit_app_cfg(cli, i):
+    # Modify the json-rpc addresses to avoid conflict
+    cluster.edit_app_cfg(
+        cli.home(i) / "config/app.toml",
+        cli.base_port(i),
+        {
+            "json-rpc": {
+                "enable": True,
+                "address": "127.0.0.1:{EVMRPC_PORT}",
+                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+            },
+            "evm": {"evm-chain-id": EVM_CHAIN_ID},
+        },
+    )

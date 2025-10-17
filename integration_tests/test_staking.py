@@ -13,6 +13,7 @@ from .utils import (
     DEFAULT_GAS_PRICE,
     WEI_PER_DENOM,
     BondStatus,
+    edit_app_cfg,
     find_fee,
     find_log_event_attrs,
     wait_for_block,
@@ -111,18 +112,7 @@ def test_join_validator(mantra):
     addr = cli.address("validator")
     res = cli0.transfer(cli0.address("community"), addr, fund)
     assert res["code"] == 0, res
-    # Modify the json-rpc addresses to avoid conflict
-    cluster.edit_app_cfg(
-        clustercli.home(node_index) / "config/app.toml",
-        clustercli.base_port(node_index),
-        {
-            "json-rpc": {
-                "enable": True,
-                "address": "127.0.0.1:{EVMRPC_PORT}",
-                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
-            }
-        },
-    )
+    edit_app_cfg(clustercli, node_index)
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     time.sleep(1)
