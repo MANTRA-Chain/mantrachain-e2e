@@ -4,7 +4,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 
-from .utils import ACCOUNTS, DEFAULT_DENOM
+from .utils import ACCOUNTS
 
 WOM = to_checksum_address("0x4200000000000000000000000000000000000006")
 
@@ -35,8 +35,8 @@ async def test_static_erc20(mantra):
     # fail
     msg = "execution reverted"
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.decimals().call(w3, to=WOM) == 9
+        await ERC20.fns.decimals().call(w3, to=WOM)
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.symbol().call(w3, to=WOM) == DEFAULT_DENOM
+        await ERC20.fns.symbol().call(w3, to=WOM)
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.name().call(w3, to=WOM) == DEFAULT_DENOM
+        await ERC20.fns.name().call(w3, to=WOM)

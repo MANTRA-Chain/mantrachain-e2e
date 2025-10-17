@@ -41,7 +41,7 @@ local rly = {
     batch_delay: '5000ms',
   },
   extension_options: [{
-    type: 'cosmos_evm_dynamic_fee',
+    type: 'cosmos_evm_dynamic_fee_v1',
     value: '10000000000000000',
   }],
 };

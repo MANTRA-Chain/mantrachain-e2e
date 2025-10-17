@@ -51,12 +51,12 @@
         "branch": "v1.13.2",
         "description": "Rust implementation of an Inter-Blockchain Communication (IBC) relayer",
         "homepage": "",
-        "owner": "allthatjazzleo",
-        "repo": "hermes",
-        "rev": "474db763e1a84cc54500278be722205549336527",
-        "sha256": "1gcfi8bdz8ydxlw3krqxfhm3ijra9dkh8a81aaxk6fqh0c9d4a0l",
+        "owner": "mmsqe",
+        "repo": "ibc-rs",
+        "rev": "2f1f1cfc7fef3334fa12e03861de1dc123b01840",
+        "sha256": "1kxzwb8wi87xcjw1p22wadqwifr1n0v3gl21lghivig8yhg8ya0c",
         "type": "tarball",
-        "url": "https://github.com/allthatjazzleo/hermes/archive/474db763e1a84cc54500278be722205549336527.tar.gz",
+        "url": "https://github.com/mmsqe/ibc-rs/archive/2f1f1cfc7fef3334fa12e03861de1dc123b01840.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "dapptools": {
