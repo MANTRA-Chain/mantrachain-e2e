@@ -33,6 +33,9 @@ async def test_static_erc20(mantra):
     assert after == before - fee
 
     # fail
-    assert await ERC20.fns.decimals().call(w3, to=WOM) == 6
-    assert await ERC20.fns.symbol().call(w3, to=WOM) == "OM"
-    assert await ERC20.fns.name().call(w3, to=WOM) == "om"
+    cli = mantra.cosmos_cli()
+    denom = cli.get_params("evm")["params"]["evm_denom"]
+    meta = cli.query_bank_denom_metadata(denom)
+    assert await ERC20.fns.decimals().call(w3, to=WOM) == meta["denom_units"][1]["exponent"]
+    assert await ERC20.fns.symbol().call(w3, to=WOM) == meta["symbol"]
+    assert await ERC20.fns.name().call(w3, to=WOM) == meta["name"]
