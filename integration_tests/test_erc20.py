@@ -33,10 +33,6 @@ async def test_static_erc20(mantra):
     assert after == before - fee
 
     # fail
-    msg = "execution reverted"
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        await ERC20.fns.decimals().call(w3, to=WOM)
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        await ERC20.fns.symbol().call(w3, to=WOM)
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        await ERC20.fns.name().call(w3, to=WOM)
+    assert await ERC20.fns.decimals().call(w3, to=WOM) == 6
+    assert await ERC20.fns.symbol().call(w3, to=WOM) == "OM"
+    assert await ERC20.fns.name().call(w3, to=WOM) == "om"
