@@ -1028,6 +1028,5 @@ def edit_app_cfg(cli, i):
                 "address": "127.0.0.1:{EVMRPC_PORT}",
                 "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
             },
-            "evm": {"evm-chain-id": EVM_CHAIN_ID},
         },
     )
