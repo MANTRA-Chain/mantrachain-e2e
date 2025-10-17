@@ -58,6 +58,7 @@ KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = os.getenv("EVM_DENOM", "uom")
+DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "aom")
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
 EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests

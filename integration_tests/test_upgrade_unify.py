@@ -11,6 +11,7 @@ from .upgrade_utils import (
 )
 from .utils import (
     DEFAULT_DENOM,
+    DEFAULT_EXTENDED_DENOM,
     Greeter,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
@@ -118,6 +119,11 @@ async def exec(c, tmp_path):
         "wasm/cosmos.evm.erc20.v1.MsgRegisterERC20",
     ]
     assert cli.query_disabled_list() == expected
+    params = cli.get_params("evm")["params"]
+    meta = cli.query_bank_denom_metadata(params["evm_denom"])
+    if meta["denom_units"][1]["exponent"] == 6:
+        extended_denom = params["extended_denom_options"].get("extended_denom")
+        assert extended_denom == DEFAULT_EXTENDED_DENOM
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
