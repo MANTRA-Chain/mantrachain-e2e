@@ -1,14 +1,21 @@
 import base64
+import io
+import json
+from contextlib import redirect_stdout
+from typing import Iterable, Unpack
 
 import aiohttp
+import pyrevm
 import pytest
 from cprotobuf import Field, ProtoEntity
 from eth_contract.erc20 import ERC20
-from eth_contract.slots import MappingSlot
+from eth_contract.slots import parse_balance_slot
+from eth_contract.utils import ZERO_ADDRESS
 from hexbytes import HexBytes
 from pystarport import ports
 from web3 import Web3
 from web3._utils.contracts import encode_transaction_data
+from web3.types import TxParams
 
 from .utils import (
     ADDRS,
@@ -113,6 +120,23 @@ def test_override_state(mantra):
     assert ("",) == w3.codec.decode(("string",), result)
 
 
+def trace_call(vm: pyrevm.EVM, **tx: Unpack[TxParams]) -> Iterable[dict]:
+    """
+    Capture and parse traces from a pyrevm message call.
+    """
+    with redirect_stdout(io.StringIO()) as out:
+        vm.message_call(
+            caller=tx.get("from", ZERO_ADDRESS),
+            to=tx.get("to", ""),
+            calldata=tx.get("data"),
+            value=tx.get("value", 0),
+        )
+
+    out.seek(0)
+    for line in out.readlines():
+        yield json.loads(line)
+
+
 @pytest.mark.asyncio
 async def test_override_erc20_state(mantra):
     w3 = mantra.async_w3
@@ -121,11 +145,9 @@ async def test_override_erc20_state(mantra):
     int_value = total - 1
 
     fn = ERC20.fns.balanceOf(community)
-    fn_slot = MappingSlot(
-        slot=HexBytes(
-            "0x0000000000000000000000000000000000000000000000000000000000000003"
-        )
-    )
+    vm = pyrevm.EVM(fork_url=mantra.w3_http_endpoint(), tracing=True, with_memory=True)
+    traces = trace_call(vm, to=WETH_ADDRESS, data=fn.data)
+    fn_slot = parse_balance_slot(HexBytes(WETH_ADDRESS), HexBytes(community), traces)
     state_key = f"0x{fn_slot.value(HexBytes(community)).slot.hex()}"
     hex_state = "0x" + HexBytes(w3.codec.encode(("uint256",), (int_value,))).hex()
 
