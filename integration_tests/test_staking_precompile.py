@@ -68,9 +68,14 @@ async def get_validators(w3):
     return res
 
 
-async def test_staking_delegate(mantra):
-    cli = mantra.cosmos_cli()
-    w3 = mantra.async_w3
+@pytest.mark.connect
+async def test_connect_staking_delegate(connect_mantra, tmp_path):
+    await test_staking_delegate(None, connect_mantra, tmp_path)
+
+
+async def test_staking_delegate(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    w3 = connect_mantra.async_w3
     name = "signer1"
     amt = 2
     acct = ACCOUNTS[name]

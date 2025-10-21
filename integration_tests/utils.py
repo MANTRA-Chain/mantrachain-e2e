@@ -1042,3 +1042,9 @@ def edit_app_cfg(cli, i):
             },
         },
     )
+
+
+def duration(duration_str):
+    mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    parts = re.findall(r"(\d+)([smhd])", duration_str.lower())
+    return sum(int(value) * mult[unit] for value, unit in parts)
