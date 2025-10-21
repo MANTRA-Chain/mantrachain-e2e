@@ -95,9 +95,12 @@ def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     val_ops = [v["operator_address"] for v in validators[:2]]
     amounts = [3, 4]
     fee = 0
+    gas = 400_000
 
     for i, amt in enumerate(amounts):
-        rsp = cli.delegate_amount(val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name)
+        rsp = cli.delegate_amount(
+            val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name, gas=gas
+        )
         assert rsp["code"] == 0, rsp["raw_log"]
         fee += find_fee(rsp)
 
@@ -108,7 +111,7 @@ def test_staking_redelegate(mantra, connect_mantra, tmp_path):
         val_ops[1],
         f"{redelegate_amt}{DEFAULT_DENOM}",
         _from=name,
-        gas=320_000,
+        gas=gas,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     balance = cli.delegation(signer1, val_ops[0])["balance"]["amount"]
