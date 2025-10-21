@@ -54,7 +54,10 @@ class CosmosCLI:
 
     @property
     def node_rpc_http(self):
-        return "http" + self.node_rpc.removeprefix("tcp")
+        url = self.node_rpc.removeprefix("tcp")
+        if not url.startswith(("http://", "https://")):
+            url = "http" + url
+        return url
 
     @classmethod
     def init(cls, moniker, data_dir, node_rpc, cmd, chain_id):

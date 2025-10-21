@@ -102,9 +102,14 @@ async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     assert balance_bf == balance + amt * WEI_PER_DENOM + fee
 
 
-async def test_staking_unbond(mantra):
-    cli = mantra.cosmos_cli()
-    w3 = mantra.async_w3
+@pytest.mark.connect
+async def test_connect_staking_unbond(connect_mantra, tmp_path):
+    await test_staking_unbond(None, connect_mantra, tmp_path)
+
+
+async def test_staking_unbond(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    w3 = connect_mantra.async_w3
     name = "signer1"
     acct = ACCOUNTS[name]
     res = await get_validators(w3)
@@ -153,9 +158,14 @@ async def test_staking_unbond(mantra):
     assert balance == balance_bf - (sum(amounts) - unbonded_amt) * WEI_PER_DENOM - fee
 
 
-async def test_staking_redelegate(mantra):
-    cli = mantra.cosmos_cli()
-    w3 = mantra.async_w3
+@pytest.mark.connect
+async def test_connect_staking_redelegate(mantra, connect_mantra, tmp_path):
+    await test_staking_redelegate(mantra, connect_mantra, tmp_path)
+
+
+async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    w3 = connect_mantra.async_w3
     name = "signer1"
     acct = ACCOUNTS[name]
     res = await get_validators(w3)
