@@ -60,7 +60,7 @@ async def exec(c, tmp_path):
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
 
-    cli = do_upgrade(c, "v5.0", target_height)
+    cli = do_upgrade(c, "v5.0", target_height, tmp_path)
 
     # check set contract tx works
     acc_c = derive_new_account(101)
@@ -110,7 +110,13 @@ async def exec(c, tmp_path):
 
     height = cli.block_height()
     target_height = height + 15
-    cli = do_upgrade(c, "v6.0.0-rc0", target_height)
+    active_static_precompiles = [
+        "0x0000000000000000000000000000000000000800",
+        "0x0000000000000000000000000000000000000807",
+    ]
+    cli = do_upgrade(
+        c, "v6.0.0-rc0", target_height, tmp_path, active_static_precompiles
+    )
 
     pair = cli.query_erc20_token_pair(denom)
     assert pair["contract_owner"] == "OWNER_MODULE"
@@ -131,6 +137,8 @@ async def exec(c, tmp_path):
     balance = cli.balance(addr_b, denom)
     balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
     assert balance == balance_eth == transfer_amt - transfer_amt2 * 2
+    params = cli.get_params("evm")["params"]
+    assert params["active_static_precompiles"] == active_static_precompiles
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
