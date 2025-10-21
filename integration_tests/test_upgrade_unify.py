@@ -67,10 +67,8 @@ async def exec(c, tmp_path):
     addr_c = eth_to_bech32(acc_c.address)
     assert_transfer(cli, addr_a, addr_c, amt=10**6)
     greeter = Greeter("Greeter", acc_c.key)
-    w3 = c.w3
-    greeter.deploy(w3)
-    contract = greeter.contract
-    assert "Hello" == contract.caller.greet()
+    greeter.deploy(c.w3)
+    assert "Hello" == greeter.contract.caller.greet()
 
     addr_b = cli.create_account("recover")["address"]
     sender = bech32_to_eth(addr_b)
@@ -78,13 +76,12 @@ async def exec(c, tmp_path):
     tf_amt = 10**6
     assert_transfer(cli, addr_a, addr_b, amt=tf_amt)
 
-    transfer_amt = 1000
     gas = 300000
     assert_mint_tokenfactory_denom(
         cli, denom, tf_amt, is_legacy=True, _from=community, gas=gas
     )
     assert_transfer_tokenfactory_denom(
-        cli, denom, addr_b, transfer_amt, _from=community, gas=gas
+        cli, denom, addr_b, 1000, _from=community, gas=gas
     )
 
     w3 = c.async_w3
@@ -92,45 +89,48 @@ async def exec(c, tmp_path):
     balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
     total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
     assert total == tf_amt
-    assert balance == balance_eth == transfer_amt
+    assert balance == balance_eth == 1000
 
-    transfer_amt2 = 5
+    transfer_amt = 5
     receiver = derive_new_account(4).address
-    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
-        w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
+    sender_balance = 1000
+    receiver_balance = 0
 
-    balance = cli.balance(addr_b, denom)
-    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-    assert balance == balance_eth == transfer_amt - transfer_amt2
+    for plan in ["v6.0.0-rc0", "v7.0.0-rc0"]:
+        height = cli.block_height()
+        target_height = height + 15
+        cli = do_upgrade(c, plan, target_height)
 
-    balance = cli.balance(eth_to_bech32(receiver), denom)
-    balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    assert balance == balance_eth == transfer_amt2
+        if plan == "v6.0.0-rc0":
+            pair = cli.query_erc20_token_pair(denom)
+            assert pair["contract_owner"] == "OWNER_MODULE"
+            expected = [
+                "wasm/cosmos.authz.v1beta1.MsgExec",
+                "wasm/cosmos.evm.erc20.v1.MsgRegisterERC20",
+            ]
+            assert cli.query_disabled_list() == expected
+            params = cli.get_params("evm")["params"]
+            meta = cli.query_bank_denom_metadata(params["evm_denom"])
+            if meta["denom_units"][1]["exponent"] == 6:
+                extended_denom = params["extended_denom_options"].get("extended_denom")
+                assert extended_denom == DEFAULT_EXTENDED_DENOM
 
-    height = cli.block_height()
-    target_height = height + 15
-    cli = do_upgrade(c, "v6.0.0-provider-rc0", target_height)
+        await ERC20.fns.transfer(receiver, transfer_amt).transact(
+            w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+        )
 
-    pair = cli.query_erc20_token_pair(denom)
-    assert pair["contract_owner"] == "OWNER_MODULE"
-    expected = [
-        "wasm/cosmos.authz.v1beta1.MsgExec",
-        "wasm/cosmos.evm.erc20.v1.MsgRegisterERC20",
-    ]
-    assert cli.query_disabled_list() == expected
-    params = cli.get_params("evm")["params"]
-    meta = cli.query_bank_denom_metadata(params["evm_denom"])
-    if meta["denom_units"][1]["exponent"] == 6:
-        extended_denom = params["extended_denom_options"].get("extended_denom")
-        assert extended_denom == DEFAULT_EXTENDED_DENOM
+        sender_balance -= transfer_amt
+        receiver_balance += transfer_amt
 
-    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
-        w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
-    )
-    balance = cli.balance(addr_b, denom)
-    balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-    assert balance == balance_eth == transfer_amt - transfer_amt2 * 2
+        balance = cli.balance(addr_b, denom)
+        balance_eth = await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+        assert balance == balance_eth == sender_balance
+
+        balance_receiver = cli.balance(eth_to_bech32(receiver), denom)
+        balance_receiver_eth = await ERC20.fns.balanceOf(receiver).call(
+            w3, to=tf_erc20_addr
+        )
+        assert balance_receiver == balance_receiver_eth == receiver_balance
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
