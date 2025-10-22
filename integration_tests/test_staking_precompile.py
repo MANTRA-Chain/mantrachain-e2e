@@ -84,9 +84,7 @@ async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     res = await get_validators(w3)
     addr = res[0][0]
     validator = cli.debug_addr(addr, bech="val")
-    res = await DELEGATE(acct.address, validator, amt).transact(
-        w3, acct.address, to=STAKING
-    )
+    res = await DELEGATE(acct.address, validator, amt).transact(w3, acct, to=STAKING)
     assert res.status == 1
     delegate = abi.event_signature_to_log_topic(
         "Delegate(address,address,uint256,uint256)"
@@ -121,7 +119,7 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
 
     for i, amt in enumerate(amounts):
         res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct.address, to=STAKING
+            w3, acct, to=STAKING
         )
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
@@ -133,7 +131,7 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     unbonded_bf = cli.staking_pool(bonded=False)
     unbonded_amt = 2
     res = await UNDELEGATE(acct.address, val_ops[0], unbonded_amt).transact(
-        w3, acct.address, to=STAKING
+        w3, acct, to=STAKING
     )
     assert res.status == 1
     addr = cli.debug_addr(val_ops[0], bech="hex")
@@ -175,7 +173,7 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
 
     for i, amt in enumerate(amounts):
         res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct.address, to=STAKING
+            w3, acct, to=STAKING
         )
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
@@ -190,7 +188,7 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     )
     res = await REDELEGATE(
         acct.address, val_ops[0], val_ops[1], redelegate_amt
-    ).transact(w3, acct.address, to=STAKING)
+    ).transact(w3, acct, to=STAKING)
     assert res.status == 1
     redelegate = abi.event_signature_to_log_topic(
         "Redelegate(address,address,address,uint256,uint256)"
