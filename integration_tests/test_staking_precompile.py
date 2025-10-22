@@ -41,6 +41,7 @@ VALIDATOR = ContractFunction.from_abi(
     "function validator(address) external returns ((string,string,bool,uint8,uint256,uint256,(string,string,string,string,string),int64,int64,uint256,uint256))"  # noqa: E501
 )
 STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
+gas = 400_000
 
 
 pytestmark = pytest.mark.asyncio
@@ -84,7 +85,10 @@ async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     res = await get_validators(w3)
     addr = res[0][0]
     validator = cli.debug_addr(addr, bech="val")
-    res = await DELEGATE(acct.address, validator, amt).transact(w3, acct, to=STAKING)
+    gas = 200_000
+    res = await DELEGATE(acct.address, validator, amt).transact(
+        w3, acct, to=STAKING, gas=gas
+    )
     assert res.status == 1
     delegate = abi.event_signature_to_log_topic(
         "Delegate(address,address,uint256,uint256)"
@@ -119,7 +123,7 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
 
     for i, amt in enumerate(amounts):
         res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct, to=STAKING
+            w3, acct, to=STAKING, gas=gas
         )
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
@@ -131,7 +135,7 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     unbonded_bf = cli.staking_pool(bonded=False)
     unbonded_amt = 2
     res = await UNDELEGATE(acct.address, val_ops[0], unbonded_amt).transact(
-        w3, acct, to=STAKING
+        w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
     addr = cli.debug_addr(val_ops[0], bech="hex")
@@ -173,7 +177,7 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
 
     for i, amt in enumerate(amounts):
         res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct, to=STAKING
+            w3, acct, to=STAKING, gas=gas
         )
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
@@ -188,7 +192,7 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     )
     res = await REDELEGATE(
         acct.address, val_ops[0], val_ops[1], redelegate_amt
-    ).transact(w3, acct, to=STAKING)
+    ).transact(w3, acct, to=STAKING, gas=gas)
     assert res.status == 1
     redelegate = abi.event_signature_to_log_topic(
         "Redelegate(address,address,address,uint256,uint256)"
@@ -251,7 +255,7 @@ async def test_join_validator(mantra):
     )
     res = await CREATE_VALIDATOR(
         desc, commission, min_self_delegation, acct.address, pubkey, staked
-    ).transact(w3, acct, to=STAKING, gas=200_000)
+    ).transact(w3, acct, to=STAKING, gas=gas)
     assert res.status == 1
     create_validator = abi.event_signature_to_log_topic(
         "CreateValidator(address,uint256)"
@@ -282,7 +286,7 @@ async def test_join_validator(mantra):
 
     desc[0] = "awesome node"
     res = await EDIT_VALIDATOR(desc, acct.address, -1, -1).transact(
-        w3, acct, to=STAKING
+        w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
     edit_validator = abi.event_signature_to_log_topic(
@@ -300,7 +304,6 @@ async def test_min_self_delegation(custom_mantra):
     addr = bech32_to_eth(cli.address("validator"))
     val = cli.address("validator", bech="val")
     amt = 9_000_000_000_000_000_000
-    gas = 400_000
     res = await UNDELEGATE(acct.address, val, amt).transact(
         w3, acct, to=STAKING, gas=gas
     )
