@@ -185,6 +185,16 @@ class CosmosCLI:
             )
         )
 
+    def comet_validator_set(self, height, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "comet-validator-set",
+                height,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
     def query_all_txs(self, addr, **kwargs):
         txs = self.raw(
             "q",

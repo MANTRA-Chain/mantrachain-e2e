@@ -589,3 +589,14 @@ def test_key_src(mantra, connect_mantra, tmp_path):
     src.write_text(mnemonic)
     addr = cli.create_account("user", source=src)["address"]
     assert bech32_to_eth(addr) == acct.address
+
+
+@pytest.mark.connect
+def test_connect_comet_validator_set(connect_mantra, tmp_path):
+    test_comet_validator_set(None, connect_mantra, tmp_path)
+
+
+def test_comet_validator_set(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    res = cli.comet_validator_set(cli.block_height())
+    assert len(res["validators"]) == len(cli.validators())
