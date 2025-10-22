@@ -28,6 +28,7 @@ def test_distribution(mantra):
     assert cli.distribution_community_pool() - community_bf > fee
 
 
+@pytest.mark.skip(reason="https://github.com/cosmos/cosmos-sdk/pull/25485")
 def test_commission(mantra):
     cli = mantra.cosmos_cli()
     validator_name = "validator"
