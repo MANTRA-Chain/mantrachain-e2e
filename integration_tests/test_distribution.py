@@ -28,6 +28,30 @@ def test_distribution(mantra):
     assert cli.distribution_community_pool() - community_bf > fee
 
 
+def test_commission(mantra):
+    cli = mantra.cosmos_cli()
+    validator_name = "validator"
+    validator = cli.address(validator_name)
+    val_addr = cli.address(validator_name, "val")
+    initial_commission = cli.distribution_commission(val_addr)
+
+    # wait for rewards to accumulate
+    wait_for_new_blocks(cli, 3)
+
+    current_commission = cli.distribution_commission(val_addr)
+    assert current_commission >= initial_commission, "commission should increase"
+    balance_bf = cli.balance(validator_name)
+
+    rsp = cli.withdraw_validator_commission(val_addr, from_=validator)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    balance_af = cli.balance(validator_name)
+    fee = find_fee(rsp)
+    assert (
+        balance_af >= balance_bf - fee
+    ), "balance should increase after commission withdrawal"
+
+
 def test_delegation_rewards_flow(mantra):
     cli = mantra.cosmos_cli()
     validator_name = "validator"
