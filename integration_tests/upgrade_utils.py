@@ -17,9 +17,7 @@ from .utils import (
     approve_proposal,
     bech32_to_eth,
     edit_ini_sections,
-    module_address,
     send_transaction,
-    submit_gov_proposal,
     wait_for_block,
     wait_for_port,
 )
@@ -29,8 +27,6 @@ def do_upgrade(
     c,
     plan_name,
     target,
-    tmp_path,
-    active_static_precompiles=[],
     gas_prices=f"0.8{DEFAULT_DENOM}",
 ):
     print(f"upgrade {plan_name} height: {target}")
@@ -38,46 +34,21 @@ def do_upgrade(
     base_port = c.base_port(0)
     rsp = {}
 
-    if plan_name == "v6.0.0-rc0":
-        p = cli.get_params("evm")["params"]
-        p["active_static_precompiles"] = active_static_precompiles
-        gas = 400000
-        submit_gov_proposal(
-            c,
-            tmp_path,
-            messages=[
-                {
-                    "@type": "/cosmos.evm.vm.v1.MsgUpdateParams",
-                    "authority": module_address("gov"),
-                    "params": p,
-                },
-                {
-                    "@type": "/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade",
-                    "authority": module_address("gov"),
-                    "plan": {
-                        "name": plan_name,
-                        "height": target,
-                    },
-                },
-            ],
-            gas=gas,
-        )
-    else:
-        rsp = cli.software_upgrade(
-            "community",
-            {
-                "name": plan_name,
-                "title": "upgrade test",
-                "note": "ditto",
-                "upgrade-height": target,
-                "summary": "summary",
-                "deposit": f"1{DEFAULT_DENOM}",
-            },
-            gas=300000,
-            gas_prices=gas_prices,
-        )
-        assert rsp["code"] == 0, rsp["raw_log"]
-        approve_proposal(c, rsp["events"])
+    rsp = cli.software_upgrade(
+        "community",
+        {
+            "name": plan_name,
+            "title": "upgrade test",
+            "note": "ditto",
+            "upgrade-height": target,
+            "summary": "summary",
+            "deposit": f"1{DEFAULT_DENOM}",
+        },
+        gas=300000,
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    approve_proposal(c, rsp["events"])
 
     # update cli chain binary
     c.chain_binary = (

@@ -59,7 +59,7 @@ async def exec(c, tmp_path):
     )
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v5.0", target_height, tmp_path)
+    cli = do_upgrade(c, "v5.0", target_height)
 
     # check set contract tx works
     acc_c = derive_new_account(101)
@@ -109,10 +109,11 @@ async def exec(c, tmp_path):
 
     active_precompiles = [
         "0x0000000000000000000000000000000000000800",
-        "0x0000000000000000000000000000000000000807",
+        "0x0000000000000000000000000000000000000801",
+        "0x0000000000000000000000000000000000000805",
     ]
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v6.0.0-rc0", target_height, tmp_path, active_precompiles)
+    cli = do_upgrade(c, "v6.0.0", target_height)
     pair = cli.query_erc20_token_pair(denom)
     assert pair["contract_owner"] == "OWNER_MODULE"
     assert cli.query_disabled_list() == [
@@ -120,11 +121,11 @@ async def exec(c, tmp_path):
         "wasm/cosmos.evm.erc20.v1.MsgRegisterERC20",
     ]
 
-    params = cli.get_params("evm")["params"]
-    meta = cli.query_bank_denom_metadata(params["evm_denom"])
+    evm_params = cli.get_params("evm")["params"]
+    meta = cli.query_bank_denom_metadata(evm_params["evm_denom"])
     if meta["denom_units"][1]["exponent"] == 6:
         assert (
-            params["extended_denom_options"].get("extended_denom")
+            evm_params["extended_denom_options"].get("extended_denom")
             == DEFAULT_EXTENDED_DENOM
         )
 
@@ -136,10 +137,10 @@ async def exec(c, tmp_path):
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
         == transfer_amt - transfer_amt2 * 2
     )
-    assert params["active_static_precompiles"] == active_precompiles
+    assert evm_params["active_static_precompiles"] == active_precompiles
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc0", target_height, tmp_path)
+    cli = do_upgrade(c, "v7.0.0-rc0", target_height)
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
