@@ -991,6 +991,8 @@ class CosmosCLI:
                 **kwargs,
             )
         ).get("pool")
+        if not res or not res[0]:
+            return 0
         return parse_amount(res[0])
 
     def query_disabled_list(self, **kwargs):

@@ -10,8 +10,13 @@ from .utils import (
 pytestmark = pytest.mark.slow
 
 
-def test_distribution(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_distribution(connect_mantra, tmp_path):
+    test_distribution(None, connect_mantra, tmp_path)
+
+
+def test_distribution(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     signer1, signer2 = cli.address("signer1"), cli.address("signer2")
 
     # wait for initial rewards
@@ -31,33 +36,36 @@ def test_distribution(mantra):
 @pytest.mark.skip(reason="https://github.com/cosmos/cosmos-sdk/pull/25485")
 def test_commission(mantra):
     cli = mantra.cosmos_cli()
-    validator_name = "validator"
-    validator = cli.address(validator_name)
-    val_addr = cli.address(validator_name, "val")
-    initial_commission = cli.distribution_commission(val_addr)
+    name = "validator"
+    val = cli.address(name, "val")
+    initial_commission = cli.distribution_commission(val)
 
     # wait for rewards to accumulate
     wait_for_new_blocks(cli, 3)
 
-    current_commission = cli.distribution_commission(val_addr)
+    current_commission = cli.distribution_commission(val)
     assert current_commission >= initial_commission, "commission should increase"
-    balance_bf = cli.balance(validator_name)
+    balance_bf = cli.balance(name)
 
-    rsp = cli.withdraw_validator_commission(val_addr, from_=validator)
+    rsp = cli.withdraw_validator_commission(val, from_=name)
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    balance_af = cli.balance(validator_name)
+    balance_af = cli.balance(name)
     fee = find_fee(rsp)
     assert (
         balance_af >= balance_bf - fee
     ), "balance should increase after commission withdrawal"
 
 
-def test_delegation_rewards_flow(mantra):
-    cli = mantra.cosmos_cli()
-    validator_name = "validator"
-    validator = cli.address(validator_name)
-    val_addr = cli.address(validator_name, "val")
+@pytest.mark.connect
+def test_connect_delegation_rewards_flow(connect_mantra, tmp_path):
+    test_delegation_rewards_flow(None, connect_mantra, tmp_path)
+
+
+def test_delegation_rewards_flow(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    name = "validator"
+    validator = cli.address(name)
     initial_rewards = cli.distribution_reward(validator)
 
     signer2 = cli.address("signer2")
@@ -71,7 +79,7 @@ def test_delegation_rewards_flow(mantra):
     assert current_rewards >= initial_rewards, "rewards should increase"
 
     balance_bf = cli.balance(validator)
-    rsp = cli.withdraw_rewards(val_addr, from_=validator)
+    rsp = cli.withdraw_rewards(cli.address(name, "val"), from_=name)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     balance_af = cli.balance(validator)
@@ -79,8 +87,13 @@ def test_delegation_rewards_flow(mantra):
     assert balance_af >= balance_bf - fee, "balance should account for rewards and fees"
 
 
-def test_community_pool_funding(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_community_pool_funding(connect_mantra, tmp_path):
+    test_community_pool_funding(None, connect_mantra, tmp_path)
+
+
+def test_community_pool_funding(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     signer1 = cli.address("signer1")
     initial_pool = cli.distribution_community_pool()
 
@@ -99,29 +112,27 @@ def test_community_pool_funding(mantra):
 
 def test_validator_rewards_pool_funding(mantra):
     cli = mantra.cosmos_cli()
-    validator_name = "validator"
-    val_addr = cli.address(validator_name, "val")
+    name = "validator"
+    val = cli.address(name, "val")
 
-    rsp = cli.set_withdraw_addr(cli.address(validator_name), from_=validator_name)
+    rsp = cli.set_withdraw_addr(cli.address(name), from_=name)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     # fund validator rewards pool
     fund_amount = 100
-    balance_bf = cli.balance(validator_name)
+    balance_bf = cli.balance(name)
     rsp = cli.fund_validator_rewards_pool(
-        val_addr, f"{fund_amount}{DEFAULT_DENOM}", from_=validator_name
+        val, f"{fund_amount}{DEFAULT_DENOM}", from_=name
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    balance_af = cli.balance(validator_name)
+    balance_af = cli.balance(name)
     fee = find_fee(rsp)
     assert balance_af == balance_bf - fund_amount - fee, "balance should decrease"
 
-    rsp = cli.withdraw_rewards(val_addr, from_=validator_name)
+    rsp = cli.withdraw_rewards(val, from_=name)
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    balance_after_withdraw = cli.balance(validator_name)
+    balance_last = cli.balance(name)
     withdraw_fee = find_fee(rsp)
-    assert (
-        balance_after_withdraw >= balance_af - withdraw_fee
-    ), "balance should increase"
+    assert balance_last >= balance_af - withdraw_fee, "balance should increase"
