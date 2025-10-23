@@ -143,8 +143,6 @@ async def test_validator_rewards_pool_funding(mantra, connect_mantra, tmp_path):
     w3 = connect_mantra.async_w3
     acct = ACCOUNTS["signer1"]
     val = cli.validators()[0]["operator_address"]
-
-    # fund validator rewards pool
     fund_amount = 100
     coin = [[DEFAULT_DENOM, fund_amount]]
     res = await PRECOMPILE.fns.depositValidatorRewardsPool(

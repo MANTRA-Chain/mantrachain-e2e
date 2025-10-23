@@ -72,7 +72,7 @@ def test_staking_unbond(mantra, connect_mantra, tmp_path):
     rsp = cli.unbond_amount(
         val_ops[1], f"{unbonded_amt}{DEFAULT_DENOM}", _from=name, gas=gas
     )
-    assert rsp["code"] == 0, rsp
+    assert rsp["code"] == 0, rsp["raw_log"]
     fee += find_fee(rsp)
     assert cli.staking_pool(bonded=False) == unbonded + unbonded_amt
     data = find_log_event_attrs(

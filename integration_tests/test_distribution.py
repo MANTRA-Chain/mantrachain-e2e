@@ -1,10 +1,15 @@
+from datetime import timedelta
+
 import pytest
+from dateutil.parser import isoparse
 
 from .utils import (
     DEFAULT_DENOM,
     eth_to_bech32,
     find_fee,
+    find_log_event_attrs,
     wait_for_block,
+    wait_for_block_time,
     wait_for_new_blocks,
 )
 
@@ -93,6 +98,10 @@ def test_delegation_rewards_flow(mantra, connect_mantra, tmp_path):
 
     rsp = cli.unbond_amount(val, coin, _from=signer1, gas=250_000)
     assert rsp["code"] == 0, rsp["raw_log"]
+    data = find_log_event_attrs(
+        rsp["events"], "unbond", lambda attrs: "completion_time" in attrs
+    )
+    wait_for_block_time(cli, isoparse(data["completion_time"]) + timedelta(seconds=1))
 
 
 @pytest.mark.connect
