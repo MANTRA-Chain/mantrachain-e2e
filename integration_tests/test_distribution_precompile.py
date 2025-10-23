@@ -1,5 +1,7 @@
 import pytest
+import requests
 from eth_contract.contract import Contract
+from pystarport.utils import parse_amount
 
 from .utils import (
     ACCOUNTS,
@@ -8,6 +10,7 @@ from .utils import (
     bech32_to_eth,
     build_contract,
     find_fee,
+    find_log_event_attrs,
     wait_for_block,
     wait_for_new_blocks,
 )
@@ -143,10 +146,17 @@ async def test_validator_rewards_pool_funding(mantra, connect_mantra, tmp_path):
     w3 = connect_mantra.async_w3
     acct = ACCOUNTS["signer1"]
     val = cli.validators()[0]["operator_address"]
-    fund_amount = 100
+    fund_amount = 1000
     coin = [[DEFAULT_DENOM, fund_amount]]
     res = await PRECOMPILE.fns.depositValidatorRewardsPool(
         acct.address, val, coin
     ).transact(w3, acct, to=DISTRIBUTION, gas=gas, check=False)
-    print("mm-status", res.status)
-    # assert res.status == 0
+    # TODO: align disabled
+    assert res.status == 1
+    blk = res["blockNumber"]
+    rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={blk}").json()
+    rsp = next((tx for tx in rsp["result"]["txs_results"] if tx["code"] == 0), None)
+    data = find_log_event_attrs(
+        rsp["events"], "rewards", lambda attrs: "amount" in attrs
+    )
+    assert parse_amount(data["amount"]) == fund_amount
