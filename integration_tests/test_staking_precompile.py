@@ -23,6 +23,7 @@ from .utils import (
     address_to_bytes32,
     bech32_to_eth,
     build_contract,
+    duration,
     edit_app_cfg,
     find_log_event_attrs,
     wait_for_block,
@@ -100,6 +101,9 @@ async def test_connect_staking_unbond(connect_mantra, tmp_path):
 
 async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
+    unbond_duration = duration(cli.get_params("staking")["params"]["unbonding_time"])
+    if unbond_duration > 60:
+        pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     w3 = connect_mantra.async_w3
     name = "signer1"
     acct = ACCOUNTS[name]

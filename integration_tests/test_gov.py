@@ -73,6 +73,7 @@ def test_history_serve_window(mantra, tmp_path):
                 "params": p,
             },
         ],
+        gas=300_000,
     )
     p = cli.get_params("evm")["params"]
     assert int(p["history_serve_window"]) == int(updated), p
