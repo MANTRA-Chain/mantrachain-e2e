@@ -112,29 +112,39 @@ def test_community_pool_funding(mantra, connect_mantra, tmp_path):
     assert final_pool >= initial_pool + fund_amount, "community pool should increase"
 
 
-def test_validator_rewards_pool_funding(mantra):
-    cli = mantra.cosmos_cli()
-    name = "validator"
-    val = cli.address(name, "val")
+@pytest.mark.connect
+def test_connect_validator_rewards_pool_funding(connect_mantra, tmp_path):
+    test_validator_rewards_pool_funding(None, connect_mantra, tmp_path)
 
-    rsp = cli.set_withdraw_addr(cli.address(name), from_=name)
+
+def test_validator_rewards_pool_funding(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    signer1 = cli.address("signer1")
+    signer2 = cli.address("signer2")
+    val = cli.address("validator", "val")
+
+    amt = 4e6
+    rsp = cli.delegate_amount(val, f"{amt}{DEFAULT_DENOM}", _from=signer1)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    rsp = cli.set_withdraw_addr(signer2, from_=signer1)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     # fund validator rewards pool
     fund_amount = 100
-    balance_bf = cli.balance(name)
+    balance_bf = cli.balance(signer1)
     rsp = cli.fund_validator_rewards_pool(
-        val, f"{fund_amount}{DEFAULT_DENOM}", from_=name
+        val, f"{fund_amount}{DEFAULT_DENOM}", from_=signer1
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    balance_af = cli.balance(name)
+    balance_af = cli.balance(signer1)
     fee = find_fee(rsp)
     assert balance_af == balance_bf - fund_amount - fee, "balance should decrease"
 
-    rsp = cli.withdraw_rewards(val, from_=name)
+    balance_bf = cli.balance(signer2)
+    rsp = cli.withdraw_rewards(val, from_=signer1)
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    balance_last = cli.balance(name)
-    withdraw_fee = find_fee(rsp)
-    assert balance_last >= balance_af - withdraw_fee, "balance should increase"
+    balance_af = cli.balance(signer2)
+    assert balance_af >= balance_bf, "balance should increase"
