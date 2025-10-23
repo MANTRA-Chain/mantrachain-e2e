@@ -9,9 +9,7 @@ import requests
 import web3
 from dateutil.parser import isoparse
 from eth_account import Account
-from eth_contract.contract import ContractFunction
-from eth_utils import abi, to_checksum_address
-from hexbytes import HexBytes
+from eth_contract.contract import Contract
 from pystarport import cluster
 
 from .network import setup_custom_mantra
@@ -24,6 +22,7 @@ from .utils import (
     BondStatus,
     address_to_bytes32,
     bech32_to_eth,
+    build_contract,
     edit_app_cfg,
     find_log_event_attrs,
     wait_for_block,
@@ -31,16 +30,11 @@ from .utils import (
     wait_for_new_blocks,
 )
 
-DELEGATE = ContractFunction.from_abi(
-    "function delegate(address,string,uint256) external returns (bool)"
-)
-UNDELEGATE = ContractFunction.from_abi(
-    "function undelegate(address,string,uint256) external returns (int64)"
-)
-VALIDATOR = ContractFunction.from_abi(
-    "function validator(address) external returns ((string,string,bool,uint8,uint256,uint256,(string,string,string,string,string),int64,int64,uint256,uint256))"  # noqa: E501
-)
-STAKING = to_checksum_address("0x0000000000000000000000000000000000000800")
+PRECOMPILE = Contract(build_contract("StakingI")["abi"])
+DELEGATE = PRECOMPILE.fns.delegate
+UNDELEGATE = PRECOMPILE.fns.undelegate
+VALIDATOR = PRECOMPILE.fns.validator
+STAKING = "0x0000000000000000000000000000000000000800"
 gas = 400_000
 
 
@@ -60,10 +54,8 @@ def custom_mantra(request, tmp_path_factory):
 
 
 async def get_validators(w3):
-    VALIDATORS = ContractFunction.from_abi(
-        "function validators(string,(bytes,uint64,uint64,bool,bool)) external returns ((string,string,bool,uint8,uint256,uint256,(string,string,string,string,string),int64,int64,uint256,uint256)[],(bytes,uint64))"  # noqa: E501
-    )
-    res, _ = await VALIDATORS(BondStatus.BONDED.value, [b"", 0, 10, False, False]).call(
+    params = [b"", 0, 10, False, False]
+    res, _ = await PRECOMPILE.fns.validators(BondStatus.BONDED.value, params).call(
         w3, to=STAKING
     )
     return res
@@ -90,11 +82,8 @@ async def test_staking_delegate(mantra, connect_mantra, tmp_path):
         w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
-    delegate = abi.event_signature_to_log_topic(
-        "Delegate(address,address,uint256,uint256)"
-    ).hex()
     assert res.logs[0].topics == [
-        HexBytes(delegate),
+        PRECOMPILE.events.Delegate.topic,
         address_to_bytes32(acct.address),
         address_to_bytes32(addr),
     ]
@@ -139,11 +128,8 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     )
     assert res.status == 1
     addr = cli.debug_addr(val_ops[0], bech="hex")
-    unbond = abi.event_signature_to_log_topic(
-        "Unbond(address,address,uint256,uint256)"
-    ).hex()
     assert res.logs[0].topics == [
-        HexBytes(unbond),
+        PRECOMPILE.events.Unbond.topic,
         address_to_bytes32(acct.address),
         address_to_bytes32(addr),
     ]
@@ -182,23 +168,15 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
         assert res.status == 1
         fee += res["gasUsed"] * res["effectiveGasPrice"]
 
-    DELEGATION = ContractFunction.from_abi(
-        "function delegation(address,string) external returns (uint256,(string,uint256))"  # noqa: E501
-    )
+    DELEGATION = PRECOMPILE.fns.delegation
     _, balance_bf = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
     redelegate_amt = 2
-    REDELEGATE = ContractFunction.from_abi(
-        "function redelegate(address,string,string,uint256) external returns (int64)"
-    )
-    res = await REDELEGATE(
+    res = await PRECOMPILE.fns.redelegate(
         acct.address, val_ops[0], val_ops[1], redelegate_amt
     ).transact(w3, acct, to=STAKING, gas=gas)
     assert res.status == 1
-    redelegate = abi.event_signature_to_log_topic(
-        "Redelegate(address,address,address,uint256,uint256)"
-    ).hex()
     assert res.logs[0].topics == [
-        HexBytes(redelegate),
+        PRECOMPILE.events.Redelegate.topic,
         address_to_bytes32(acct.address),
         address_to_bytes32(cli.debug_addr(val_ops[0], bech="hex")),
         address_to_bytes32(cli.debug_addr(val_ops[1], bech="hex")),
@@ -250,17 +228,14 @@ async def test_join_validator(mantra):
         int(0.01 * WEI_PER_ETH),
     ]
     min_self_delegation = 1
-    CREATE_VALIDATOR = ContractFunction.from_abi(
-        "function createValidator((string,string,string,string,string),(uint256,uint256,uint256),uint256,address,string,uint256) external returns (bool)"  # noqa: E501
-    )
-    res = await CREATE_VALIDATOR(
+    res = await PRECOMPILE.fns.createValidator(
         desc, commission, min_self_delegation, acct.address, pubkey, staked
     ).transact(w3, acct, to=STAKING, gas=gas)
     assert res.status == 1
-    create_validator = abi.event_signature_to_log_topic(
-        "CreateValidator(address,uint256)"
-    ).hex()
-    assert res.logs[0].topics == [HexBytes(create_validator), address_to_bytes32(addr)]
+    assert res.logs[0].topics == [
+        PRECOMPILE.events.CreateValidator.topic,
+        address_to_bytes32(addr),
+    ]
     time.sleep(2)
     assert len(cli.validators()) == count + 1
 
@@ -275,9 +250,7 @@ async def test_join_validator(mantra):
         "max_change_rate": "0.010000000000000000",
     }
 
-    EDIT_VALIDATOR = ContractFunction.from_abi(
-        "function editValidator((string,string,string,string,string),address,int256,int256) external returns (bool)"  # noqa: E501
-    )
+    EDIT_VALIDATOR = PRECOMPILE.fns.editValidator
     msg = "commission cannot be changed more than once in 24h"
     with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
         await EDIT_VALIDATOR(
@@ -289,10 +262,10 @@ async def test_join_validator(mantra):
         w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
-    edit_validator = abi.event_signature_to_log_topic(
-        "EditValidator(address,int256,int256)"
-    ).hex()
-    assert res.logs[0].topics == [HexBytes(edit_validator), address_to_bytes32(addr)]
+    assert res.logs[0].topics == [
+        PRECOMPILE.events.EditValidator.topic,
+        address_to_bytes32(addr),
+    ]
     assert cli.validator(val_addr)["description"]["moniker"] == "awesome node"
 
 
@@ -315,11 +288,8 @@ async def test_min_self_delegation(custom_mantra):
         w3, acct, to=STAKING, gas=gas
     )
     assert res.status == 1
-    unbond = abi.event_signature_to_log_topic(
-        "Unbond(address,address,uint256,uint256)"
-    ).hex()
     assert res.logs[0].topics == [
-        HexBytes(unbond),
+        PRECOMPILE.events.Unbond.topic,
         address_to_bytes32(acct.address),
         address_to_bytes32(addr),
     ]
