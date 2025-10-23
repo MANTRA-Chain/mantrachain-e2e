@@ -12,22 +12,24 @@ def test_int_overflow(mantra, tmp_path):
     val_addr = cli.address(name, "val")
     rsp = cli.set_withdraw_addr(bech32_addr, from_=name)
     assert rsp["code"] == 0, rsp["raw_log"]
-    assert not cli.query_disabled_list()
-    msg_type_urls = ["/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool"]
+    msg_type_url = "/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool"
     gas = 300_000
-    submit_gov_proposal(
-        mantra,
-        tmp_path,
-        messages=[
-            {
-                "@type": "/cosmos.circuit.v1.MsgTripCircuitBreaker",
-                "authority": module_address("gov"),
-                "msg_type_urls": msg_type_urls,
-            }
-        ],
-        gas=gas,
-    )
-    assert cli.query_disabled_list() == msg_type_urls
+    msg_type_urls = cli.query_disabled_list()
+    if msg_type_url not in msg_type_urls:
+        msg_type_urls.append(msg_type_url)
+        submit_gov_proposal(
+            mantra,
+            tmp_path,
+            messages=[
+                {
+                    "@type": "/cosmos.circuit.v1.MsgTripCircuitBreaker",
+                    "authority": module_address("gov"),
+                    "msg_type_urls": msg_type_urls,
+                }
+            ],
+            gas=gas,
+        )
+        assert cli.query_disabled_list() == msg_type_urls
 
     # fund validator rewards pool
     denom = "utesttest"

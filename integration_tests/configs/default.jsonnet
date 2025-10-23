@@ -147,6 +147,11 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
             ],
           },
         },
+        circuit: {
+          disabled_type_urls: [
+            "/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool",
+          ],
+        },
         crisis: {
           constant_fee: {
             denom: chain.evm_denom,

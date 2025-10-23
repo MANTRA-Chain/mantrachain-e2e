@@ -431,17 +431,22 @@ class CosmosCLI:
         return rsp
 
     def delegation(self, del_addr, val_addr, **kwargs):
-        res = json.loads(
-            self.raw(
-                "q",
-                "staking",
-                "delegation",
-                del_addr,
-                val_addr,
-                **(self.get_base_kwargs() | kwargs),
+        try:
+            res = json.loads(
+                self.raw(
+                    "q",
+                    "staking",
+                    "delegation",
+                    del_addr,
+                    val_addr,
+                    **(self.get_base_kwargs() | kwargs),
+                )
             )
-        )
-        return res.get("delegation_response") or res
+            return res.get("delegation_response") or res
+        except AssertionError as e:
+            if "delegation with delegator" in str(e) and "not found" in str(e):
+                return {"balance": {"amount": 0}}
+            raise
 
     def delegations(self, del_addr, **kwargs):
         res = json.loads(
@@ -947,7 +952,7 @@ class CosmosCLI:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def distribution_reward(self, delegator_addr, **kwargs):
+    def distribution_rewards(self, delegator_addr, **kwargs):
         res = json.loads(
             self.raw(
                 "q",
