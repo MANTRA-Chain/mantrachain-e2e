@@ -457,36 +457,3 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
-
-    def create_periodic_vesting_acct(self, to_address, amount, end_time, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "vesting",
-                "create-vesting-account",
-                to_address,
-                amount,
-                end_time,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp["code"] == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def create_periodic_vesting_account(self, to_address, periods, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "vesting",
-                "create-periodic-vesting-account",
-                to_address,
-                periods,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp["code"] == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
