@@ -1,5 +1,6 @@
 import pytest
 import web3
+from pystarport.utils import w3_wait_for_new_blocks
 
 from .utils import (
     ADDRS,
@@ -7,7 +8,6 @@ from .utils import (
     assert_duplicate,
     derive_new_account,
     send_transaction,
-    w3_wait_for_new_blocks,
 )
 
 

@@ -1,6 +1,5 @@
 import json
 import subprocess
-import tempfile
 
 import requests
 from pystarport.cosmoscli import CosmosCLI as PystarportCosmosCLI
@@ -116,20 +115,6 @@ class CosmosCLI(PystarportCosmosCLI):
             if line.startswith(prefix):
                 return line.split()[-1]
         return eth_addr
-
-
-    def sign_tx_json(self, tx, signer, max_priority_price=None, **kwargs):
-        if max_priority_price is not None:
-            tx["body"]["extension_options"].append(
-                {
-                    "@type": "/cosmos.evm.ante.v1.ExtensionOptionDynamicFeeTx",
-                    "max_priority_price": str(max_priority_price),
-                }
-            )
-        with tempfile.NamedTemporaryFile("w") as fp:
-            json.dump(tx, fp)
-            fp.flush()
-            return self.sign_tx(fp.name, signer, **kwargs)
 
     def software_upgrade(self, proposer, proposal, **kwargs):
         default_kwargs = self.get_kwargs()

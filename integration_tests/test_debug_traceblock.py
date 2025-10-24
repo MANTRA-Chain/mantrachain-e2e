@@ -2,13 +2,12 @@ import pytest
 import requests
 import web3
 from pystarport import ports
+from pystarport.utils import w3_wait_for_block, wait_for_new_blocks
 
 from .utils import (
     derive_new_account,
     send_transaction,
     sign_transaction,
-    w3_wait_for_block,
-    wait_for_new_blocks,
 )
 
 

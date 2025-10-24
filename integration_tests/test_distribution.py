@@ -3,16 +3,18 @@ from datetime import timedelta
 import pytest
 import requests
 from dateutil.parser import isoparse
-from pystarport.utils import parse_amount
+from pystarport.utils import (
+    parse_amount,
+    wait_for_block,
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 
 from .utils import (
     DEFAULT_DENOM,
     eth_to_bech32,
     find_fee,
     find_log_event_attrs,
-    wait_for_block,
-    wait_for_block_time,
-    wait_for_new_blocks,
 )
 
 pytestmark = pytest.mark.slow

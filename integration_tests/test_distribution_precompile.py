@@ -1,7 +1,7 @@
 import pytest
 import requests
 from eth_contract.contract import Contract
-from pystarport.utils import parse_amount
+from pystarport.utils import parse_amount, wait_for_block, wait_for_new_blocks
 
 from .utils import (
     ACCOUNTS,
@@ -11,8 +11,6 @@ from .utils import (
     build_contract,
     find_fee,
     find_log_event_attrs,
-    wait_for_block,
-    wait_for_new_blocks,
 )
 
 pytestmark = pytest.mark.asyncio

@@ -32,6 +32,7 @@ from eth_contract.multicall3 import (
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_bytes
+from pystarport.utils import w3_wait_for_new_blocks_async
 from web3 import AsyncWeb3
 from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
@@ -48,7 +49,6 @@ from .utils import (
     build_and_deploy_contract_async,
     build_contract,
     build_deploy_contract_async,
-    w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio
