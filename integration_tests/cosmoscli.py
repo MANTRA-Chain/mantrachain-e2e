@@ -353,43 +353,6 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         ).get("blacklisted_accounts", [])
 
-    def ibc_denom_hash(self, path, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "ibc-transfer",
-                "denom-hash",
-                path,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("hash")
-
-    def ibc_transfer(
-        self,
-        to,
-        amount,
-        channel,  # src channel
-        generate_only=False,
-        **kwargs,
-    ):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "ibc-transfer",
-                "transfer",
-                "transfer",
-                channel,
-                to,
-                amount,
-                "-y",
-                "--generate-only" if generate_only else None,
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
     def export(self, **kwargs):
         raw = self.raw("export", home=self.data_dir, **kwargs)
         if isinstance(raw, bytes):
