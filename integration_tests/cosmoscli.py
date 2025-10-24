@@ -158,18 +158,6 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
 
-    def account_by_num(self, num, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "auth",
-                "address-by-acc-num",
-                num,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )
-
-
     def software_upgrade(self, proposer, proposal, **kwargs):
         default_kwargs = self.get_kwargs()
         rsp = json.loads(
