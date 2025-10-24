@@ -267,58 +267,6 @@ class CosmosCLI(PystarportCosmosCLI):
         assert "error" not in rsp, rsp["error"]
         return rsp["result"]["txs"]
 
-    def query_erc20_token_pair(self, token, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "erc20",
-                "token-pair",
-                token,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("token_pair", {})
-
-    def query_erc20_token_pairs(self, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "erc20",
-                "token-pairs",
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("token_pairs", [])
-
-    def convert_erc20(self, contract, amt, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "erc20",
-                "convert-erc20",
-                contract,
-                amt,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def register_erc20(self, contract, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "erc20",
-                "register-erc20",
-                contract,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
     def rollback(self):
         self.raw("rollback", home=self.data_dir)
 
