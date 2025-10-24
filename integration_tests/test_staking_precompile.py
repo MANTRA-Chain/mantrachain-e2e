@@ -11,6 +11,12 @@ from dateutil.parser import isoparse
 from eth_account import Account
 from eth_contract.contract import Contract
 from pystarport import cluster
+from pystarport.utils import (
+    BondStatus,
+    wait_for_block,
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -19,16 +25,12 @@ from .utils import (
     DEFAULT_DENOM,
     WEI_PER_DENOM,
     WEI_PER_ETH,
-    BondStatus,
     address_to_bytes32,
     bech32_to_eth,
     build_contract,
     duration,
     edit_app_cfg,
     find_log_event_attrs,
-    wait_for_block,
-    wait_for_block_time,
-    wait_for_new_blocks,
 )
 
 PRECOMPILE = Contract(build_contract("StakingI")["abi"])

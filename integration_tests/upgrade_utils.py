@@ -9,6 +9,7 @@ from pathlib import Path
 import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
+from pystarport.utils import wait_for_block, wait_for_port
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -19,8 +20,6 @@ from .utils import (
     bech32_to_eth,
     edit_ini_sections,
     send_transaction,
-    wait_for_block,
-    wait_for_port,
 )
 
 

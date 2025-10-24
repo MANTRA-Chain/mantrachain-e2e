@@ -4,6 +4,7 @@ import math
 
 import pytest
 from eth_contract.erc20 import ERC20
+from pystarport.utils import wait_for_fn, wait_for_fn_async
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
@@ -26,8 +27,6 @@ from .utils import (
     generate_isolated_address,
     ibc_denom_address,
     parse_events_rpc,
-    wait_for_fn,
-    wait_for_fn_async,
 )
 
 pytestmark = pytest.mark.asyncio

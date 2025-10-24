@@ -2,6 +2,7 @@ import time
 
 import pytest
 from eth_contract.erc20 import ERC20
+from pystarport.utils import wait_for_new_blocks
 
 from .network import Mantra
 from .upgrade_utils import (
@@ -22,7 +23,6 @@ from .utils import (
     denom_to_erc20_address,
     derive_new_account,
     eth_to_bech32,
-    wait_for_new_blocks,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]

@@ -1,11 +1,11 @@
 import pytest
 from eth_contract.utils import send_transaction
+from pystarport.utils import w3_wait_for_block_async
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
     adjust_base_fee,
-    w3_wait_for_block_async,
 )
 
 pytestmark = pytest.mark.asyncio

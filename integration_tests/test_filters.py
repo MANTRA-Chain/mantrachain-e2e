@@ -1,13 +1,13 @@
 import pytest
 import web3
 from eth_contract.utils import send_transaction
+from pystarport.utils import w3_wait_for_new_blocks_async
 from web3 import AsyncWeb3, Web3
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
     build_and_deploy_contract_async,
-    w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio

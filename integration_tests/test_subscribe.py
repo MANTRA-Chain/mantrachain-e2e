@@ -7,6 +7,7 @@ import websockets
 from eth_utils import abi
 from hexbytes import HexBytes
 from pystarport import ports
+from pystarport.utils import wait_for_new_blocks, wait_for_port
 from web3 import Web3
 
 from .network import Mantra
@@ -17,8 +18,6 @@ from .utils import (
     send_raw_transactions,
     send_transaction,
     sign_transaction,
-    wait_for_new_blocks,
-    wait_for_port,
 )
 
 

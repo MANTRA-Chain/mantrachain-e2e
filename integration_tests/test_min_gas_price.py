@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pystarport.utils import w3_wait_for_block, wait_for_new_blocks
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -9,8 +10,6 @@ from .utils import (
     WEI_PER_DENOM,
     adjust_base_fee,
     send_transaction,
-    w3_wait_for_block,
-    wait_for_new_blocks,
 )
 
 

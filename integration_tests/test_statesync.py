@@ -4,16 +4,18 @@ from pathlib import Path
 import pytest
 import web3
 from pystarport import cluster, ports
+from pystarport.utils import (
+    get_sync_info,
+    wait_for_block,
+    wait_for_port,
+)
 
 from .utils import (
     ADDRS,
     CMD,
     Greeter,
     edit_app_cfg,
-    get_sync_info,
     send_transaction,
-    wait_for_block,
-    wait_for_port,
 )
 
 

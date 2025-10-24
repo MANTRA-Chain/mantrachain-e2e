@@ -5,6 +5,12 @@ from pathlib import Path
 import pytest
 from dateutil.parser import isoparse
 from pystarport import cluster
+from pystarport.utils import (
+    BondStatus,
+    wait_for_block,
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -12,14 +18,10 @@ from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
     WEI_PER_DENOM,
-    BondStatus,
     duration,
     edit_app_cfg,
     find_fee,
     find_log_event_attrs,
-    wait_for_block,
-    wait_for_block_time,
-    wait_for_new_blocks,
 )
 
 pytestmark = pytest.mark.slow

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pystarport.utils import wait_for_new_blocks
 from web3 import Web3
 
 from .network import setup_custom_mantra
@@ -12,7 +13,6 @@ from .utils import (
     send_txs,
     sign_transaction,
     submit_gov_proposal,
-    wait_for_new_blocks,
 )
 
 

@@ -6,6 +6,7 @@ import web3
 from eth_account import Account
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.utils import sign_transaction as sign_transaction_async
+from pystarport.utils import wait_for_new_blocks
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -16,7 +17,6 @@ from .utils import (
     eth_to_bech32,
     send_transaction,
     sign_transaction,
-    wait_for_new_blocks,
 )
 
 PRIORITY_REDUCTION = 1000000

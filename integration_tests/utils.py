@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import binascii
 import configparser
@@ -7,16 +6,13 @@ import json
 import os
 import re
 import secrets
-import socket
 import subprocess
 import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from enum import Enum
 from itertools import takewhile
 from pathlib import Path
-from urllib.parse import urlparse
 
 import bech32
 import eth_utils
@@ -37,6 +33,10 @@ from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from pystarport import cluster
+from pystarport.utils import (
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
@@ -78,22 +78,6 @@ WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
 MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
 )
-
-
-class BondStatus(Enum):
-    UNSPECIFIED = "BOND_STATUS_UNSPECIFIED"
-    UNBONDED = "BOND_STATUS_UNBONDED"
-    UNBONDING = "BOND_STATUS_UNBONDING"
-    BONDED = "BOND_STATUS_BONDED"
-
-    def to_int(self):
-        mapping = {
-            BondStatus.UNSPECIFIED: 0,
-            BondStatus.UNBONDED: 1,
-            BondStatus.UNBONDING: 2,
-            BondStatus.BONDED: 3,
-        }
-        return mapping[self]
 
 
 class Contract:
@@ -160,152 +144,6 @@ class RevertTestContract(Contract):
         )
         receipt = send_transaction(self.w3, transaction, self.private_key)
         return receipt
-
-
-def wait_for_fn(name, fn, *, timeout=120, interval=1):
-    for i in range(int(timeout / interval)):
-        result = fn()
-        if result:
-            return result
-        time.sleep(interval)
-    else:
-        raise TimeoutError(f"wait for {name} timeout")
-
-
-async def wait_for_fn_async(name, fn, *, timeout=120, interval=1):
-    for i in range(int(timeout / interval)):
-        result = await fn()
-        if result:
-            return result
-        await asyncio.sleep(interval)
-    else:
-        raise TimeoutError(f"wait for {name} timeout")
-
-
-def wait_for_block_time(cli, t):
-    print("wait for block time", t)
-    while True:
-        now = isoparse(get_sync_info(cli.status())["latest_block_time"])
-        print("block time now:", now)
-        if now >= t:
-            break
-        time.sleep(0.5)
-
-
-def w3_wait_for_block(w3, height, timeout=120):
-    for _ in range(timeout * 2):
-        try:
-            current_height = w3.eth.block_number
-        except Exception as e:
-            print(f"get json-rpc block number failed: {e}", file=sys.stderr)
-        else:
-            if current_height >= height:
-                break
-            print("current block height", current_height)
-        time.sleep(0.5)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-async def w3_wait_for_block_async(w3, height, timeout=120):
-    for _ in range(timeout * 2):
-        try:
-            current_height = await w3.eth.block_number
-        except Exception as e:
-            print(f"get json-rpc block number failed: {e}", file=sys.stderr)
-        else:
-            if current_height >= height:
-                break
-            print("current block height", current_height)
-        await asyncio.sleep(0.1)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-def get_sync_info(s):
-    return s.get("SyncInfo") or s.get("sync_info")
-
-
-def wait_for_new_blocks(cli, n, sleep=0.5, timeout=120):
-    cur_height = begin_height = int(get_sync_info(cli.status())["latest_block_height"])
-    start_time = time.time()
-    while cur_height - begin_height < n:
-        time.sleep(sleep)
-        cur_height = int(get_sync_info(cli.status())["latest_block_height"])
-        if time.time() - start_time > timeout:
-            raise TimeoutError(f"wait for block {begin_height + n} timeout")
-    return cur_height
-
-
-def wait_for_block(cli, height, timeout=120):
-    for i in range(timeout * 2):
-        try:
-            status = cli.status()
-        except AssertionError as e:
-            print(f"get sync status failed: {e}", file=sys.stderr)
-        else:
-            current_height = int(get_sync_info(status)["latest_block_height"])
-            print("current block height", current_height)
-            if current_height >= height:
-                break
-        time.sleep(0.5)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-def wait_for_port(port, host="127.0.0.1", timeout=40.0):
-    print("wait for port", port, "to be available")
-    start_time = time.perf_counter()
-    while True:
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                break
-        except OSError as ex:
-            time.sleep(0.1)
-            if time.perf_counter() - start_time >= timeout:
-                raise TimeoutError(
-                    "Waited too long for the port {} on host {} to start accepting "
-                    "connections.".format(port, host)
-                ) from ex
-
-
-def wait_for_url(url, timeout=40.0):
-    print("wait for url", url, "to be available")
-    start_time = time.perf_counter()
-    while True:
-        try:
-            parsed = urlparse(url)
-            host = parsed.hostname
-            port = parsed.port
-            with socket.create_connection((host, int(port or 80)), timeout=timeout):
-                break
-        except OSError as ex:
-            time.sleep(0.1)
-            if time.perf_counter() - start_time >= timeout:
-                raise TimeoutError(
-                    "Waited too long for the port {} on host {} to start accepting "
-                    "connections.".format(port, host)
-                ) from ex
-
-
-def w3_wait_for_new_blocks(w3, n, sleep=0.5):
-    begin_height = w3.eth.block_number
-    while True:
-        time.sleep(sleep)
-        cur_height = w3.eth.block_number
-        if cur_height - begin_height >= n:
-            break
-
-
-async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
-    begin_height = await w3.eth.block_number
-    target = begin_height + n
-
-    while True:
-        cur_height = await w3.eth.block_number
-        if cur_height >= target:
-            break
-        await asyncio.sleep(sleep)
 
 
 def supervisorctl(inipath, *args):
