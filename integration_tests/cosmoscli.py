@@ -343,65 +343,6 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         ).get("disabled_list", [])
 
-    def grant_authorization(self, grantee, authz_type, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "authz",
-                "grant",
-                grantee,
-                authz_type,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def exec_tx_by_grantee(self, tx_file, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "authz",
-                "exec",
-                tx_file,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def revoke_authorization(self, grantee, msg_type, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "authz",
-                "revoke",
-                grantee,
-                msg_type,
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def query_grants(self, granter, grantee, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "authz",
-                "grants",
-                granter,
-                grantee,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("grants", [])
-
     def query_blacklist(self, **kwargs):
         return json.loads(
             self.raw(
