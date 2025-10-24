@@ -158,44 +158,6 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
 
-    def make_multisig(self, name, signer1, signer2, **kwargs):
-        self.raw(
-            "keys",
-            "add",
-            name,
-            multisig=f"{signer1},{signer2}",
-            multisig_threshold="2",
-            **(self.get_kwargs() | kwargs),
-        )
-
-    def sign_multisig_tx(self, tx_file, multi_addr, signer_name, **kwargs):
-        return json.loads(
-            self.raw(
-                "tx",
-                "sign",
-                tx_file,
-                from_=signer_name,
-                multisig=multi_addr,
-                **(self.get_kwargs() | kwargs),
-            )
-        )
-
-    def combine_multisig_tx(
-        self, tx_file, multi_name, signer1_file, signer2_file, **kwargs
-    ):
-        default_kwargs = self.get_kwargs()
-        return json.loads(
-            self.raw(
-                "tx",
-                "multisign",
-                tx_file,
-                multi_name,
-                signer1_file,
-                signer2_file,
-                **(default_kwargs | kwargs),
-            )
-        )
-
     def account_by_num(self, num, **kwargs):
         return json.loads(
             self.raw(
