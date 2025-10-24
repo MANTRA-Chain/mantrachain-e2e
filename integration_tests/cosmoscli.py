@@ -158,17 +158,6 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
 
-    def query_bank_send(self, *denoms, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "bank",
-                "send-enabled",
-                *denoms,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("send_enabled", [])
-
     def make_multisig(self, name, signer1, signer2, **kwargs):
         self.raw(
             "keys",
@@ -401,17 +390,6 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
-
-    def query_bank_denom_metadata(self, denom, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "bank",
-                "denom-metadata",
-                denom,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        ).get("metadata")
 
     def query_denom_authority_metadata(self, denom, **kwargs):
         return json.loads(
