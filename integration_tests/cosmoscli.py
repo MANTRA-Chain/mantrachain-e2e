@@ -116,33 +116,6 @@ class CosmosCLI(PystarportCosmosCLI):
                 return line.split()[-1]
         return eth_addr
 
-    def software_upgrade(self, proposer, proposal, **kwargs):
-        default_kwargs = self.get_kwargs()
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "upgrade",
-                "software-upgrade",
-                proposal["name"],
-                "-y",
-                "--no-validate",
-                from_=proposer,
-                # content
-                title=proposal.get("title"),
-                note=proposal.get("note"),
-                upgrade_height=proposal.get("upgrade-height"),
-                upgrade_time=proposal.get("upgrade-time"),
-                upgrade_info=proposal.get("upgrade-info"),
-                summary=proposal.get("summary"),
-                deposit=proposal.get("deposit"),
-                # basic
-                **(default_kwargs | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
     def create_tokenfactory_denom(self, subdenom, generate_only=False, **kwargs):
         rsp = json.loads(
             self.raw(
