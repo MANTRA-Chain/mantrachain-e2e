@@ -1,4 +1,3 @@
-import asyncio
 import json
 from pathlib import Path
 
@@ -39,7 +38,6 @@ from web3.types import TxParams
 from .utils import (
     ACCOUNTS,
     ADDRS,
-    KEYS,
     WETH_ADDRESS,
     WETH_SALT,
     MockERC20_ARTIFACT,
@@ -47,7 +45,7 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
-    build_deploy_contract_async,
+    deploy_multi_contracts,
     w3_wait_for_new_blocks_async,
 )
 
@@ -320,29 +318,7 @@ async def test_4337(mantra, connect_mantra):
 
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
-    name = "community"
-    key = KEYS[name]
-    owner = ADDRS[name]
-    num = 10
-    res = build_contract("ERC20MinterBurnerDecimals")
-    args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
-    tx_results = await asyncio.gather(
-        *(build_deploy_contract_async(*args) for args in args_list)
-    )
-    nonce = await w3.eth.get_transaction_count(owner)
-    txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]
-    receipts = await asyncio.gather(
-        *(send_transaction(w3, tx["from"], **tx) for tx in txs), return_exceptions=True
-    )
-    for r in receipts:
-        if isinstance(r, Exception):
-            pytest.fail(f"send_transaction failed: {r}")
-    assert len(receipts) == num
-    total = 100
-    token = receipts[0]["contractAddress"]
-    receipt = await ERC20.fns.mint(owner, total).transact(w3, owner, to=token)
-    assert receipt.status == 1
-    assert await ERC20.fns.balanceOf(owner).call(w3, to=token) == total
+    await deploy_multi_contracts(w3)
 
 
 async def test_upgrade(mantra):

@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 
 import bech32
 import eth_utils
+import jsonmerge
+import pytest
 import requests
 import rlp
 from dateutil.parser import isoparse
@@ -1029,18 +1031,21 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance_bf = receiver_balance
 
 
-def edit_app_cfg(cli, i):
+def edit_app_cfg(cli, i, app_config={}):
     # Modify the json-rpc addresses to avoid conflict
     cluster.edit_app_cfg(
         cli.home(i) / "config/app.toml",
         cli.base_port(i),
-        {
-            "json-rpc": {
-                "enable": True,
-                "address": "127.0.0.1:{EVMRPC_PORT}",
-                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+        jsonmerge.merge(
+            {
+                "json-rpc": {
+                    "enable": True,
+                    "address": "127.0.0.1:{EVMRPC_PORT}",
+                    "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+                },
             },
-        },
+            app_config,
+        ),
     )
 
 
@@ -1048,3 +1053,28 @@ def duration(duration_str):
     mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}
     parts = re.findall(r"(\d+)([smhd])", duration_str.lower())
     return sum(int(value) * mult[unit] for value, unit in parts)
+
+
+async def deploy_multi_contracts(w3, num=10):
+    name = "community"
+    key = KEYS[name]
+    acct = ACCOUNTS[name]
+    res = build_contract("ERC20MinterBurnerDecimals")
+    args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
+    tx_results = await asyncio.gather(
+        *(build_deploy_contract_async(*args) for args in args_list)
+    )
+    nonce = await w3.eth.get_transaction_count(acct.address)
+    txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]
+    receipts = await asyncio.gather(
+        *(send_transaction_async(w3, acct, **tx) for tx in txs), return_exceptions=True
+    )
+    for r in receipts:
+        if isinstance(r, Exception):
+            pytest.fail(f"send_transaction failed: {r}")
+    assert len(receipts) == num
+    total = 100
+    token = receipts[0]["contractAddress"]
+    receipt = await ERC20.fns.mint(acct.address, total).transact(w3, acct, to=token)
+    assert receipt.status == 1
+    assert await ERC20.fns.balanceOf(acct.address).call(w3, to=token) == total
