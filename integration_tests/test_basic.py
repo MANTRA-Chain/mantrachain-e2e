@@ -49,7 +49,7 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
-        denom = cli.get_params("evm")["params"]["evm_denom"]
+        denom = cli.get_params("evm")["evm_denom"]
         addr = cli.address("reserve")
         account = cli.account(addr)["account"]
         assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"

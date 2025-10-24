@@ -131,7 +131,7 @@ def test_percentiles(custom_mantra):
 
 def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200000000):
     cli = node.cosmos_cli()
-    p = cli.get_params("feemarket")["params"]
+    p = cli.get_params("feemarket")
     new_base_fee = f"{NEW_BASE_FEE/WEI_PER_DENOM}"
     p["base_fee"] = new_base_fee
     p["elasticity_multiplier"] = new_multiplier
@@ -147,7 +147,7 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
             }
         ],
     )
-    p = cli.get_params("feemarket")["params"]
+    p = cli.get_params("feemarket")
     assert float(p["base_fee"]) - float(new_base_fee) == 0
     assert p["elasticity_multiplier"] == new_multiplier
     assert p["base_fee_change_denominator"] == new_denominator
@@ -197,7 +197,7 @@ def assert_histories(w3, cli, blk, percentiles=[]):
         prev = b - 1
         blk = w3.eth.get_block(prev)
         base_fee = blk.baseFeePerGas
-        params = cli.get_params("feemarket")["params"]
+        params = cli.get_params("feemarket")
         res = adjust_base_fee(
             base_fee,
             blk.gasLimit,

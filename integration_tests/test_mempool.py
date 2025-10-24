@@ -97,7 +97,7 @@ def test_mempool_nonce(mantra_mempool, tmp_path):
     """
     w3: Web3 = mantra_mempool.w3
     cli = mantra_mempool.cosmos_cli()
-    p = cli.get_params("consensus")["params"]
+    p = cli.get_params("consensus")
     # adjust to 128KB txMaxSize to avoid oversized data when broadcast
     max_bytes = 131072
     p["block"]["max_bytes"] = max_bytes
@@ -115,7 +115,7 @@ def test_mempool_nonce(mantra_mempool, tmp_path):
         ],
         event_query_tx=False,
     )
-    p = cli.get_params("consensus")["params"]
+    p = cli.get_params("consensus")
     assert int(p["block"]["max_bytes"]) == max_bytes
     sender = ADDRS["community"]
     orig_nonce = w3.eth.get_transaction_count(sender)

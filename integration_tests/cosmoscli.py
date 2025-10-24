@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 
 import requests
+from pystarport.cosmoscli import CosmosCLI as PystarportCosmosCLI
 from pystarport.utils import build_cli_args_safe, interact, parse_amount
 
 from .utils import (
@@ -24,7 +25,7 @@ class ChainCommand:
         return interact(f"{self.cmd} {args}", input=stdin, stderr=stderr)
 
 
-class CosmosCLI:
+class CosmosCLI(PystarportCosmosCLI):
     "the apis to interact with wallet and blockchain"
 
     def __init__(
@@ -34,23 +35,23 @@ class CosmosCLI:
         cmd,
         chain_id=None,
     ):
-        self.data_dir = data_dir
-        genesis_path = self.data_dir / "config" / "genesis.json"
+        super().__init__(data_dir, node_rpc, chain_id, cmd)
         self.raw = ChainCommand(cmd)
+        genesis_path = self.data_dir / "config" / "genesis.json"
         if genesis_path.exists():
             self._genesis = json.loads(genesis_path.read_text())
-            self.chain_id = self._genesis["chain_id"]
+            if chain_id is None:
+                self.chain_id = self._genesis["chain_id"]
         else:
             self._genesis = {}
-            self.chain_id = chain_id
-            # avoid client.yml overwrite flag in textual mode
-            self.raw(
-                "config", "set", "client", "chain-id", chain_id, home=self.data_dir
-            )
-            self.raw("config", "set", "client", "node", node_rpc, home=self.data_dir)
-        self.node_rpc = node_rpc
-        self.output = None
-        self.error = None
+            if chain_id is not None:
+                # avoid client.yml overwrite flag in textual mode
+                self.raw(
+                    "config", "set", "client", "chain-id", chain_id, home=self.data_dir
+                )
+                self.raw(
+                    "config", "set", "client", "node", node_rpc, home=self.data_dir
+                )
 
     @property
     def node_rpc_http(self):
@@ -70,35 +71,8 @@ class CosmosCLI:
         )
         return cls(data_dir, node_rpc, cmd)
 
-    def validators(self):
-        return json.loads(
-            self.raw("q", "staking", "validators", output="json", node=self.node_rpc)
-        )["validators"]
-
-    def status(self):
-        return json.loads(self.raw("status", node=self.node_rpc))
-
-    def block_height(self):
-        return int(get_sync_info(self.status())["latest_block_height"])
-
-    def balances(self, addr, height=0, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "bank",
-                "balances",
-                addr,
-                height=height,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )["balances"]
-
     def balance(self, addr, denom=DEFAULT_DENOM, height=0):
-        denoms = {
-            coin["denom"]: int(coin["amount"])
-            for coin in self.balances(addr, height=height)
-        }
-        return denoms.get(denom, 0)
+        return super().balance(addr, denom=denom, height=height)
 
     def address(self, name, bech="acc", field="address", skip_create=False):
         try:
@@ -142,95 +116,6 @@ class CosmosCLI:
                 return line.split()[-1]
         return eth_addr
 
-    def account(self, addr, **kwargs):
-        return json.loads(
-            self.raw("q", "auth", "account", addr, **(self.get_base_kwargs() | kwargs))
-        )
-
-    def transfer(
-        self,
-        from_,
-        to,
-        coins,
-        generate_only=False,
-        event_query_tx=True,
-        fees=None,
-        **kwargs,
-    ):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "bank",
-                "send",
-                from_,
-                to,
-                coins,
-                "-y",
-                "--generate-only" if generate_only else None,
-                fees=fees,
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0 and event_query_tx:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def event_query_tx_for(self, hash, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "event-query-tx-for",
-                hash,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )
-
-    def comet_validator_set(self, height, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "comet-validator-set",
-                height,
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )
-
-    def query_all_txs(self, addr, **kwargs):
-        txs = self.raw(
-            "q",
-            "txs-all",
-            addr,
-            **(self.get_base_kwargs() | kwargs),
-        )
-        return json.loads(txs)
-
-    def broadcast_tx(self, tx_file, **kwargs):
-        kwargs.setdefault("broadcast_mode", "sync")
-        kwargs.setdefault("output", "json")
-        rsp = json.loads(
-            self.raw("tx", "broadcast", tx_file, node=self.node_rpc, **kwargs)
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"], **kwargs)
-        return rsp
-
-    def broadcast_tx_json(self, tx, **kwargs):
-        with tempfile.NamedTemporaryFile("w") as fp:
-            json.dump(tx, fp)
-            fp.flush()
-            return self.broadcast_tx(fp.name, **kwargs)
-
-    def sign_tx(self, tx_file, signer, **kwargs):
-        default_kwargs = self.get_kwargs()
-        return json.loads(
-            self.raw(
-                "tx",
-                "sign",
-                tx_file,
-                from_=signer,
-                **(default_kwargs | kwargs),
-            )
-        )
 
     def sign_tx_json(self, tx, signer, max_priority_price=None, **kwargs):
         if max_priority_price is not None:
@@ -245,36 +130,6 @@ class CosmosCLI:
             fp.flush()
             return self.sign_tx(fp.name, signer, **kwargs)
 
-    def create_account(self, name, mnemonic=None, **kwargs):
-        "create new keypair in node's keyring"
-        if kwargs.get("coin_type", 60) == 60:
-            kwargs.update({"coin_type": 60, "key_type": "eth_secp256k1"})
-        default_kwargs = self.get_kwargs()
-        args = {**default_kwargs, **kwargs}
-        if mnemonic is None:
-            if kwargs.get("source"):
-                output = self.raw("keys", "add", name, "--recover", **args)
-            else:
-                output = self.raw("keys", "add", name, **args)
-        else:
-            output = self.raw(
-                "keys",
-                "add",
-                name,
-                "--recover",
-                stdin=mnemonic.encode() + b"\n",
-                **args,
-            )
-        return json.loads(output)
-
-    def list_accounts(self, **kwargs):
-        return json.loads(
-            self.raw(
-                "keys",
-                "list",
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )
 
     def build_evm_tx(self, raw_tx: str, **kwargs):
         default_kwargs = self.get_kwargs()
@@ -642,10 +497,6 @@ class CosmosCLI:
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
-
-    def get_params(self, module, **kwargs):
-        default_kwargs = self.get_base_kwargs()
-        return json.loads(self.raw("q", module, "params", **(default_kwargs | kwargs)))
 
     def query_base_fee(self, **kwargs):
         return json.loads(

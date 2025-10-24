@@ -44,7 +44,7 @@ def test_connect_staking_unbond(connect_mantra, tmp_path):
 
 def test_staking_unbond(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
-    unbond_duration = duration(cli.get_params("staking")["params"]["unbonding_time"])
+    unbond_duration = duration(cli.get_params("staking")["unbonding_time"])
     if unbond_duration > 60:
         pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     name = "signer1"

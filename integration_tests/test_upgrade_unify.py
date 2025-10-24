@@ -122,7 +122,7 @@ async def exec(c, tmp_path):
     ]
     assert all(item in cli.query_disabled_list() for item in expected)
 
-    evm_params = cli.get_params("evm")["params"]
+    evm_params = cli.get_params("evm")
     meta = cli.query_bank_denom_metadata(evm_params["evm_denom"])
     if meta["denom_units"][1]["exponent"] == 6:
         assert (

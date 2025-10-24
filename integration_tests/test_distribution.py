@@ -25,7 +25,7 @@ def test_connect_distribution(connect_mantra, tmp_path):
 
 def test_distribution(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
-    tax = cli.get_params("distribution")["params"]["community_tax"]
+    tax = cli.get_params("distribution")["community_tax"]
     if float(tax) < 0.01:
         pytest.skip(f"community_tax is {tax} too low for test")
     signer1, signer2 = cli.address("signer1"), cli.address("signer2")

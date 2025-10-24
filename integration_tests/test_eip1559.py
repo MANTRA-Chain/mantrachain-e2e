@@ -53,7 +53,7 @@ async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
     # check the next block's base fee is adjusted accordingly
     await w3_wait_for_block_async(w3, txreceipt.blockNumber + 1)
     next_base_price = (await w3.eth.get_block(txreceipt.blockNumber + 1)).baseFeePerGas
-    params = mantra.cosmos_cli().get_params("feemarket")["params"]
+    params = mantra.cosmos_cli().get_params("feemarket")
     assert (
         abs(
             next_base_price
@@ -81,7 +81,7 @@ async def test_base_fee_adjustment(mantra, connect_mantra, update_params=True):
 
     blk = await w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
-    params = mantra.cosmos_cli().get_params("feemarket")["params"]
+    params = mantra.cosmos_cli().get_params("feemarket")
 
     for i in range(3):
         fee = (await w3.eth.get_block(begin + 1 + i)).baseFeePerGas

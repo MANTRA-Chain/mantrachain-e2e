@@ -60,7 +60,7 @@ def normalize(lst):
 @pytest.mark.slow
 def test_history_serve_window(mantra, tmp_path):
     cli = mantra.cosmos_cli()
-    p = cli.get_params("evm")["params"]
+    p = cli.get_params("evm")
     updated = 4096
     p["history_serve_window"] = updated
     submit_gov_proposal(
@@ -75,7 +75,7 @@ def test_history_serve_window(mantra, tmp_path):
         ],
         gas=300_000,
     )
-    p = cli.get_params("evm")["params"]
+    p = cli.get_params("evm")
     assert int(p["history_serve_window"]) == int(updated), p
 
 

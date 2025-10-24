@@ -32,7 +32,7 @@ async def test_static_erc20(mantra):
     assert after == before - fee
 
     cli = mantra.cosmos_cli()
-    denom = cli.get_params("evm")["params"]["evm_denom"]
+    denom = cli.get_params("evm")["evm_denom"]
     meta = cli.query_bank_denom_metadata(denom)
     assert (
         await ERC20.fns.decimals().call(w3, to=WOM)
