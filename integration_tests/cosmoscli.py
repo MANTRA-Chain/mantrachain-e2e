@@ -4,14 +4,13 @@ import tempfile
 
 import requests
 from pystarport.cosmoscli import CosmosCLI as PystarportCosmosCLI
-from pystarport.utils import build_cli_args_safe, interact, parse_amount
+from pystarport.utils import build_cli_args_safe, interact
 
 from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS,
     DEFAULT_GAS_PRICE,
     MNEMONICS,
-    get_sync_info,
 )
 
 
@@ -132,32 +131,6 @@ class CosmosCLI(PystarportCosmosCLI):
             fp.flush()
             return self.sign_tx(fp.name, signer, **kwargs)
 
-
-    def build_evm_tx(self, raw_tx: str, **kwargs):
-        default_kwargs = self.get_kwargs()
-        return json.loads(
-            self.raw(
-                "tx",
-                "evm",
-                "raw",
-                raw_tx,
-                "-y",
-                "--generate-only",
-                **(default_kwargs | kwargs),
-            )
-        )
-
-    def tx_simulate(self, tx, **kwargs):
-        default_kwargs = self.get_kwargs()
-        return json.loads(
-            self.raw(
-                "tx",
-                "simulate",
-                tx,
-                **(default_kwargs | kwargs),
-            )
-        )
-
     def software_upgrade(self, proposer, proposal, **kwargs):
         default_kwargs = self.get_kwargs()
         rsp = json.loads(
@@ -184,16 +157,6 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
-
-    def query_base_fee(self, **kwargs):
-        return json.loads(
-            self.raw(
-                "q",
-                "feemarket",
-                "base-fee",
-                **(self.get_base_kwargs() | kwargs),
-            )
-        )["base_fee"]
 
     def create_tokenfactory_denom(self, subdenom, generate_only=False, **kwargs):
         rsp = json.loads(
@@ -252,11 +215,6 @@ class CosmosCLI(PystarportCosmosCLI):
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
 
-    def tx_search(self, events: str):
-        return json.loads(
-            self.raw("q", "txs", query=f'"{events}"', output="json", node=self.node_rpc)
-        )
-
     def tx_search_rpc(self, events: str):
         rsp = requests.get(
             f"{self.node_rpc_http}/tx_search",
@@ -266,12 +224,6 @@ class CosmosCLI(PystarportCosmosCLI):
         ).json()
         assert "error" not in rsp, rsp["error"]
         return rsp["result"]["txs"]
-
-    def rollback(self):
-        self.raw("rollback", home=self.data_dir)
-
-    def prune(self, kind="everything"):
-        return self.raw("prune", kind, home=self.data_dir).decode()
 
     def set_tokenfactory_denom(self, meta, generate_only=False, **kwargs):
         rsp = json.loads(
@@ -352,16 +304,6 @@ class CosmosCLI(PystarportCosmosCLI):
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("blacklisted_accounts", [])
-
-    def export(self, **kwargs):
-        raw = self.raw("export", home=self.data_dir, **kwargs)
-        if isinstance(raw, bytes):
-            raw = raw.decode()
-        # skip oracle client log
-        idx = raw.find("{")
-        if idx == -1:
-            raise ValueError("No JSON object found in export output")
-        return json.loads(raw[idx:])
 
     def has_module(self, module):
         try:
