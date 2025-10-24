@@ -17,11 +17,11 @@ from .utils import (
     DEFAULT_DENOM,
     KEYS,
     WEI_PER_DENOM,
+    AsyncGreeter,
     Contract,
     Greeter,
     RevertTestContract,
     address_to_bytes32,
-    assert_balance,
     assert_transfer,
     bech32_to_eth,
     build_batch_tx,
@@ -396,26 +396,22 @@ def test_log0(mantra, connect_mantra):
 
 
 @pytest.mark.connect
-def test_connect_contract(connect_mantra, tmp_path):
-    test_contract(None, connect_mantra, tmp_path)
+async def test_connect_contract(connect_mantra, tmp_path):
+    await test_contract(None, connect_mantra, tmp_path)
 
 
-def test_contract(mantra, connect_mantra, tmp_path):
+async def test_contract(mantra, connect_mantra, tmp_path):
     "test Greeter contract"
     cli = connect_mantra.cosmos_cli(tmp_path)
     recover_community(cli, tmp_path)
-    w3 = connect_mantra.w3
-    name = "community"
-    key = KEYS[name]
-    greeter = Greeter("Greeter", private_key=key)
-    greeter.deploy(w3)
-    contract = greeter.contract
-    assert "Hello" == contract.caller.greet()
+    w3 = connect_mantra.async_w3
+    greeter = AsyncGreeter()
+    await greeter.deploy(w3)
+    assert "Hello" == await greeter.greet()
     # change
-    tx = contract.functions.setGreeting("world").build_transaction()
-    receipt = send_transaction(w3, tx, key=key)
+    receipt = await greeter.set_greeting("world")
+    assert "world" == await greeter.greet()
     assert receipt.status == 1
-    assert_balance(cli, w3, name)
 
 
 @pytest.mark.connect

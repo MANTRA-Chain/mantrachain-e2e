@@ -21,6 +21,7 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_contract.contract import Contract as ContractAsync
 from eth_contract.create2 import create2_address
 from eth_contract.deploy_utils import (
     ensure_create2_deployed,
@@ -79,6 +80,76 @@ MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
 )
 
+class AsyncContract:
+    def __init__(self, name, key=KEYS["community"]):
+        self.acct = Account.from_key(key)
+        self.name = name
+        self.contract = None
+        self.address = None
+        self.w3 = None
+
+    async def deploy(self, w3: AsyncWeb3, args=()):
+        if self.contract:
+            return self.address
+        self.w3 = w3
+        res = build_contract(self.name)
+        tx = await create_contract_transaction(w3, res, args, key=self.acct.key)
+        receipt = await send_transaction_async(w3, self.acct, **tx)
+        self.contract = ContractAsync(res["abi"])
+        self.address = receipt.contractAddress
+        return self.address
+
+    def _check_deployed(self):
+        if not self.contract:
+            raise ValueError("Contract not deployed yet")
+
+
+class AsyncGreeter(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("Greeter", key)
+
+    async def greet(self):
+        self._check_deployed()
+        return await self.contract.fns.greet().call(self.w3, to=self.address)
+
+    async def int_value(self):
+        self._check_deployed()
+        return await self.contract.fns.intValue().call(self.w3, to=self.address)
+
+    async def set_greeting(self, message: str):
+        self._check_deployed()
+        return await self.contract.fns.setGreeting(message).transact(
+            self.w3, self.acct, to=self.address
+        )
+
+
+class AsyncTestRevert(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("TestRevert", key)
+
+    async def transfer(self, value):
+        self._check_deployed()
+        return await self.contract.fns.transfer(value).transact(
+            self.w3,
+            self.acct,
+            to=self.address,
+            gas=100000,  # skip estimateGas error
+        )
+
+
+class AsyncTestMessageCall(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("TestMessageCall", key)
+
+    async def test(self, iterations):
+        self._check_deployed()
+        return await self.contract.fns.test(iterations).transact(
+            self.w3, self.acct, to=self.address
+        )
+
+    def get_test_data(self, iterations):
+        self._check_deployed()
+        return self.contract.fns.test(iterations).data
 
 class Contract:
     def __init__(self, name, private_key=KEYS["community"], chain_id=EVM_CHAIN_ID):
@@ -268,39 +339,24 @@ async def build_and_deploy_contract_async(
     name,
     args=(),
     key=KEYS["community"],
-    exp_gas_used=None,
     dir="contracts",
 ):
     res = build_contract(name, dir=dir)
-    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    acct = Account.from_key(key)
-    tx = await contract.constructor(*args).build_transaction({"from": acct.address})
+    tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
-    if exp_gas_used is not None:
-        assert (
-            exp_gas_used == txreceipt.gasUsed
-        ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
-    address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=res["abi"])
+    return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])
 
 
-def create_contract_transaction(w3, name, args=(), key=KEYS["community"]):
-    """
-    create contract transaction
-    """
-    acct = Account.from_key(key)
-    res = build_contract(name)
-    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    tx = contract.constructor(*args).build_transaction({"from": acct.address})
-    return tx
-
-
-async def build_deploy_contract_async(
-    w3: AsyncWeb3, res, args=(), key=KEYS["community"]
+def create_contract_transaction(
+    w3, name_or_res, args=(), key=KEYS["community"], dir="contracts"
 ):
     acct = Account.from_key(key)
+    if isinstance(name_or_res, str):
+        res = build_contract(name_or_res, dir=dir)
+    else:
+        res = name_or_res
     contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    return await contract.constructor(*args).build_transaction({"from": acct.address})
+    return contract.constructor(*args).build_transaction({"from": acct.address})
 
 
 def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):

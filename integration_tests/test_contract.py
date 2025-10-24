@@ -48,7 +48,7 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
-    build_deploy_contract_async,
+    create_contract_transaction,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -327,7 +327,7 @@ async def test_deploy_multi(mantra):
     res = build_contract("ERC20MinterBurnerDecimals")
     args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
     tx_results = await asyncio.gather(
-        *(build_deploy_contract_async(*args) for args in args_list)
+        *(create_contract_transaction(*args) for args in args_list)
     )
     nonce = await w3.eth.get_transaction_count(owner)
     txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]

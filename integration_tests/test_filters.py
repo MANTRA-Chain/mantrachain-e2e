@@ -2,12 +2,13 @@ import pytest
 import web3
 from eth_contract.utils import send_transaction
 from pystarport.utils import w3_wait_for_new_blocks_async
-from web3 import AsyncWeb3, Web3
+from web3 import AsyncWeb3
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
-    build_and_deploy_contract_async,
+    KEYS,
+    AsyncGreeter,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -15,25 +16,25 @@ pytestmark = pytest.mark.asyncio
 
 async def test_get_logs_by_topic(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    contract = await build_and_deploy_contract_async(w3, "Greeter")
-    topic = f"0x{Web3.keccak(text='ChangeGreeting(address,string)').hex()}"
-    tx = await contract.functions.setGreeting("world").build_transaction()
-    res = await send_transaction(w3, ACCOUNTS["community"], **tx)
-
+    greeter = AsyncGreeter(key=KEYS["community"])
+    addr = await greeter.deploy(w3)
+    contract = greeter.contract
+    topic = contract.events.ChangeGreeting.topic
+    res = await greeter.set_greeting("Hello")
     current = await w3.eth.block_number
     # invalid block ranges
     test_cases = [
-        {"fromBlock": hex(2000), "toBlock": "latest", "address": [contract.address]},
-        {"fromBlock": hex(2), "toBlock": hex(1), "address": [contract.address]},
+        {"fromBlock": hex(2000), "toBlock": "latest", "address": [addr]},
+        {"fromBlock": hex(2), "toBlock": hex(1), "address": [addr]},
         {
             "fromBlock": "earliest",
             "toBlock": hex(current + 200),
-            "address": [contract.address],
+            "address": [addr],
         },
         {
             "fromBlock": hex(current + 20),
             "toBlock": hex(current + 200),
-            "address": [contract.address],
+            "address": [addr],
         },
     ]
     invalid_block_msg = "invalid block range params"
@@ -49,7 +50,7 @@ async def test_get_logs_by_topic(mantra):
         log[key] == res[key]
         for key in ["transactionHash", "transactionIndex", "blockNumber", "blockHash"]
     )
-    assert log["address"] == contract.address
+    assert log["address"] == addr
     assert log["blockTimestamp"] == res["logs"][0]["blockTimestamp"]
     assert log["blockTimestamp"] != "0x0"
 
@@ -61,21 +62,21 @@ async def test_get_logs_by_topic(mantra):
     current = await w3.eth.block_number
     # valid block ranges
     valid_cases = [
-        {"fromBlock": "earliest", "toBlock": "latest", "address": [contract.address]},
+        {"fromBlock": "earliest", "toBlock": "latest", "address": [addr]},
         {
             "fromBlock": "earliest",
             "toBlock": hex(current),
-            "address": [contract.address],
+            "address": [addr],
         },
         {
             "fromBlock": hex(previous),
             "toBlock": "latest",
-            "address": [contract.address],
+            "address": [addr],
         },
         {
             "fromBlock": hex(previous),
             "toBlock": hex(current),
-            "address": [contract.address],
+            "address": [addr],
         },
     ]
     for params in valid_cases:
@@ -107,21 +108,22 @@ async def test_block_filter(mantra):
 
 async def test_event_log_filter(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    contract = await build_and_deploy_contract_async(w3, "Greeter")
-    assert "Hello" == await contract.caller.greet()
+    greeter = AsyncGreeter(key=KEYS["community"])
+    await greeter.deploy(w3)
+    contract = greeter.contract
+    assert "Hello" == await greeter.greet()
     current_height = hex(await w3.eth.get_block_number())
     event_filter = await contract.events.ChangeGreeting.create_filter(
-        from_block=current_height
+        w3, from_block=current_height
     )
-    tx = await contract.functions.setGreeting("world").build_transaction()
-    tx_receipt = await send_transaction(w3, ACCOUNTS["community"], **tx)
-    log = contract.events.ChangeGreeting().process_receipt(tx_receipt)[0]
+    res = await greeter.set_greeting("world")
+    log = contract.events.ChangeGreeting().process_receipt(res)[0]
     assert log["event"] == "ChangeGreeting"
     new_entries = await event_filter.get_new_entries()
     assert len(new_entries) == 1
     assert new_entries[0] == log
-    assert "world" == await contract.caller.greet()
-    # without new txs since last call
+    assert "world" == await greeter.greet()
+    # without new txs since last call``
     assert await event_filter.get_new_entries() == []
     assert await event_filter.get_all_entries() == new_entries
     # Uninstall
