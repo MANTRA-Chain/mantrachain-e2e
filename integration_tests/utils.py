@@ -80,6 +80,7 @@ MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
 )
 
+
 class AsyncContract:
     def __init__(self, name, key=KEYS["community"]):
         self.acct = Account.from_key(key)
@@ -150,6 +151,7 @@ class AsyncTestMessageCall(AsyncContract):
     def get_test_data(self, iterations):
         self._check_deployed()
         return self.contract.fns.test(iterations).data
+
 
 class Contract:
     def __init__(self, name, private_key=KEYS["community"], chain_id=EVM_CHAIN_ID):

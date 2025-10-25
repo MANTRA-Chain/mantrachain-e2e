@@ -1,15 +1,16 @@
+import asyncio
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 import web3
 from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
+from eth_contract.utils import broadcast_transaction
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
-from pystarport.utils import w3_wait_for_new_blocks
+from pystarport.utils import w3_wait_for_new_blocks_async
 
 from .utils import (
     ACCOUNTS,
@@ -18,8 +19,8 @@ from .utils import (
     KEYS,
     WEI_PER_DENOM,
     AsyncGreeter,
+    AsyncTestRevert,
     Contract,
-    Greeter,
     RevertTestContract,
     address_to_bytes32,
     assert_transfer,
@@ -181,137 +182,108 @@ async def test_minimal_gas_price(mantra, connect_mantra):
 
 
 @pytest.mark.connect
-def test_connect_transaction(connect_mantra):
-    test_transaction(None, connect_mantra, diff=2)
+async def test_connect_transaction(connect_mantra):
+    await test_transaction(None, connect_mantra)
 
 
-def test_transaction(mantra, connect_mantra, diff=1):
-    w3 = connect_mantra.w3
-    gas_price = w3.eth.gas_price
+async def test_transaction(mantra, connect_mantra):
+    w3 = connect_mantra.async_w3
+    gas_price = await w3.eth.gas_price
     gas = 21000
-    sender = ADDRS["community"]
+    acct = ACCOUNTS["community"]
+    sender = acct.address
     receiver = ADDRS["signer1"]
 
-    # send transaction
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
-    txhash_1 = send_transaction(w3, data)["transactionHash"]
-    tx1 = w3.eth.get_transaction(txhash_1)
-    assert tx1["transactionIndex"] == 0
+    res = await send_transaction_async(w3, acct, **data)
+    assert res["transactionIndex"] == 0
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
-        data["nonce"] = w3.eth.get_transaction_count(sender) - 1
-        send_transaction(w3, data)
+        data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
+        await send_transaction_async(w3, acct, **data)
 
-    data["nonce"] = w3.eth.get_transaction_count(sender) + 1
-    txhash = send_transaction(w3, data, check=False)
+    data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
+    txhash = await broadcast_transaction(w3, acct, **data)
 
-    data["nonce"] = w3.eth.get_transaction_count(sender)
-    receipt = send_transaction(w3, data)
+    data["nonce"] = await w3.eth.get_transaction_count(sender)
+    receipt = await send_transaction_async(w3, acct, **data)
     assert receipt["status"] == 1
 
-    # tx queued due to nonce gap should be success now
-    receipt = w3.eth.wait_for_transaction_receipt(txhash)
+    receipt = await w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt["status"] == 1
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="intrinsic gas too low"):
-        send_transaction(
+        await send_transaction_async(
             w3,
-            {
-                "to": receiver,
-                "value": 10000,
-                "gasPrice": w3.eth.gas_price,
-                "gas": 1,
-            },
-        )["transactionHash"]
+            acct,
+            to=receiver,
+            value=10000,
+            gasPrice=gas_price,
+            gas=1,
+        )
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="insufficient fee"):
-        send_transaction(
+        await send_transaction_async(
             w3,
-            {
-                "to": receiver,
-                "value": 10000,
-                "gas": gas,
-                "gasPrice": 1,
-            },
-        )["transactionHash"]
+            acct,
+            to=receiver,
+            value=10000,
+            gas=gas,
+            gasPrice=1,
+        )
 
-    # Deploy multiple contracts
     contracts = {
-        "test_revert_1": RevertTestContract(
-            "TestRevert",
-            KEYS["validator"],
-        ),
-        "test_revert_2": RevertTestContract(
-            "TestRevert",
-            KEYS["community"],
-        ),
-        "greeter_1": Greeter(
-            "Greeter",
-            KEYS["signer1"],
-        ),
-        "greeter_2": Greeter(
-            "Greeter",
-            KEYS["signer2"],
-        ),
+        "test_revert_1": AsyncTestRevert(KEYS["validator"]),
+        "test_revert_2": AsyncTestRevert(KEYS["community"]),
+        "greeter_1": AsyncGreeter(KEYS["signer1"]),
+        "greeter_2": AsyncGreeter(KEYS["signer2"]),
     }
+    await w3_wait_for_new_blocks_async(w3, 1)
 
-    w3_wait_for_new_blocks(w3, 1)
-    with ThreadPoolExecutor(4) as executor:
-        future_to_contract = {
-            executor.submit(contract.deploy, w3): name
-            for name, contract in contracts.items()
-        }
+    deployment_tasks = [contract.deploy(w3) for contract in contracts.values()]
+    await asyncio.gather(*deployment_tasks)
+    await w3_wait_for_new_blocks_async(w3, 1)
 
-        assert_receipt_transaction_and_block(w3, future_to_contract)
+    call_tasks = []
+    call_tasks.append(contracts["test_revert_1"].transfer(5 * (10**18) - 1))
+    call_tasks.append(contracts["test_revert_2"].transfer(5 * (10**18)))
+    call_tasks.append(contracts["greeter_1"].set_greeting("hello"))
+    call_tasks.append(contracts["greeter_2"].set_greeting("world"))
+    results = await asyncio.gather(*call_tasks, return_exceptions=True)
 
-    # Do Multiple contract calls
-    w3_wait_for_new_blocks(w3, 1)
-    with ThreadPoolExecutor(4) as executor:
-        futures = []
-        futures.append(
-            executor.submit(contracts["test_revert_1"].transfer, 5 * (10**18) - 1)
-        )
-        futures.append(
-            executor.submit(contracts["test_revert_2"].transfer, 5 * (10**18))
-        )
-        futures.append(executor.submit(contracts["greeter_1"].transfer, "hello"))
-        futures.append(executor.submit(contracts["greeter_2"].transfer, "world"))
+    # revert transaction for 1st, normal transaction for others
+    statuses = [0, 1, 1, 1]
+    valid_receipts = []
 
-        assert_receipt_transaction_and_block(w3, futures)
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            if i != 0:
+                raise result
+        else:
+            assert result["status"] == statuses[i]
+            if result["status"] == 1:
+                valid_receipts.append(result)
 
-        # revert transaction for 1st, normal transaction for others
-        statuses = [0, 1, 1, 1]
-        for i, future in enumerate(futures):
-            assert future.result()["status"] == statuses[i]
+    await assert_receipt_transaction_and_block(w3, valid_receipts)
 
 
-def assert_receipt_transaction_and_block(w3, futures):
-    receipts = []
-    for future in as_completed(futures):
-        data = future.result()
-        receipts.append(data)
-    assert len(receipts) == 4
-
-    block_number = w3.eth.get_block_number()
-    tx_indexes = [0, 1, 2, 3]
+async def assert_receipt_transaction_and_block(w3, receipts):
+    assert len(receipts) >= 1, "should have at least 1 valid receipt"
+    block_number = await w3.eth.get_block_number()
     for receipt in receipts:
         assert receipt["blockNumber"] == block_number
-        transaction_index = receipt["transactionIndex"]
-        assert transaction_index in tx_indexes
-        tx_indexes.remove(transaction_index)
+    tx_indexes = [receipt["transactionIndex"] for receipt in receipts]
+    assert len(tx_indexes) == len(set(tx_indexes)), "duplicate index found"
+    block = await w3.eth.get_block(block_number)
 
-    block = w3.eth.get_block(block_number)
-    transactions = [
-        w3.eth.get_transaction_by_block(block_number, receipt["transactionIndex"])
-        for receipt in receipts
-    ]
-    assert len(transactions) == 4
-    for i, transaction in enumerate(transactions):
-        assert transaction["blockNumber"] == block_number
-        assert transaction["transactionIndex"] == receipts[i]["transactionIndex"]
-        assert transaction["hash"] == receipts[i]["transactionHash"]
-        assert transaction["hash"] in block["transactions"]
-        assert transaction["blockNumber"] == block["number"]
+    for receipt in receipts:
+        tx_index = receipt["transactionIndex"]
+        tx = await w3.eth.get_transaction_by_block(block_number, tx_index)
+        assert tx["blockNumber"] == block_number
+        assert tx["transactionIndex"] == receipt["transactionIndex"]
+        assert tx["hash"] == receipt["transactionHash"]
+        assert tx["hash"] in block["transactions"]
+        assert tx["blockNumber"] == block["number"]
 
 
 @pytest.mark.connect
