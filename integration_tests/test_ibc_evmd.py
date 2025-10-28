@@ -10,9 +10,7 @@ from .utils import (
     wait_for_fn,
 )
 
-pytest.skip("evmd", allow_module_level=True)
-
-pytestmark = pytest.mark.asyncio
+pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +32,7 @@ def wait_for_balance_change(cli, addr, denom, init_balance):
     return wait_for_fn("balance change", check_balance)
 
 
+@pytest.mark.flaky(max_runs=2)
 def test_ibc_transfer(ibc):
     cli = ibc.ibc1.cosmos_cli()
     cli2 = ibc.ibc2.cosmos_cli()
@@ -69,6 +68,10 @@ def test_ibc_transfer(ibc):
     cli2.balance(escrow_addr, denom=denom) == transfer_amt
 
     # mantra-canary-net-1 signer1 -> evm-canary-net-1 community eth addr with 5uom
+    parts = path.rsplit("/", 1)
+    path = f"{parts[0]}/uom"
+    denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
+    dst_denom = f"ibc/{denom_hash}"
     amount = 5
     rsp = cli.ibc_transfer(
         community,
