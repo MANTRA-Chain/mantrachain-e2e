@@ -1,13 +1,13 @@
 import hashlib
 
 import pytest
+from pystarport.utils import wait_for_fn
 
 from .ibc_utils import hermes_transfer, prepare_network
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
     eth_to_bech32,
-    wait_for_fn,
 )
 
 pytestmark = pytest.mark.slow

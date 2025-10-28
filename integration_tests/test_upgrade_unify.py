@@ -141,7 +141,7 @@ async def exec(c, tmp_path):
     assert evm_params["active_static_precompiles"] == active_precompiles
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc0", target_height)
+    cli = do_upgrade(c, "v6.1.0", target_height)
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
@@ -149,6 +149,17 @@ async def exec(c, tmp_path):
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
         == transfer_amt - transfer_amt2 * 3
+    )
+
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc0", target_height)
+    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
+        w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    assert (
+        cli.balance(addr_b, denom)
+        == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+        == transfer_amt - transfer_amt2 * 4
     )
 
 
