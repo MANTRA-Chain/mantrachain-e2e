@@ -13,6 +13,7 @@ pkgs.mkShell {
     pkgs.start-scripts
     pkgs.hermes
     pkgs.solc
+    pkgs.evmd
   ] ++ pkgs.lib.optionals includeMantrachaind [
     pkgs.mantrachaind
   ];
