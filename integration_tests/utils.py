@@ -560,10 +560,12 @@ def denom_to_erc20_address(denom):
     return to_checksum_address("0x" + denom_hash[-20:].hex())
 
 
-def escrow_address(port, channel):
+def escrow_address(port, channel, prefix=ADDRESS_PREFIX):
     escrow_addr_version = "ics20-1"
     pre_image = f"{escrow_addr_version}\x00{port}/{channel}"
-    return eth_to_bech32(hashlib.sha256(pre_image.encode()).digest()[:20].hex())
+    return eth_to_bech32(
+        hashlib.sha256(pre_image.encode()).digest()[:20].hex(), prefix=prefix
+    )
 
 
 def ibc_denom_address(denom):
