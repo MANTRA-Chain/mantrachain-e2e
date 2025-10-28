@@ -11,7 +11,9 @@ from pystarport.utils import wait_for_new_blocks, wait_for_port
 
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
+    ADDRESS_PREFIX,
     CHAIN_ID,
+    CMD,
     DEFAULT_DENOM,
     escrow_address,
 )
@@ -25,7 +27,6 @@ class IBCNetwork(NamedTuple):
 
 def add_key(hermes, chain, mnemonic_env, key_name):
     with tempfile.NamedTemporaryFile("w", delete=False) as f:
-        print("mm-mnemonic_env", os.getenv(mnemonic_env))
         f.write(os.getenv(mnemonic_env))
         path = f.name
         print("mm-path", path)
@@ -52,7 +53,7 @@ def add_key(hermes, chain, mnemonic_env, key_name):
         os.unlink(path)
 
 
-def call_hermes_cmd(hermes, incentivized, version):
+def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"):
     subprocess.check_call(
         [
             "hermes",
@@ -67,7 +68,7 @@ def call_hermes_cmd(hermes, incentivized, version):
             "--a-chain",
             CHAIN_ID,
             "--b-chain",
-            "mantra-canary-net-2",
+            b_chain,
             "--new-client-connection",
             "--yes",
         ]
@@ -81,10 +82,10 @@ def call_hermes_cmd(hermes, incentivized, version):
         )
     )
     add_key(hermes, CHAIN_ID, "SIGNER1_MNEMONIC", "signer1")
-    add_key(hermes, "mantra-canary-net-2", "SIGNER2_MNEMONIC", "signer2")
+    add_key(hermes, b_chain, "SIGNER2_MNEMONIC", "signer2")
 
 
-def prepare_network(tmp_path, name, chain):
+def prepare_network(tmp_path, name, chain, b_chain="mantra-canary-net-2", cmd=CMD):
     name = f"configs/{name}.jsonnet"
     with contextmanager(setup_custom_mantra)(
         tmp_path,
@@ -94,7 +95,7 @@ def prepare_network(tmp_path, name, chain):
         chain=chain,
     ) as ibc1:
         cli = ibc1.cosmos_cli()
-        ibc2 = Mantra(ibc1.base_dir.parent / "mantra-canary-net-2")
+        ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary=cmd)
         # wait for grpc ready
         wait_for_port(ports.grpc_port(ibc2.base_port(0)))
         wait_for_port(ports.grpc_port(ibc1.base_port(0)))
@@ -103,7 +104,7 @@ def prepare_network(tmp_path, name, chain):
         version = {"fee_version": "ics29-1", "app_version": "ics20-1"}
         path = ibc1.base_dir.parent / "relayer"
         hermes = Hermes(path.with_suffix(".toml"))
-        call_hermes_cmd(hermes, False, version)
+        call_hermes_cmd(hermes, False, version, b_chain=b_chain)
         ibc1.supervisorctl("start", "relayer-demo")
         yield IBCNetwork(ibc1, ibc2, hermes)
         wait_for_port(hermes.port)
@@ -118,6 +119,7 @@ def hermes_transfer(
     dst_addr,
     denom=DEFAULT_DENOM,
     memo=None,
+    prefix=ADDRESS_PREFIX,
 ):
     port = "transfer"
     channel = "channel-0"
@@ -136,4 +138,4 @@ def hermes_transfer(
     if memo:
         cmd += f" --memo '{memo}'"
     subprocess.run(cmd, check=True, shell=True)
-    return f"{port}/{channel}/{denom}", escrow_address(port, channel)
+    return f"{port}/{channel}/{denom}", escrow_address(port, channel, prefix=prefix)

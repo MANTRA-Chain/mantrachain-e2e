@@ -1,90 +1,35 @@
 local config = import 'default.jsonnet';
+local rly_chain = import 'rly_chain.jsonnet';
+local rly_common = import 'rly_common.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
-local common = {
-  'account-prefix': chain['account-prefix'],
-  'coin-type': 60,
-  'app-config'+: {
-    'index-events': super['index-events'] + ['message.action'],
-  },
-  genesis+: {
-    app_state+: {
-      feemarket+: {
-        params+: {
-          no_base_fee: true,
-          base_fee: '0',
-          min_gas_price: '0',
-        },
-      },
-      staking+: {
-        params+: {
-          unbonding_time: '1814400s',
-        },
-      },
-    },
-  },
-};
-local rly = {
-  max_gas: 2500000,
-  gas_multiplier: 1.1,
-  address_type: {
-    derivation: 'ethermint',
-    proto_type: {
-      pk_type: '/cosmos.evm.crypto.v1.ethsecp256k1.PubKey',
-    },
-  },
-  gas_price: {
-    price: 0.1,
-    denom: chain.evm_denom,
-  },
-  event_source: {
-    batch_delay: '5000ms',
-  },
-  extension_options: [{
-    type: 'cosmos_evm_dynamic_fee_v1',
-    value: '10000000000000000',
-  }],
-};
+local ibc_common = import 'ibc_common.jsonnet';
 
 config {
-  'mantra-canary-net-1'+: common {
+  'mantra-canary-net-1'+: ibc_common {
     key_name: 'signer2',
+    'account-prefix': chain['account-prefix'],
   },
-  'mantra-canary-net-2'+: basic + common {
+  'mantra-canary-net-2'+: basic + ibc_common {
     key_name: 'signer1',
+    'account-prefix': chain['account-prefix'],
     validators: [validator {
       base_port: 26800 + i * 10,
     } for i in std.range(0, std.length(super.validators) - 1) for validator in [super.validators[i]]],
   },
-  relayer: {
-    mode: {
-      clients: {
-        enabled: true,
-        refresh: true,
-        misbehaviour: true,
-      },
-      connections: {
-        enabled: true,
-      },
-      channels: {
-        enabled: true,
-      },
-      packets: {
-        enabled: true,
-        tx_confirmation: true,
-      },
-    },
-    rest: {
-      enabled: true,
-      host: '127.0.0.1',
-      port: 3000,
-    },
+  relayer: rly_common {
     chains: [
-      rly {
+      rly_chain {
         id: 'mantra-canary-net-1',
+        gas_price+: {
+          denom: chain.evm_denom,
+        },
       },
-      rly {
+      rly_chain {
         id: 'mantra-canary-net-2',
+        gas_price+: {
+          denom: chain.evm_denom,
+        },
       },
     ],
   },
