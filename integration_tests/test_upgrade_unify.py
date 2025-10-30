@@ -107,6 +107,8 @@ async def exec(c, tmp_path):
         == transfer_amt2
     )
 
+    old_height = cli.block_height()
+
     active_precompiles = [
         "0x0000000000000000000000000000000000000800",
         "0x0000000000000000000000000000000000000801",
@@ -160,6 +162,12 @@ async def exec(c, tmp_path):
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
         == transfer_amt - transfer_amt2 * 4
+    )
+
+    # test historical contract calls
+    assert greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
+    await ERC20.fns.balanceOf(sender).call(
+        w3, to=tf_erc20_addr, block_identifier=old_height
     )
 
 
