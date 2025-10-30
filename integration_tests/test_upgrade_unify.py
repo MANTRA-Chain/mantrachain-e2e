@@ -112,7 +112,8 @@ async def exec(c, tmp_path):
         "0x0000000000000000000000000000000000000801",
         "0x0000000000000000000000000000000000000805",
     ]
-    target_height = cli.block_height() + 15
+    old_height = cli.block_height()
+    target_height = old_height + 15
     cli = do_upgrade(c, "v6.0.0", target_height)
     pair = cli.query_erc20_token_pair(denom)
     assert pair["contract_owner"] == "OWNER_MODULE"
@@ -149,6 +150,10 @@ async def exec(c, tmp_path):
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
         == transfer_amt - transfer_amt2 * 3
+    )
+
+    await ERC20.fns.balanceOf(sender).call(
+        w3, to=tf_erc20_addr, block_identifier=old_height
     )
 
 
