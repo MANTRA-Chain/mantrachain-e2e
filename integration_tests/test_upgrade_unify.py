@@ -152,6 +152,8 @@ async def exec(c, tmp_path):
         == transfer_amt - transfer_amt2 * 3
     )
 
+    # test historical contract calls
+    assert greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
     await ERC20.fns.balanceOf(sender).call(
         w3, to=tf_erc20_addr, block_identifier=old_height
     )
