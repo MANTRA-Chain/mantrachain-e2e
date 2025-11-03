@@ -16,7 +16,9 @@ let
   # Use static packages for Linux to ensure musl compatibility
   buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv; buildGoModule = buildGoModule.override { go = go_1_25; }; };
   buildStdenv = buildPackages.stdenv;
-  buildGoModule' = if stdenv.isLinux then buildPackages.buildGoModule else (buildGoModule.override { go = go_1_25; });
+  buildGoModule' = if stdenv.isLinux 
+    then (buildPackages.buildGoModule.override { go = go_1_25; })
+    else (buildGoModule.override { go = go_1_25; });
 
   tags =
     [
