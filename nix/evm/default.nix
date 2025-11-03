@@ -58,11 +58,11 @@ in
   src = fetchFromGitHub {
     owner = "cosmos";
     repo = "evm";
-    rev = "f6d50b4dfb19bacc4796fd7e1176cf37d41171f1";
-    hash = "sha256-e6LC7TD9/2m6dt2pyWz2JZQsYJKFverQsleU+3xlvPA=";
+    rev = "79bcc14fefa4b5c82386a3fb0724c3f9a7688ba5";
+    hash = "sha256-QoQR7VBkAUMTj9M4qbAK76avjgiyH8htUeFFggVDExA=";
   };
   
-  vendorHash = "sha256-2IBRbZ6smfRcF8OMmXWEBBXZnvyt3e+3Z3UprSt8ACA=";
+  vendorHash = "sha256-DO9SS1c5p9hSMR2M+bCxci/kdjpN7a9TZhMZhq2Efag=";
   proxyVendor = true;
   sourceRoot = "source/evmd";
   subPackages = [ "cmd/evmd" ];
