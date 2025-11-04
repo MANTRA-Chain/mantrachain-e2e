@@ -18,6 +18,7 @@ from .network import setup_custom_mantra
 from .utils import bech32_to_eth
 
 pytestmark = pytest.mark.slow
+pytest.skip("wait next bump deps", allow_module_level=True)
 
 
 class EthereumTransaction(HashableRLP):
