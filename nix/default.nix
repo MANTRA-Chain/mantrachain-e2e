@@ -26,6 +26,10 @@ import sources.nixpkgs {
     (_: pkgs: { test-env = pkgs.callPackage ./testenv.nix { }; })
     (_: pkgs: { cosmovisor = pkgs.callPackage ./cosmovisor.nix { }; })
     (_: pkgs: { mantrachaind = pkgs.callPackage ./mantrachain/default.nix { }; })
+    (_: pkgs: { 
+      go_1_25 = pkgs.callPackage ./go_1_25.nix { };
+      evmd = pkgs.callPackage ./evm/default.nix { }; 
+    })
   ];
   config = { };
   inherit system;

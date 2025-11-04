@@ -5,9 +5,13 @@ from pathlib import Path
 import pytest
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
+from pystarport.utils import (
+    wait_for_block,
+    wait_for_port,
+)
 
 from .network import setup_custom_mantra
-from .utils import CMD, supervisorctl, wait_for_block, wait_for_port
+from .utils import CMD, supervisorctl
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 

@@ -24,7 +24,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
         enable: true,
         address: '127.0.0.1:{EVMRPC_PORT}',
         'ws-address': '127.0.0.1:{EVMRPC_PORT_WS}',
-        api: 'eth,net,web3,debug',
+        api: 'eth,net,web3,debug,txpool',
         'feehistory-cap': 100,
         'block-range-cap': 10000,
         'logs-cap': 10000,
@@ -106,6 +106,8 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
             evm_denom: chain.evm_denom,
             active_static_precompiles: [
               '0x0000000000000000000000000000000000000800',
+              '0x0000000000000000000000000000000000000801',
+              '0x0000000000000000000000000000000000000805',
               '0x0000000000000000000000000000000000000807',
             ],
           },
@@ -144,6 +146,11 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
               },
             ],
           },
+        },
+        circuit: {
+          disabled_type_urls: [
+            "/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool",
+          ],
         },
         crisis: {
           constant_fee: {

@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import binascii
 import configparser
@@ -7,16 +6,13 @@ import json
 import os
 import re
 import secrets
-import socket
 import subprocess
 import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from enum import Enum
 from itertools import takewhile
 from pathlib import Path
-from urllib.parse import urlparse
 
 import bech32
 import eth_utils
@@ -25,6 +21,7 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_contract.contract import Contract as ContractAsync
 from eth_contract.create2 import create2_address
 from eth_contract.deploy_utils import (
     ensure_create2_deployed,
@@ -36,6 +33,11 @@ from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
+from pystarport import cluster
+from pystarport.utils import (
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
@@ -57,6 +59,7 @@ KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
 DEFAULT_DENOM = os.getenv("EVM_DENOM", "uom")
+DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "aom")
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
 EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests
@@ -78,20 +81,76 @@ MockERC20_ARTIFACT = json.loads(
 )
 
 
-class BondStatus(Enum):
-    UNSPECIFIED = "BOND_STATUS_UNSPECIFIED"
-    UNBONDED = "BOND_STATUS_UNBONDED"
-    UNBONDING = "BOND_STATUS_UNBONDING"
-    BONDED = "BOND_STATUS_BONDED"
+class AsyncContract:
+    def __init__(self, name, key=KEYS["community"]):
+        self.acct = Account.from_key(key)
+        self.name = name
+        self.contract = None
+        self.address = None
+        self.w3 = None
 
-    def to_int(self):
-        mapping = {
-            BondStatus.UNSPECIFIED: 0,
-            BondStatus.UNBONDED: 1,
-            BondStatus.UNBONDING: 2,
-            BondStatus.BONDED: 3,
-        }
-        return mapping[self]
+    async def deploy(self, w3: AsyncWeb3, args=()):
+        if self.contract:
+            return self.address
+        self.w3 = w3
+        res = build_contract(self.name)
+        tx = await create_contract_transaction(w3, res, args, key=self.acct.key)
+        receipt = await send_transaction_async(w3, self.acct, **tx)
+        self.contract = ContractAsync(res["abi"])
+        self.address = receipt.contractAddress
+        return self.address
+
+    def _check_deployed(self):
+        if not self.contract:
+            raise ValueError("Contract not deployed yet")
+
+
+class AsyncGreeter(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("Greeter", key)
+
+    async def greet(self):
+        self._check_deployed()
+        return await self.contract.fns.greet().call(self.w3, to=self.address)
+
+    async def int_value(self):
+        self._check_deployed()
+        return await self.contract.fns.intValue().call(self.w3, to=self.address)
+
+    async def set_greeting(self, message: str):
+        self._check_deployed()
+        return await self.contract.fns.setGreeting(message).transact(
+            self.w3, self.acct, to=self.address
+        )
+
+
+class AsyncTestRevert(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("TestRevert", key)
+
+    async def transfer(self, value):
+        self._check_deployed()
+        return await self.contract.fns.transfer(value).transact(
+            self.w3,
+            self.acct,
+            to=self.address,
+            gas=100000,  # skip estimateGas error
+        )
+
+
+class AsyncTestMessageCall(AsyncContract):
+    def __init__(self, key=KEYS["community"]):
+        super().__init__("TestMessageCall", key)
+
+    async def test(self, iterations):
+        self._check_deployed()
+        return await self.contract.fns.test(iterations).transact(
+            self.w3, self.acct, to=self.address
+        )
+
+    def get_test_data(self, iterations):
+        self._check_deployed()
+        return self.contract.fns.test(iterations).data
 
 
 class Contract:
@@ -158,152 +217,6 @@ class RevertTestContract(Contract):
         )
         receipt = send_transaction(self.w3, transaction, self.private_key)
         return receipt
-
-
-def wait_for_fn(name, fn, *, timeout=240, interval=1):
-    for i in range(int(timeout / interval)):
-        result = fn()
-        if result:
-            return result
-        time.sleep(interval)
-    else:
-        raise TimeoutError(f"wait for {name} timeout")
-
-
-async def wait_for_fn_async(name, fn, *, timeout=240, interval=1):
-    for i in range(int(timeout / interval)):
-        result = await fn()
-        if result:
-            return result
-        await asyncio.sleep(interval)
-    else:
-        raise TimeoutError(f"wait for {name} timeout")
-
-
-def wait_for_block_time(cli, t):
-    print("wait for block time", t)
-    while True:
-        now = isoparse(get_sync_info(cli.status())["latest_block_time"])
-        print("block time now:", now)
-        if now >= t:
-            break
-        time.sleep(0.5)
-
-
-def w3_wait_for_block(w3, height, timeout=240):
-    for _ in range(timeout * 2):
-        try:
-            current_height = w3.eth.block_number
-        except Exception as e:
-            print(f"get json-rpc block number failed: {e}", file=sys.stderr)
-        else:
-            if current_height >= height:
-                break
-            print("current block height", current_height)
-        time.sleep(0.5)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-async def w3_wait_for_block_async(w3, height, timeout=240):
-    for _ in range(timeout * 2):
-        try:
-            current_height = await w3.eth.block_number
-        except Exception as e:
-            print(f"get json-rpc block number failed: {e}", file=sys.stderr)
-        else:
-            if current_height >= height:
-                break
-            print("current block height", current_height)
-        await asyncio.sleep(0.1)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-def get_sync_info(s):
-    return s.get("SyncInfo") or s.get("sync_info")
-
-
-def wait_for_new_blocks(cli, n, sleep=0.5, timeout=240):
-    cur_height = begin_height = int(get_sync_info(cli.status())["latest_block_height"])
-    start_time = time.time()
-    while cur_height - begin_height < n:
-        time.sleep(sleep)
-        cur_height = int(get_sync_info(cli.status())["latest_block_height"])
-        if time.time() - start_time > timeout:
-            raise TimeoutError(f"wait for block {begin_height + n} timeout")
-    return cur_height
-
-
-def wait_for_block(cli, height, timeout=240):
-    for i in range(timeout * 2):
-        try:
-            status = cli.status()
-        except AssertionError as e:
-            print(f"get sync status failed: {e}", file=sys.stderr)
-        else:
-            current_height = int(get_sync_info(status)["latest_block_height"])
-            print("current block height", current_height)
-            if current_height >= height:
-                break
-        time.sleep(0.5)
-    else:
-        raise TimeoutError(f"wait for block {height} timeout")
-
-
-def wait_for_port(port, host="127.0.0.1", timeout=40.0):
-    print("wait for port", port, "to be available")
-    start_time = time.perf_counter()
-    while True:
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                break
-        except OSError as ex:
-            time.sleep(0.1)
-            if time.perf_counter() - start_time >= timeout:
-                raise TimeoutError(
-                    "Waited too long for the port {} on host {} to start accepting "
-                    "connections.".format(port, host)
-                ) from ex
-
-
-def wait_for_url(url, timeout=40.0):
-    print("wait for url", url, "to be available")
-    start_time = time.perf_counter()
-    while True:
-        try:
-            parsed = urlparse(url)
-            host = parsed.hostname
-            port = parsed.port
-            with socket.create_connection((host, int(port or 80)), timeout=timeout):
-                break
-        except OSError as ex:
-            time.sleep(0.1)
-            if time.perf_counter() - start_time >= timeout:
-                raise TimeoutError(
-                    "Waited too long for the port {} on host {} to start accepting "
-                    "connections.".format(port, host)
-                ) from ex
-
-
-def w3_wait_for_new_blocks(w3, n, sleep=0.5):
-    begin_height = w3.eth.block_number
-    while True:
-        time.sleep(sleep)
-        cur_height = w3.eth.block_number
-        if cur_height - begin_height >= n:
-            break
-
-
-async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
-    begin_height = await w3.eth.block_number
-    target = begin_height + n
-
-    while True:
-        cur_height = await w3.eth.block_number
-        if cur_height >= target:
-            break
-        await asyncio.sleep(sleep)
 
 
 def supervisorctl(inipath, *args):
@@ -428,39 +341,24 @@ async def build_and_deploy_contract_async(
     name,
     args=(),
     key=KEYS["community"],
-    exp_gas_used=None,
     dir="contracts",
 ):
     res = build_contract(name, dir=dir)
-    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    acct = Account.from_key(key)
-    tx = await contract.constructor(*args).build_transaction({"from": acct.address})
+    tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
-    if exp_gas_used is not None:
-        assert (
-            exp_gas_used == txreceipt.gasUsed
-        ), f"exp {exp_gas_used}, got {txreceipt.gasUsed}"
-    address = txreceipt.contractAddress
-    return w3.eth.contract(address=address, abi=res["abi"])
+    return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])
 
 
-def create_contract_transaction(w3, name, args=(), key=KEYS["community"]):
-    """
-    create contract transaction
-    """
-    acct = Account.from_key(key)
-    res = build_contract(name)
-    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    tx = contract.constructor(*args).build_transaction({"from": acct.address})
-    return tx
-
-
-async def build_deploy_contract_async(
-    w3: AsyncWeb3, res, args=(), key=KEYS["community"]
+def create_contract_transaction(
+    w3, name_or_res, args=(), key=KEYS["community"], dir="contracts"
 ):
     acct = Account.from_key(key)
+    if isinstance(name_or_res, str):
+        res = build_contract(name_or_res, dir=dir)
+    else:
+        res = name_or_res
     contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-    return await contract.constructor(*args).build_transaction({"from": acct.address})
+    return contract.constructor(*args).build_transaction({"from": acct.address})
 
 
 def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):
@@ -558,10 +456,12 @@ def denom_to_erc20_address(denom):
     return to_checksum_address("0x" + denom_hash[-20:].hex())
 
 
-def escrow_address(port, channel):
+def escrow_address(port, channel, prefix=ADDRESS_PREFIX):
     escrow_addr_version = "ics20-1"
     pre_image = f"{escrow_addr_version}\x00{port}/{channel}"
-    return eth_to_bech32(hashlib.sha256(pre_image.encode()).digest()[:20].hex())
+    return eth_to_bech32(
+        hashlib.sha256(pre_image.encode()).digest()[:20].hex(), prefix=prefix
+    )
 
 
 def ibc_denom_address(denom):
@@ -574,9 +474,21 @@ def ibc_denom_address(denom):
     return to_checksum_address("0x" + hash_bytes[-20:].hex())
 
 
+def retry_on_seq_mismatch(fn, *args, max_retries=3, **kwargs):
+    for attempt in range(max_retries):
+        rsp = fn(*args, **kwargs)
+        if rsp["code"] == 0:
+            return rsp
+        if rsp["code"] == 32 and "account sequence mismatch" in rsp["raw_log"]:
+            if attempt < max_retries - 1:
+                continue
+        return rsp
+    return rsp
+
+
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     # check create tokenfactory denom
-    rsp = cli.create_tokenfactory_denom(subdenom, **kwargs)
+    rsp = retry_on_seq_mismatch(cli.create_tokenfactory_denom, subdenom, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     event = find_log_event_attrs(
         rsp["events"], "create_denom", lambda attrs: "creator" in attrs
@@ -616,7 +528,7 @@ def assert_mint_tokenfactory_denom(cli, denom, amt, is_legacy=False, **kwargs):
     sender = kwargs.get("_from")
     balance = cli.balance(sender, denom)
     coin = f"{amt}{denom}"
-    rsp = cli.mint_tokenfactory_denom(coin, **kwargs)
+    rsp = retry_on_seq_mismatch(cli.mint_tokenfactory_denom, coin, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     if not is_legacy:
         event = find_log_event_attrs(
@@ -764,9 +676,8 @@ def build_batch_tx(w3, cli, txs, key=KEYS["community"]):
     }, tx_hashes
 
 
-def approve_proposal(n, events, event_query_tx=False):
+def approve_proposal(n, events, event_query_tx=True, **kwargs):
     cli = n.cosmos_cli()
-
     # get proposal_id
     ev = find_log_event_attrs(
         events, "submit_proposal", lambda attrs: "proposal_id" in attrs
@@ -777,8 +688,8 @@ def approve_proposal(n, events, event_query_tx=False):
             "validator",
             proposal_id,
             "yes",
-            event_query_tx,
-            gas_prices=f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}",
+            event_query_tx=event_query_tx,
+            **kwargs,
         )
         assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 1)
@@ -794,7 +705,7 @@ def approve_proposal(n, events, event_query_tx=False):
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
 
 
-def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
+def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwargs):
     proposal = tmp_path / "proposal.json"
     proposal_src = {
         "title": "title",
@@ -805,9 +716,24 @@ def submit_gov_proposal(mantra, tmp_path, messages, **kwargs):
     proposal.write_text(json.dumps(proposal_src))
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"])
+    approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
     print("check params have been updated now")
     return rsp
+
+
+def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):
+    start_time = int(time.time())
+    periods = tmp_path / "periods.json"
+    src = {
+        "start_time": start_time,
+        "periods": [{"coins": coin, "length_seconds": 2592000}],
+    }
+    periods.write_text(json.dumps(src))
+    name = f"periodic_vesting{start_time}"
+    addr = cli.create_account(name)["address"]
+    rsp = cli.create_periodic_vesting_account(addr, periods, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    return addr
 
 
 def derive_new_account(n=1, mnemonic="SIGNER1_MNEMONIC"):
@@ -940,9 +866,9 @@ async def assert_create_erc20_denom(w3, signer):
         w3, signer, get_initcode(WETH9_ARTIFACT), salt=WETH_SALT
     )
     assert (await ERC20.fns.decimals().call(w3, to=WETH_ADDRESS)) == 18
-    total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth_bf = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth_bf == 0
+    total_bf = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
+    balance_bf = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total_bf == balance_bf
 
     weth = WETH(to=WETH_ADDRESS)
     erc20_denom = f"erc20:{WETH_ADDRESS}"
@@ -950,9 +876,9 @@ async def assert_create_erc20_denom(w3, signer):
     res = await weth.fns.deposit().transact(w3, signer, value=deposit_amt)
     assert res.status == 1
     total = await ERC20.fns.totalSupply().call(w3, to=WETH_ADDRESS)
-    signer1_balance_eth = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
-    assert total == signer1_balance_eth == deposit_amt
-    signer1_balance_eth_bf = signer1_balance_eth
+    balance = await ERC20.fns.balanceOf(signer).call(w3, to=WETH_ADDRESS)
+    assert total == balance
+    assert (total - total_bf) == (balance - balance_bf) == deposit_amt
     return erc20_denom, total
 
 
@@ -1013,3 +939,24 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert receiver_balance == receiver_balance_bf + approve_amt
     receiver_balance_bf = receiver_balance
+
+
+def edit_app_cfg(cli, i):
+    # Modify the json-rpc addresses to avoid conflict
+    cluster.edit_app_cfg(
+        cli.home(i) / "config/app.toml",
+        cli.base_port(i),
+        {
+            "json-rpc": {
+                "enable": True,
+                "address": "127.0.0.1:{EVMRPC_PORT}",
+                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+            },
+        },
+    )
+
+
+def duration(duration_str):
+    mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    parts = re.findall(r"(\d+)([smhd])", duration_str.lower())
+    return sum(int(value) * mult[unit] for value, unit in parts)

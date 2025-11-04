@@ -5,6 +5,7 @@ from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
+from pystarport.utils import wait_for_new_blocks
 from web3.datastructures import AttributeDict
 
 from .network import setup_custom_mantra
@@ -14,7 +15,6 @@ from .utils import (
     Contract,
     address_to_bytes32,
     sign_transaction,
-    wait_for_new_blocks,
 )
 
 

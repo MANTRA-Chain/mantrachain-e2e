@@ -4,15 +4,18 @@ from pathlib import Path
 import pytest
 import web3
 from pystarport import cluster, ports
+from pystarport.utils import (
+    get_sync_info,
+    wait_for_block,
+    wait_for_port,
+)
 
 from .utils import (
     ADDRS,
     CMD,
     Greeter,
-    get_sync_info,
+    edit_app_cfg,
     send_transaction,
-    wait_for_block,
-    wait_for_port,
 )
 
 
@@ -46,18 +49,7 @@ def test_statesync(mantra):
     clustercli = cluster.ClusterCLI(data, cmd=CMD, chain_id=chain_id)
     # create a new node with statesync enabled
     i = clustercli.create_node(moniker="statesync", statesync=True)
-    # Modify the json-rpc addresses to avoid conflict
-    cluster.edit_app_cfg(
-        clustercli.home(i) / "config/app.toml",
-        clustercli.base_port(i),
-        {
-            "json-rpc": {
-                "enable": True,
-                "address": "127.0.0.1:{EVMRPC_PORT}",
-                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
-            },
-        },
-    )
+    edit_app_cfg(clustercli, i)
     clustercli.supervisor.startProcess(f"{clustercli.chain_id}-node{i}")
     # Wait 1 more block
     wait_for_block(clustercli.cosmos_cli(i), cli0.block_height() + 1)

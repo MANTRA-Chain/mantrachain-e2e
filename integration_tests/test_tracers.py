@@ -2,6 +2,8 @@ import itertools
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from pystarport.utils import w3_wait_for_new_blocks
+
 from .expected_constants import (
     EXPECTED_CALLTRACERS,
     EXPECTED_CONTRACT_CREATE_TRACER,
@@ -16,7 +18,6 @@ from .utils import (
     derive_random_account,
     fund_acc,
     send_transaction,
-    w3_wait_for_new_blocks,
 )
 
 

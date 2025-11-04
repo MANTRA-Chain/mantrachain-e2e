@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pystarport.utils import w3_wait_for_block, wait_for_new_blocks
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -9,8 +10,6 @@ from .utils import (
     WEI_PER_DENOM,
     adjust_base_fee,
     send_transaction,
-    w3_wait_for_block,
-    wait_for_new_blocks,
 )
 
 
@@ -92,7 +91,7 @@ def test_dynamic_fee_tx(custom_cluster):
     # check the next block's base fee is adjusted accordingly
     w3_wait_for_block(w3, txreceipt.blockNumber + 1)
     fee = w3.eth.get_block(txreceipt.blockNumber + 1).baseFeePerGas
-    params = cli.get_params("feemarket")["params"]
+    params = cli.get_params("feemarket")
     assert fee == adjust_base_fee(
         blk.baseFeePerGas, blk.gasLimit, blk.gasUsed, params
     ), fee
@@ -110,7 +109,7 @@ def test_base_fee_adjustment(custom_cluster):
 
     blk = w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
-    params = cli.get_params("feemarket")["params"]
+    params = cli.get_params("feemarket")
 
     for i in range(3):
         fee = w3.eth.get_block(begin + 1 + i).baseFeePerGas

@@ -1,10 +1,9 @@
 import pytest
-import web3
 from eth_contract.erc20 import ERC20
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 
-from .utils import ACCOUNTS, DEFAULT_DENOM
+from .utils import ACCOUNTS
 
 WOM = to_checksum_address("0x4200000000000000000000000000000000000006")
 
@@ -32,11 +31,12 @@ async def test_static_erc20(mantra):
     after = await w3.eth.get_balance(addr)
     assert after == before - fee
 
-    # fail
-    msg = "execution reverted"
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.decimals().call(w3, to=WOM) == 9
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.symbol().call(w3, to=WOM) == DEFAULT_DENOM
-    with pytest.raises(web3.exceptions.ContractLogicError, match=msg):
-        assert await ERC20.fns.name().call(w3, to=WOM) == DEFAULT_DENOM
+    cli = mantra.cosmos_cli()
+    denom = cli.get_params("evm")["evm_denom"]
+    meta = cli.query_bank_denom_metadata(denom)
+    assert (
+        await ERC20.fns.decimals().call(w3, to=WOM)
+        == meta["denom_units"][1]["exponent"]
+    )
+    assert await ERC20.fns.symbol().call(w3, to=WOM) == meta["symbol"]
+    assert await ERC20.fns.name().call(w3, to=WOM) == meta["name"]

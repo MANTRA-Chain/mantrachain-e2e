@@ -9,24 +9,26 @@ from pathlib import Path
 import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
+from pystarport.utils import wait_for_block, wait_for_port
 
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
+    DEFAULT_GAS_AMT,
     EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
     edit_ini_sections,
     send_transaction,
-    wait_for_block,
-    wait_for_port,
 )
 
 
-def do_upgrade(c, plan_name, target, gas_prices=f"0.8{DEFAULT_DENOM}"):
+def do_upgrade(c, plan_name, target):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
+    rsp = {}
+
     rsp = cli.software_upgrade(
         "community",
         {
@@ -38,10 +40,11 @@ def do_upgrade(c, plan_name, target, gas_prices=f"0.8{DEFAULT_DENOM}"):
             "deposit": f"1{DEFAULT_DENOM}",
         },
         gas=300000,
-        gas_prices=gas_prices,
+        gas_prices=f"0.8{DEFAULT_DENOM}",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(c, rsp["events"])
+    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+    approve_proposal(c, rsp["events"], gas_prices=gas_prices)
 
     # update cli chain binary
     c.chain_binary = (

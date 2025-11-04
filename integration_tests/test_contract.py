@@ -32,6 +32,7 @@ from eth_contract.multicall3 import (
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_bytes
+from pystarport.utils import w3_wait_for_new_blocks_async
 from web3 import AsyncWeb3
 from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
@@ -47,8 +48,7 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
-    build_deploy_contract_async,
-    w3_wait_for_new_blocks_async,
+    create_contract_transaction,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -296,6 +296,7 @@ async def test_7702(mantra, connect_mantra):
     assert block["transactions"][0] == await w3.eth.get_transaction(
         receipt["transactionHash"]
     )
+    assert block["hash"] == block["transactions"][0]["blockHash"]
     receipts = await w3.eth.get_block_receipts(receipt["blockNumber"])
     assert receipts[0] == receipt
 
@@ -317,18 +318,16 @@ async def test_4337(mantra, connect_mantra):
     )
 
 
-# TODO: rm flaky and enlarge num after evm mempool is ready
-@pytest.mark.flaky(max_runs=5)
 async def test_deploy_multi(mantra):
     w3 = mantra.async_w3
     name = "community"
     key = KEYS[name]
     owner = ADDRS[name]
-    num = 2
+    num = 10
     res = build_contract("ERC20MinterBurnerDecimals")
     args_list = [(w3, res, (f"MyToken{i}", f"MTK{i}", 18), key) for i in range(num)]
     tx_results = await asyncio.gather(
-        *(build_deploy_contract_async(*args) for args in args_list)
+        *(create_contract_transaction(*args) for args in args_list)
     )
     nonce = await w3.eth.get_transaction_count(owner)
     txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]

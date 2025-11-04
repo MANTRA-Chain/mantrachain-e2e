@@ -36,10 +36,29 @@
     evm_denom: 'uom',
     cmd: 'mantrachaind',
     evm_chain_id: 7888,
-    bank: {},
+    bank: {
+      denom_metadata: [{
+        description: 'The native staking token of the Mantrachain.',
+        denom_units: [
+          {
+            denom: 'uom',
+          },
+          {
+            denom: 'om',
+            exponent: 6,
+          },
+        ],
+        base: 'uom',
+        display: 'om',
+        name: 'om',
+        symbol: 'OM',
+      }],
+    },
     evm: {
       params: {
-        allow_unprotected_txs: true,
+        extended_denom_options: {
+          extended_denom: 'aom',
+        },
       },
     },
     feemarket: {

@@ -5,6 +5,7 @@ import web3
 
 from .utils import (
     DEFAULT_DENOM,
+    WEI_PER_DENOM,
     approve_proposal,
     assert_transfer,
     bech32_to_eth,
@@ -21,7 +22,8 @@ def test_blacklist(mantra, tmp_path):
         pytest.skip("sanction module not enabled")
     community = cli.address("community")
     user = cli.create_account("user")["address"]
-    assert_transfer(cli, community, user, amt=20000)
+    amt = 3_000_000_000_000_000 // WEI_PER_DENOM
+    assert_transfer(cli, community, user, amt=amt)
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
         "authority": module_address("gov"),

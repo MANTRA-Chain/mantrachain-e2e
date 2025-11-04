@@ -5,6 +5,12 @@ from pathlib import Path
 import pytest
 from dateutil.parser import isoparse
 from pystarport import cluster
+from pystarport.utils import (
+    BondStatus,
+    wait_for_block,
+    wait_for_block_time,
+    wait_for_new_blocks,
+)
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -12,12 +18,10 @@ from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
     WEI_PER_DENOM,
-    BondStatus,
+    duration,
+    edit_app_cfg,
     find_fee,
     find_log_event_attrs,
-    wait_for_block,
-    wait_for_block_time,
-    wait_for_new_blocks,
 )
 
 pytestmark = pytest.mark.slow
@@ -35,8 +39,16 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-def test_staking_unbond(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_staking_unbond(connect_mantra, tmp_path):
+    test_staking_unbond(None, connect_mantra, tmp_path)
+
+
+def test_staking_unbond(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    unbond_duration = duration(cli.get_params("staking")["unbonding_time"])
+    if unbond_duration > 60:
+        pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     name = "signer1"
     signer1 = cli.address(name)
     validators = cli.validators()
@@ -45,9 +57,12 @@ def test_staking_unbond(mantra):
     bonded_bf = cli.staking_pool()
     amounts = [3, 4]
     fee = 0
+    gas = 250_000
 
     for i, amt in enumerate(amounts):
-        rsp = cli.delegate_amount(val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name)
+        rsp = cli.delegate_amount(
+            val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name, gas=gas
+        )
         assert rsp["code"] == 0, rsp["raw_log"]
         fee += find_fee(rsp)
 
@@ -57,9 +72,9 @@ def test_staking_unbond(mantra):
     unbonded = cli.staking_pool(bonded=False)
     unbonded_amt = 2
     rsp = cli.unbond_amount(
-        val_ops[1], f"{unbonded_amt}{DEFAULT_DENOM}", _from=name, gas=220_000
+        val_ops[1], f"{unbonded_amt}{DEFAULT_DENOM}", _from=name, gas=gas
     )
-    assert rsp["code"] == 0, rsp
+    assert rsp["code"] == 0, rsp["raw_log"]
     fee += find_fee(rsp)
     assert cli.staking_pool(bonded=False) == unbonded + unbonded_amt
     data = find_log_event_attrs(
@@ -69,17 +84,25 @@ def test_staking_unbond(mantra):
     assert cli.balance(signer1) == balance_bf - (sum(amounts) - unbonded_amt) - fee
 
 
-def test_staking_redelegate(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_staking_redelegate(connect_mantra, tmp_path):
+    test_staking_redelegate(None, connect_mantra, tmp_path)
+
+
+def test_staking_redelegate(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     name = "signer1"
     signer1 = cli.address(name)
     validators = cli.validators()
     val_ops = [v["operator_address"] for v in validators[:2]]
     amounts = [3, 4]
     fee = 0
+    gas = 400_000
 
     for i, amt in enumerate(amounts):
-        rsp = cli.delegate_amount(val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name)
+        rsp = cli.delegate_amount(
+            val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name, gas=gas
+        )
         assert rsp["code"] == 0, rsp["raw_log"]
         fee += find_fee(rsp)
 
@@ -90,7 +113,7 @@ def test_staking_redelegate(mantra):
         val_ops[1],
         f"{redelegate_amt}{DEFAULT_DENOM}",
         _from=name,
-        gas=320_000,
+        gas=gas,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     balance = cli.delegation(signer1, val_ops[0])["balance"]["amount"]
@@ -111,18 +134,7 @@ def test_join_validator(mantra):
     addr = cli.address("validator")
     res = cli0.transfer(cli0.address("community"), addr, fund)
     assert res["code"] == 0, res
-    # Modify the json-rpc addresses to avoid conflict
-    cluster.edit_app_cfg(
-        clustercli.home(node_index) / "config/app.toml",
-        clustercli.base_port(node_index),
-        {
-            "json-rpc": {
-                "enable": True,
-                "address": "127.0.0.1:{EVMRPC_PORT}",
-                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
-            }
-        },
-    )
+    edit_app_cfg(clustercli, node_index)
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     time.sleep(1)

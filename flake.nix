@@ -28,14 +28,15 @@
       rec {
         legacyPackages = pkgs;
         packages.default = pkgs.mantrachain;
-        devShells = rec {
+        devShells = {
           default = pkgs.mkShell {
             buildInputs = [
               packages.default.go
               pkgs.nixfmt-rfc-style
+              pkgs.solc
+              pkgs.test-env
             ];
           };
-          full = pkgs.mkShell { buildInputs = default.buildInputs ++ [ pkgs.test-env ]; };
         };
       }
     ))

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import pytest
+from pystarport.utils import wait_for_new_blocks
 
 from .utils import (
     assert_create_tokenfactory_denom,
@@ -11,7 +12,6 @@ from .utils import (
     assert_transfer,
     find_log_event_attrs,
     get_balance,
-    wait_for_new_blocks,
 )
 
 

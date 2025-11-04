@@ -9,6 +9,11 @@ import tomlkit
 import web3
 from pystarport import cluster, ports
 from pystarport.expansion import expand
+from pystarport.utils import (
+    wait_for_block,
+    wait_for_port,
+    wait_for_url,
+)
 from requests.exceptions import (
     HTTPError,
     Timeout,
@@ -23,9 +28,6 @@ from .utils import (
     CHAIN_ID,
     CMD,
     supervisorctl,
-    wait_for_block,
-    wait_for_port,
-    wait_for_url,
 )
 
 RETRY_CONFIG = ExceptionRetryConfiguration(
@@ -256,7 +258,7 @@ def setup_geth(path, base_port):
             "--miner.etherbase",
             "0x57f96e6B86CdeFdB3d412547816a82E3E0EbF9D2",
             "--http.api",
-            "eth,net,web3,debug",
+            "eth,net,web3,debug,txpool",
         ]
         print(*cmd)
         proc = subprocess.Popen(

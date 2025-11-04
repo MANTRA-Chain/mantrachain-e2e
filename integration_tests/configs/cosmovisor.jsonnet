@@ -27,6 +27,9 @@ config {
         },
       },
       app_state+: {
+        bank+: {
+          denom_metadata:: super.bank.denom_metadata,
+        },
         evm:: super.evm,
         erc20:: super.erc20,
         feemarket: {

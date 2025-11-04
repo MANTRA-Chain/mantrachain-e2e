@@ -29,10 +29,10 @@
         "homepage": "",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "daa477e013dd736c939fcc111dc4dd889bc17c94",
-        "sha256": "1vbbl1iy5wxmwww8hi1ngcby6mnyzn7l5x9yxf58yd9z0nmx6p74",
+        "rev": "50ab793786d9de88ee30ec4e4c24fb4236fc2674",
+        "sha256": "1s2gr5rcyqvpr58vxdcb095mdhblij9bfzaximrva2243aal3dgx",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/daa477e013dd736c939fcc111dc4dd889bc17c94.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/50ab793786d9de88ee30ec4e4c24fb4236fc2674.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "poetry2nix": {
@@ -53,10 +53,10 @@
         "homepage": "",
         "owner": "allthatjazzleo",
         "repo": "hermes",
-        "rev": "474db763e1a84cc54500278be722205549336527",
-        "sha256": "1gcfi8bdz8ydxlw3krqxfhm3ijra9dkh8a81aaxk6fqh0c9d4a0l",
+        "rev": "96035808651ae542e6a5db465eeb364c75351f93",
+        "sha256": "1kxzwb8wi87xcjw1p22wadqwifr1n0v3gl21lghivig8yhg8ya0c",
         "type": "tarball",
-        "url": "https://github.com/allthatjazzleo/hermes/archive/474db763e1a84cc54500278be722205549336527.tar.gz",
+        "url": "https://github.com/allthatjazzleo/hermes/archive/96035808651ae542e6a5db465eeb364c75351f93.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "dapptools": {

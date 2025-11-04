@@ -1,11 +1,11 @@
 import pytest
 from eth_contract.utils import send_transaction
+from pystarport.utils import w3_wait_for_block_async
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
     adjust_base_fee,
-    w3_wait_for_block_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -27,6 +27,8 @@ async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
     before = await w3.eth.get_balance(ADDRS["community"])
     tip_price = 10000000000
     max_price = 1000000000000 + tip_price
+    begin = await w3.eth.block_number
+    await w3_wait_for_block_async(w3, begin + 1)
     tx = {
         "to": "0x0000000000000000000000000000000000000000",
         "value": amount,
@@ -51,7 +53,7 @@ async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
     # check the next block's base fee is adjusted accordingly
     await w3_wait_for_block_async(w3, txreceipt.blockNumber + 1)
     next_base_price = (await w3.eth.get_block(txreceipt.blockNumber + 1)).baseFeePerGas
-    params = mantra.cosmos_cli().get_params("feemarket")["params"]
+    params = mantra.cosmos_cli().get_params("feemarket")
     assert (
         abs(
             next_base_price
@@ -79,7 +81,7 @@ async def test_base_fee_adjustment(mantra, connect_mantra, update_params=True):
 
     blk = await w3.eth.get_block(begin)
     parent_fee = blk.baseFeePerGas
-    params = mantra.cosmos_cli().get_params("feemarket")["params"]
+    params = mantra.cosmos_cli().get_params("feemarket")
 
     for i in range(3):
         fee = (await w3.eth.get_block(begin + 1 + i)).baseFeePerGas
