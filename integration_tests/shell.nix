@@ -11,7 +11,7 @@ pkgs.mkShell {
     pkgs.go-ethereum
     pkgs.cosmovisor
     pkgs.start-scripts
-    pkgs.hermes
+    # pkgs.hermes
     pkgs.solc
     pkgs.evmd
   ] ++ pkgs.lib.optionals includeMantrachaind [
