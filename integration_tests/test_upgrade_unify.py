@@ -2,16 +2,10 @@ import json
 import time
 
 import pytest
-from eth_account.signers.base import BaseAccount
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import get_initcode, send_transaction
+from eth_contract.utils import send_transaction
 from eth_utils import to_checksum_address
 from pystarport.utils import wait_for_new_blocks
-from web3 import AsyncWeb3
 
 from .network import Mantra
 from .upgrade_utils import (
@@ -22,9 +16,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
-    ACCOUNTS,
     DEFAULT_DENOM,
-    WETH_SALT,
     Greeter,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
@@ -32,9 +24,9 @@ from .utils import (
     assert_transfer,
     assert_transfer_tokenfactory_denom,
     bech32_to_eth,
-    build_contract,
     create_periodic_vesting_acct,
     denom_to_erc20_address,
+    deploy_wom,
     derive_new_account,
     eth_to_bech32,
 )
@@ -51,17 +43,6 @@ def custom_mantra(request, tmp_path_factory):
         "cosmovisor",
         "genesis",
         chain=chain,
-    )
-
-
-async def deploy_wom(w3: AsyncWeb3, account: BaseAccount):
-    artifact = build_contract("WOM")
-    await ensure_create2_deployed(w3, account)
-    return await ensure_deployed_by_create2(
-        w3,
-        account,
-        get_initcode(artifact),
-        salt=WETH_SALT,
     )
 
 
