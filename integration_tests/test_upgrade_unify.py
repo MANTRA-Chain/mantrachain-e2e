@@ -210,6 +210,7 @@ async def exec(c, tmp_path):
     spender = to_checksum_address(b"\x01" * 20)
     await ERC20.fns.approve(spender, 500).transact(async_w3, deployer, to=wom)
 
+    # before migration
     assert await ERC20.fns.name().call(async_w3, to=wom) == "Wrapped OM"
     assert await ERC20.fns.symbol().call(async_w3, to=wom) == "WOM"
     assert await ERC20.fns.decimals().call(async_w3, to=wom) == 18
@@ -230,7 +231,7 @@ async def exec(c, tmp_path):
         == transfer_amt - transfer_amt2 * 4
     )
 
-    # test wom migration
+    # after migration
     assert await ERC20.fns.name().call(async_w3, to=wom) == "WMANTRA Token"
     assert await ERC20.fns.symbol().call(async_w3, to=wom) == "WMANTRA"
     assert await ERC20.fns.decimals().call(async_w3, to=wom) == 18
@@ -239,6 +240,9 @@ async def exec(c, tmp_path):
         await ERC20.fns.allowance(deployer.address, spender).call(async_w3, to=wom)
         == 2000
     )
+
+    # test withdraw
+    await ERC20.fns.withdraw(2000).transact(async_w3, deployer, to=wom)
 
     # test historical contract calls
     assert greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
