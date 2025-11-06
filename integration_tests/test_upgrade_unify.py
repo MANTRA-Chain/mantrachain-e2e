@@ -3,6 +3,7 @@ import time
 
 import pytest
 from eth_contract.erc20 import ERC20
+from eth_contract.weth import WETH
 from eth_contract.utils import send_transaction
 from eth_utils import to_checksum_address
 from pystarport.utils import wait_for_new_blocks
@@ -189,45 +190,46 @@ async def exec(c, tmp_path):
     await send_transaction(async_w3, deployer, to=wom, value=1000)
     # approve
     spender = to_checksum_address(b"\x01" * 20)
-    await ERC20.fns.approve(spender, 500).transact(async_w3, deployer, to=wom)
+    weth = WETH(to=wom)
+    await weth.fns.approve(spender, 500).transact(async_w3, deployer, to=wom)
 
     # before migration
-    assert await ERC20.fns.name().call(async_w3, to=wom) == "Wrapped OM"
-    assert await ERC20.fns.symbol().call(async_w3, to=wom) == "wOM"
-    assert await ERC20.fns.decimals().call(async_w3, to=wom) == 18
-    assert await ERC20.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 1000
+    assert await weth.fns.name().call(async_w3, to=wom) == "Wrapped OM"
+    assert await weth.fns.symbol().call(async_w3, to=wom) == "wOM"
+    assert await weth.fns.decimals().call(async_w3, to=wom) == 18
+    assert await weth.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 1000
     assert (
-        await ERC20.fns.allowance(deployer.address, spender).call(async_w3, to=wom)
+        await weth.fns.allowance(deployer.address, spender).call(async_w3, to=wom)
         == 500
     )
 
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
-    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
+    await weth.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
     assert (
         cli.balance(addr_b, denom)
-        == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
+        == await weth.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
         == transfer_amt - transfer_amt2 * 4
     )
 
     # after migration
-    assert await ERC20.fns.name().call(async_w3, to=wom) == "WMANTRA Token"
-    assert await ERC20.fns.symbol().call(async_w3, to=wom) == "WMANTRA"
-    assert await ERC20.fns.decimals().call(async_w3, to=wom) == 18
-    assert await ERC20.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 4000
+    assert await weth.fns.name().call(async_w3, to=wom) == "WMANTRA Token"
+    assert await weth.fns.symbol().call(async_w3, to=wom) == "WMANTRA"
+    assert await weth.fns.decimals().call(async_w3, to=wom) == 18
+    assert await weth.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 4000
     assert (
-        await ERC20.fns.allowance(deployer.address, spender).call(async_w3, to=wom)
+        await weth.fns.allowance(deployer.address, spender).call(async_w3, to=wom)
         == 2000
     )
 
     # test withdraw
-    await ERC20.fns.withdraw(2000).transact(async_w3, deployer, to=wom)
+    await weth.fns.withdraw(2000).transact(async_w3, deployer, to=wom)
 
     # test historical contract calls
     assert greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
-    await ERC20.fns.balanceOf(sender).call(
+    await weth.fns.balanceOf(sender).call(
         w3, to=tf_erc20_addr, block_identifier=old_height
     )
 
