@@ -193,7 +193,7 @@ async def exec(c, tmp_path):
 
     # before migration
     assert await ERC20.fns.name().call(async_w3, to=wom) == "Wrapped OM"
-    assert await ERC20.fns.symbol().call(async_w3, to=wom) == "WOM"
+    assert await ERC20.fns.symbol().call(async_w3, to=wom) == "wOM"
     assert await ERC20.fns.decimals().call(async_w3, to=wom) == 18
     assert await ERC20.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 1000
     assert (
