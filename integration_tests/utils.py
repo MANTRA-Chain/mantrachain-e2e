@@ -21,6 +21,7 @@ import rlp
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
+from eth_account.signers.base import BaseAccount
 from eth_contract.contract import Contract as ContractAsync
 from eth_contract.create2 import create2_address
 from eth_contract.deploy_utils import (
@@ -967,3 +968,14 @@ def wait_for_balance_change(cli, addr, denom, init_balance):
         return current_balance if current_balance != init_balance else None
 
     return wait_for_fn("balance change", check_balance)
+
+
+async def deploy_wom(w3: AsyncWeb3, account: BaseAccount) -> str:
+    artifact = build_contract("WOM")
+    await ensure_create2_deployed(w3, account)
+    return await ensure_deployed_by_create2(
+        w3,
+        account,
+        get_initcode(artifact),
+        salt=WETH_SALT,
+    )
