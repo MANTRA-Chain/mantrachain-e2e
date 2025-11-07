@@ -2049,7 +2049,7 @@ tomlkit = "^0"
 type = "git"
 url = "https://github.com/MANTRA-Chain/pystarport.git"
 reference = "main"
-resolved_reference = "c18bf5a6ab424cf7542cfbba3b6438f0ae5d42d0"
+resolved_reference = "0595166d93b42430ae396a8c40a1f691d2335ec4"
 
 [[package]]
 name = "pytest"
