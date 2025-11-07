@@ -369,3 +369,9 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def tx_search(self, events: str, order_by="desc", **kwargs):
+        args = ["q", "txs", "--query", f'"{events}"']
+        if order_by:
+            args.extend(["--order_by", order_by])
+        return json.loads(self.raw(*args, **(self.get_base_kwargs() | kwargs)))
