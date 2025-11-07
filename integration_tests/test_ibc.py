@@ -5,13 +5,17 @@ import pytest
 from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_fn_async
 
-from .ibc_utils import hermes_transfer, ibc_denom_hash, prepare_network
+from .ibc_utils import (
+    assert_hermes_transfer,
+    assert_ibc_transfer,
+    prepare_network,
+    run_hermes_transfer,
+)
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
     KEYS,
     WETH_ADDRESS,
-    assert_balance,
     assert_burn_tokenfactory_denom,
     assert_create_erc20_denom,
     assert_create_tokenfactory_denom,
@@ -21,12 +25,12 @@ from .utils import (
     build_and_deploy_contract_async,
     denom_to_erc20_address,
     derive_new_account,
+    escrow_address,
     eth_to_bech32,
     find_duplicate,
     generate_isolated_address,
     ibc_denom_address,
     parse_events_rpc,
-    wait_for_balance_change,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -129,49 +133,30 @@ async def test_ibc_transfer(ibc):
     community = ADDRS["community"]
     addr_signer2 = eth_to_bech32(signer2)
     addr_signer1 = eth_to_bech32(signer1)
-    addr_community = eth_to_bech32(community)
-    port = "transfer"
-    channel = "channel-0"
-    path = f"{port}/{channel}/{DEFAULT_DENOM}"
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100 baseunit
     transfer_amt = 100
-    src_chain = "mantra-canary-net-2"
-    dst_chain = "mantra-canary-net-1"
-    escrow_addr = hermes_transfer(
-        ibc,
-        src_chain,
+    dst_denom, _ = assert_hermes_transfer(
+        ibc.hermes,
+        cli2,
         "signer2",
         transfer_amt,
-        dst_chain,
+        cli,
         addr_signer1,
     )
-    denom_hash = ibc_denom_hash(path)
-    dst_denom = f"ibc/{denom_hash}"
-    signer1_balance_bf = cli.balance(addr_signer1, dst_denom)
-    signer1_balance = wait_for_balance_change(
-        cli, addr_signer1, dst_denom, signer1_balance_bf
-    )
-    assert signer1_balance == signer1_balance_bf + transfer_amt
-    assert cli.ibc_denom_hash(path) == denom_hash
-    assert_balance(cli2, ibc.ibc2.w3, escrow_addr) == transfer_amt
     assert_dynamic_fee(cli)
     assert_dup_events(cli)
 
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community (eth addr) 5 baseunit
     amount = 5
-    rsp = cli.ibc_transfer(
+    assert_ibc_transfer(
+        cli,
+        cli2,
+        addr_signer1,
         community,
-        f"{amount}{DEFAULT_DENOM}",
-        channel,
-        from_=addr_signer1,
+        amount,
+        dst_denom,
     )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    community_balance_bf = cli2.balance(addr_community, dst_denom)
-    community_balance = wait_for_balance_change(
-        cli2, addr_community, dst_denom, community_balance_bf
-    )
-    assert community_balance == community_balance_bf + amount
     assert_receiver_events(cli, cli2, community)
 
     ibc_erc20_addr = ibc_denom_address(dst_denom)
@@ -187,38 +172,29 @@ async def test_ibc_transfer(ibc):
 
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50 tf_token
     transfer_amt = 50
-    src_chain = "mantra-canary-net-1"
-    dst_chain = "mantra-canary-net-2"
-
-    path = f"{port}/{channel}/{denom}"
-    escrow_addr = hermes_transfer(
-        ibc, src_chain, "signer1", transfer_amt, dst_chain, addr_signer2, denom=denom
+    dst_denom, signer2_balance = assert_hermes_transfer(
+        ibc.hermes,
+        cli,
+        "signer1",
+        transfer_amt,
+        cli2,
+        addr_signer2,
+        denom=denom,
     )
-    denom_hash = ibc_denom_hash(path)
-    dst_denom = f"ibc/{denom_hash}"
-    signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
-    signer2_balance = wait_for_balance_change(
-        cli2, addr_signer2, dst_denom, signer2_balance_bf
-    )
-    assert signer2_balance == signer2_balance_bf + transfer_amt
-    assert cli2.ibc_denom_hash(path) == denom_hash
-    signer2_balance_bf = signer2_balance
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50 tf_token
     balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance_bf == cli.balance(addr_signer1, denom)
-    src_chain = "mantra-canary-net-2"
-    dst_chain = "mantra-canary-net-1"
-    hermes_transfer(
-        ibc,
-        src_chain,
+    run_hermes_transfer(
+        ibc.hermes,
+        cli2,
         "signer2",
         transfer_amt,
-        dst_chain,
+        cli,
         addr_signer1,
         denom=dst_denom,
     )
-    assert cli2.balance(addr_signer2, dst_denom) == signer2_balance_bf - transfer_amt
+    assert cli2.balance(addr_signer2, dst_denom) == signer2_balance - transfer_amt
 
     async def wait_for_balance_change_async(w3, addr, token_addr, init_balance):
         async def check_balance():
@@ -259,7 +235,6 @@ async def test_ibc_cb(ibc):
     cli2 = ibc.ibc2.cosmos_cli()
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
-
     addr_signer2 = eth_to_bech32(signer2)
     erc20_denom, total = await assert_create_erc20_denom(w3, signer1)
 
@@ -272,33 +247,20 @@ async def test_ibc_cb(ibc):
 
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50erc20_denom
     transfer_amt = total // 2
-    src_chain = "mantra-canary-net-1"
-    dst_chain = "mantra-canary-net-2"
-    channel = "channel-0"
     port = "transfer"
-    path = f"{port}/{channel}/{erc20_denom}"
+    channel = "channel-0"
+    isolated = generate_isolated_address(channel, addr_signer2)
 
-    escrow_addr = hermes_transfer(
-        ibc,
-        src_chain,
+    dst_denom, signer2_balance = assert_hermes_transfer(
+        ibc.hermes,
+        cli,
         "signer1",
         transfer_amt,
-        dst_chain,
+        cli2,
         addr_signer2,
         denom=erc20_denom,
     )
 
-    denom_hash = ibc_denom_hash(path)
-    dst_denom = f"ibc/{denom_hash}"
-    signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
-    signer2_balance = wait_for_balance_change(
-        cli2, addr_signer2, dst_denom, signer2_balance_bf
-    )
-    assert signer2_balance == signer2_balance_bf + transfer_amt
-    assert cli2.ibc_denom_hash(path) == denom_hash
-    signer2_balance_bf = signer2_balance
-
-    assert cli.balance(escrow_addr, erc20_denom) == transfer_amt
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
     assert signer1_balance_eth == total - transfer_amt
 
@@ -308,21 +270,17 @@ async def test_ibc_cb(ibc):
     cb_balance_bf = await ERC20.fns.balanceOf(cb_contract).call(w3, to=WETH_ADDRESS)
 
     # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50erc20_denom
-    src_chain = "mantra-canary-net-2"
-    dst_chain = "mantra-canary-net-1"
-    isolated = generate_isolated_address(channel, addr_signer2)
-
-    hermes_transfer(
-        ibc,
-        src_chain,
+    run_hermes_transfer(
+        ibc.hermes,
+        cli2,
         "signer2",
         transfer_amt,
-        dst_chain,
+        cli,
         isolated,
         denom=dst_denom,
         memo=dest_cb,
     )
-    assert cli2.balance(addr_signer2, dst_denom) == signer2_balance_bf - transfer_amt
+    assert cli2.balance(addr_signer2, dst_denom) == signer2_balance - transfer_amt
 
     async def wait_for_balance_change_async(w3, addr, token_addr, init_balance):
         async def check_balance():
@@ -335,5 +293,6 @@ async def test_ibc_cb(ibc):
         w3, cb_contract, WETH_ADDRESS, cb_balance_bf
     )
     assert cb_balance == cb_balance_bf + transfer_amt
+    escrow_addr = escrow_address(port, channel)
     assert cli.balance(escrow_addr, erc20_denom) == 0
     assert cli2.balance(addr_signer2, dst_denom) == 0
