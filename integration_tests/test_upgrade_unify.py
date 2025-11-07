@@ -203,6 +203,24 @@ async def exec(c, tmp_path):
         == 500
     )
 
+    # test fee grant
+    granter = cli.address("signer1")
+    grantee = cli.address("signer2")
+    rsp = cli.grant_fee_allowance(granter, grantee, gas_prices=gas_prices)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    rsp = cli.revoke_fee_grant(granter, grantee, gas_prices=gas_prices)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    fee_grant_spend_limit = 5
+    rsp = cli.grant_fee_allowance(
+        granter,
+        grantee,
+        spend_limit=f"{fee_grant_spend_limit}{LEGACY_DENOM}",
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
     await weth.fns.transfer(receiver, transfer_amt2).transact(
@@ -239,6 +257,16 @@ async def exec(c, tmp_path):
     expected_coin = {"denom": DEFAULT_DENOM, "amount": f"{periodic_amt * scale_factor}"}
     assert acct["value"]["base_vesting_account"]["original_vesting"] == [expected_coin]
     assert acct["value"]["vesting_periods"][0]["amount"] == [expected_coin]
+
+    grant_detail = cli.query_grant(granter, grantee)
+    assert grant_detail["allowance"]["value"] == {
+        "spend_limit": [
+            {
+                "denom": DEFAULT_DENOM,
+                "amount": str(fee_grant_spend_limit * scale_factor),
+            }
+        ]
+    }
 
     c.supervisorctl("stop", "all")
     distribution = cli.export(modules_to_export="distribution")["app_state"][
