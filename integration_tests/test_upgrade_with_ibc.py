@@ -105,7 +105,7 @@ def exec(c, tmp_path):
     amount = 5
     gas_prices = f"1{LEGACY_DENOM}"
     rsp = cli.ibc_transfer(
-        community,
+        addr_signer2,
         f"{amount}{LEGACY_DENOM}",
         channel,
         from_=addr_signer1,
@@ -113,10 +113,10 @@ def exec(c, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     signer2_balance_bf = cli2.balance(addr_signer2, dst_legacy_denom)
-    community_balance = wait_for_balance_change(
+    signer2_balance = wait_for_balance_change(
         cli2, addr_signer2, dst_legacy_denom, signer2_balance_bf
     )
-    assert community_balance == signer2_balance_bf + amount
+    assert signer2_balance == signer2_balance_bf + amount
 
     target_height = cli.block_height() + 15
     cli = do_upgrade(c.ibc1, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
