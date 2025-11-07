@@ -128,7 +128,7 @@ def exec(c, tmp_path):
     rly_cfg.write_text(tomlkit.dumps(cfg))
     c.ibc1.supervisorctl("start", "relayer-demo")
 
-    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 eth addr with 5 legacy baseunit
+    # evm-canary signer2 -> mantra-canary signer1 eth addr with 5 legacy baseunit
     transfer_amt = 5
     src_chain = "evm-canary-net-1"
     dst_chain = "mantra-canary-net-1"
