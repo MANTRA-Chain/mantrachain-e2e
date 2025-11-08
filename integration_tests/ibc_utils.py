@@ -18,6 +18,7 @@ from .utils import (
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
+    SCALE_FACTOR,
     escrow_address,
     parse_events_rpc,
     wait_for_balance_change,
@@ -170,6 +171,7 @@ def assert_hermes_transfer(
     port="transfer",
     channel="channel-0",
     skip_src_balance_check=False,
+    migrate_denom=None,
 ) -> tuple[str, str]:
     escrow_addr = escrow_address(port, channel, prefix=prefix)
     src_balance_bf = src_cli.balance(src_addr, denom)
@@ -189,7 +191,9 @@ def assert_hermes_transfer(
     fee = 0
     send_ibc_token = denom.startswith("ibc/")
     if send_ibc_token:
-        dst_denom = src_cli.ibc_denom(denom).get("base")
+        dst_denom = (
+            migrate_denom if migrate_denom else src_cli.ibc_denom(denom).get("base")
+        )
     else:
         path = f"{port}/{channel}/{denom}"
         denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
@@ -201,7 +205,9 @@ def assert_hermes_transfer(
                 break
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
-    assert dst_balance == dst_balance_bf + src_amt
+    assert dst_balance == dst_balance_bf + (
+        src_amt * SCALE_FACTOR if migrate_denom else src_amt
+    )
     if not send_ibc_token:
         assert dst_cli.ibc_denom_hash(path) == denom_hash
         assert src_cli.balance(escrow_addr, denom) == escrow_balance_bf + src_amt

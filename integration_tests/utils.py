@@ -73,6 +73,7 @@ WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
 ADDRESS_PREFIX = os.getenv("ADDRESS_PREFIX", "mantra")
 CMD = os.getenv("CMD", "mantrachaind")
+SCALE_FACTOR = 4_000_000_000_000
 
 
 WETH_SALT = 999

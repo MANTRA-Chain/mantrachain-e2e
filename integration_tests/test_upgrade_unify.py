@@ -18,6 +18,7 @@ from .upgrade_utils import (
 )
 from .utils import (
     DEFAULT_DENOM,
+    SCALE_FACTOR,
     Greeter,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
@@ -253,8 +254,7 @@ async def exec(c, tmp_path):
 
     acct = cli.account(periodic_addr)["account"]
     assert acct["type"] == "/cosmos.vesting.v1beta1.PeriodicVestingAccount"
-    scale_factor = 4_000_000_000_000
-    expected_coin = {"denom": DEFAULT_DENOM, "amount": f"{periodic_amt * scale_factor}"}
+    expected_coin = {"denom": DEFAULT_DENOM, "amount": f"{periodic_amt * SCALE_FACTOR}"}
     assert acct["value"]["base_vesting_account"]["original_vesting"] == [expected_coin]
     assert acct["value"]["vesting_periods"][0]["amount"] == [expected_coin]
 
@@ -263,7 +263,7 @@ async def exec(c, tmp_path):
         "spend_limit": [
             {
                 "denom": DEFAULT_DENOM,
-                "amount": str(fee_grant_spend_limit * scale_factor),
+                "amount": str(fee_grant_spend_limit * SCALE_FACTOR),
             }
         ]
     }

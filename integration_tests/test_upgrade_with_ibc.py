@@ -60,10 +60,9 @@ def exec(c, tmp_path):
     cli = c.ibc1.cosmos_cli()
     cli2 = c.ibc2.cosmos_cli()
     prefix = "cosmos"
-    denom = "atest"
-
-    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 5atest
-    amt = 5
+    amt = 10
+    amt2 = 5
+    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 10atest
     dst_denom, _ = assert_hermes_transfer(
         c.hermes,
         cli2,
@@ -71,19 +70,39 @@ def exec(c, tmp_path):
         amt,
         cli,
         cli.address("signer1"),
-        denom=denom,
+        denom="atest",
         prefix=prefix,
     )
-
     # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
     assert_hermes_transfer(
+        c.hermes,
+        cli,
+        "signer1",
+        amt2,
+        cli2,
+        cli2.address("signer2"),
+        denom=dst_denom,
+    )
+    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 10baseunit
+    dst_denom2, _ = assert_hermes_transfer(
         c.hermes,
         cli,
         "signer1",
         amt,
         cli2,
         cli2.address("signer2"),
-        denom=dst_denom,
+        denom=LEGACY_DENOM,
+    )
+    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
+        cli2,
+        "signer2",
+        amt2,
+        cli,
+        cli.address("signer1"),
+        denom=dst_denom2,
+        prefix=prefix,
     )
 
     target_height = cli.block_height() + 15
@@ -96,27 +115,27 @@ def exec(c, tmp_path):
     rly_cfg.write_text(tomlkit.dumps(cfg))
     c.ibc1.supervisorctl("start", "relayer-demo")
 
-    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 5atest
-    assert_hermes_transfer(
-        c.hermes,
-        cli2,
-        "signer2",
-        amt,
-        cli,
-        cli.address("signer1"),
-        denom=denom,
-        prefix=prefix,
-    )
-
     # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
     assert_hermes_transfer(
         c.hermes,
         cli,
         "signer1",
-        amt,
+        amt2,
         cli2,
         cli2.address("signer2"),
         denom=dst_denom,
+    )
+    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
+        cli2,
+        "signer2",
+        amt2,
+        cli,
+        cli.address("signer1"),
+        denom=dst_denom2,
+        prefix=prefix,
+        migrate_denom=DEFAULT_DENOM,
     )
 
 
