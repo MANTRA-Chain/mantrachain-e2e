@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import configparser
@@ -486,6 +487,28 @@ def retry_on_seq_mismatch(fn, *args, max_retries=3, **kwargs):
     return rsp
 
 
+async def retry_on_nonce_mismatch(fn, *args, max_retries=3, **kwargs):
+    for attempt in range(max_retries):
+        try:
+            return await fn(*args, **kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Handle nonce mismatch errors
+            should_retry = "nonce" in error_msg and (
+                "lower" in error_msg or "invalid" in error_msg
+            )
+            # Handle "already known" errors (transaction already in mempool)
+            should_retry = should_retry or ("already known" in error_msg)
+
+            if should_retry and attempt < max_retries - 1:
+                # Wait a bit longer for "already known" errors
+                wait_time = 2.0 if "already known" in error_msg else 1.0
+                await asyncio.sleep(wait_time)
+                continue
+            raise e
+    return None
+
+
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     # check create tokenfactory denom
     rsp = retry_on_seq_mismatch(cli.create_tokenfactory_denom, subdenom, **kwargs)
@@ -907,8 +930,12 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     signer1_balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     signer2_balance_bf = await ERC20.fns.balanceOf(signer2).call(w3, to=tf_erc20_addr)
     receiver_balance_bf = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    await ERC20.fns.transfer(receiver, transfer_amt).transact(
-        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    await retry_on_nonce_mismatch(
+        ERC20.fns.transfer(receiver, transfer_amt).transact,
+        w3,
+        signer1,
+        to=tf_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
     signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert signer1_balance == signer1_balance_bf - transfer_amt
@@ -920,15 +947,23 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
 
     # signer1 approve 2tf_erc20 to signer2
     approve_amt = 2
-    await ERC20.fns.approve(signer2, approve_amt).transact(
-        w3, signer1, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    await retry_on_nonce_mismatch(
+        ERC20.fns.approve(signer2, approve_amt).transact,
+        w3,
+        signer1,
+        to=tf_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
     allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
     assert allowance == approve_amt
 
     # transferFrom signer1 to receiver via signer2 with 2tf_erc20
-    await ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact(
-        w3, signer2, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    await retry_on_nonce_mismatch(
+        ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact,
+        w3,
+        signer2,
+        to=tf_erc20_addr,
+        gasPrice=(await w3.eth.gas_price),
     )
     signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert signer1_balance == signer1_balance_bf - approve_amt

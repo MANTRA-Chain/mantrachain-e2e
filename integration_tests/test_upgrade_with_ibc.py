@@ -8,18 +8,14 @@ import tomlkit
 
 from .ibc_utils import (
     assert_hermes_transfer,
-    assert_ibc_transfer,
-    ibc_denom_hash,
     prepare_network,
 )
 from .network import Mantra
 from .upgrade_utils import LEGACY_DENOM, cleanup_upgrades_folder, do_upgrade, post_init
 from .utils import (
-    ADDRS,
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_AMT,
-    eth_to_bech32,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
@@ -63,43 +59,31 @@ def custom_mantra(request, tmp_path_factory):
 def exec(c, tmp_path):
     cli = c.ibc1.cosmos_cli()
     cli2 = c.ibc2.cosmos_cli()
-    signer1 = ADDRS["signer1"]
-    community = ADDRS["community"]
-    addr_signer1 = eth_to_bech32(signer1)
     prefix = "cosmos"
-    port = "transfer"
-    channel = "channel-0"
     denom = "atest"
 
-    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 100atest
-    transfer_amt = 100
-    assert_hermes_transfer(
+    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 5atest
+    amt = 5
+    dst_denom, _ = assert_hermes_transfer(
         c.hermes,
         cli2,
         "signer2",
-        transfer_amt,
+        amt,
         cli,
-        addr_signer1,
+        cli.address("signer1"),
         denom=denom,
         prefix=prefix,
     )
 
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 community eth addr with 5 baseunit
-    path = f"{port}/{channel}/{LEGACY_DENOM}"
-    denom_hash = ibc_denom_hash(path)
-    dst_denom = f"ibc/{denom_hash}"
-    amount = 5
-    gas_prices = f"1{LEGACY_DENOM}"
-
-    assert_ibc_transfer(
+    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
         cli,
+        "signer1",
+        amt,
         cli2,
-        addr_signer1,
-        community,
-        amount,
-        dst_denom,
-        src_denom=LEGACY_DENOM,
-        gas_prices=gas_prices,
+        cli2.address("signer2"),
+        denom=dst_denom,
     )
 
     target_height = cli.block_height() + 15
@@ -112,29 +96,27 @@ def exec(c, tmp_path):
     rly_cfg.write_text(tomlkit.dumps(cfg))
     c.ibc1.supervisorctl("start", "relayer-demo")
 
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 community eth addr with 5 baseunit
-    path = f"{port}/{channel}/{DEFAULT_DENOM}"
-    denom_hash = ibc_denom_hash(path)
-    dst_denom = f"ibc/{denom_hash}"
-    assert_ibc_transfer(
-        cli,
-        cli2,
-        addr_signer1,
-        community,
-        amount,
-        dst_denom,
-    )
-
-    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 100atest
+    # evm-canary-net-1 signer2 -> mantra-canary-net-1 signer1 5atest
     assert_hermes_transfer(
         c.hermes,
         cli2,
         "signer2",
-        transfer_amt,
+        amt,
         cli,
-        addr_signer1,
+        cli.address("signer1"),
         denom=denom,
         prefix=prefix,
+    )
+
+    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
+        cli,
+        "signer1",
+        amt,
+        cli2,
+        cli2.address("signer2"),
+        denom=dst_denom,
     )
 
 

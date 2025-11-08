@@ -7,8 +7,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
+import tomlkit
 from pystarport import cluster, ports
-from pystarport.utils import wait_for_new_blocks, wait_for_port
+from pystarport.utils import parse_amount, wait_for_new_blocks, wait_for_port
 
 from .cosmoscli import CosmosCLI
 from .network import Hermes, Mantra, setup_custom_mantra
@@ -18,7 +19,7 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     escrow_address,
-    get_balance,
+    parse_events_rpc,
     wait_for_balance_change,
 )
 
@@ -168,7 +169,11 @@ def assert_hermes_transfer(
     prefix=ADDRESS_PREFIX,
     port="transfer",
     channel="channel-0",
+    skip_src_balance_check=False,
 ) -> tuple[str, str]:
+    escrow_addr = escrow_address(port, channel, prefix=prefix)
+    src_balance_bf = src_cli.balance(src_addr, denom)
+    escrow_balance_bf = src_cli.balance(escrow_addr, denom)
     run_hermes_transfer(
         hermes,
         src_cli,
@@ -181,15 +186,27 @@ def assert_hermes_transfer(
         port,
         channel,
     )
-    escrow_addr = escrow_address(port, channel, prefix=prefix)
-    path = f"{port}/{channel}/{denom}"
-    denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
-    dst_denom = f"ibc/{denom_hash}"
+    fee = 0
+    send_ibc_token = denom.startswith("ibc/")
+    if send_ibc_token:
+        dst_denom = src_cli.ibc_denom(denom).get("base")
+    else:
+        path = f"{port}/{channel}/{denom}"
+        denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
+        dst_denom = f"ibc/{denom_hash}"
+        cfg = tomlkit.parse(hermes.configpath.read_text())
+        for chain in cfg["chains"]:
+            if chain["id"] == src_cli.chain_id and chain["gas_price"]["denom"] == denom:
+                fee = find_transfer_fee(src_cli)
+                break
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
     assert dst_balance == dst_balance_bf + src_amt
-    assert dst_cli.ibc_denom_hash(path) == denom_hash
-    get_balance(src_cli, escrow_addr) == src_amt
+    if not send_ibc_token:
+        assert dst_cli.ibc_denom_hash(path) == denom_hash
+        assert src_cli.balance(escrow_addr, denom) == escrow_balance_bf + src_amt
+    if not skip_src_balance_check:
+        assert src_cli.balance(src_addr, denom) == src_balance_bf - src_amt - fee
     return dst_denom, dst_balance
 
 
@@ -215,3 +232,10 @@ def assert_ibc_transfer(
 
 def ibc_denom_hash(path):
     return hashlib.sha256(path.encode()).hexdigest().upper()
+
+
+def find_transfer_fee(cli):
+    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
+    tx = cli.tx_search(criteria, limit=1)["txs"][0]
+    events = parse_events_rpc(tx["events"])
+    return int(parse_amount(events["tx"]["fee"]))

@@ -259,6 +259,7 @@ async def test_ibc_cb(ibc):
         cli2,
         addr_signer2,
         denom=erc20_denom,
+        skip_src_balance_check=True,
     )
 
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
