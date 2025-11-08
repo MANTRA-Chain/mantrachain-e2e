@@ -7,7 +7,7 @@ import pytest
 import tomlkit
 
 from .ibc_utils import (
-    assert_hermes_transfer,
+    assert_ibc_evmd_flow,
     prepare_network,
 )
 from .network import Mantra
@@ -58,84 +58,26 @@ def custom_mantra(request, tmp_path_factory):
 
 def exec(c, tmp_path):
     cli = c.ibc1.cosmos_cli()
-    cli2 = c.ibc2.cosmos_cli()
-    prefix = "cosmos"
-    amt = 10
-    amt2 = 5
-    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 10atest
-    dst_denom, _ = assert_hermes_transfer(
-        c.hermes,
-        cli2,
-        "signer2",
-        amt,
-        cli,
-        cli.address("signer1"),
-        denom="atest",
-        prefix=prefix,
-    )
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
-    assert_hermes_transfer(
-        c.hermes,
-        cli,
-        "signer1",
-        amt2,
-        cli2,
-        cli2.address("signer2"),
-        denom=dst_denom,
-    )
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 10baseunit
-    dst_denom2, _ = assert_hermes_transfer(
-        c.hermes,
-        cli,
-        "signer1",
-        amt,
-        cli2,
-        cli2.address("signer2"),
+
+    def upgrade():
+        nonlocal cli
+        target_height = cli.block_height() + 15
+        cli = do_upgrade(c.ibc1, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
+
+        c.ibc1.supervisorctl("stop", "relayer-demo")
+        rly_cfg = c.hermes.configpath
+        cfg = tomlkit.parse(rly_cfg.read_text())
+        cfg["chains"][1]["gas_price"] = {
+            "denom": DEFAULT_DENOM,
+            "price": DEFAULT_GAS_AMT,
+        }
+        rly_cfg.write_text(tomlkit.dumps(cfg))
+        c.ibc1.supervisorctl("start", "relayer-demo")
+
+    assert_ibc_evmd_flow(
+        c,
         denom=LEGACY_DENOM,
-    )
-    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
-    assert_hermes_transfer(
-        c.hermes,
-        cli2,
-        "signer2",
-        amt2,
-        cli,
-        cli.address("signer1"),
-        denom=dst_denom2,
-        prefix=prefix,
-    )
-
-    target_height = cli.block_height() + 15
-    cli = do_upgrade(c.ibc1, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
-
-    c.ibc1.supervisorctl("stop", "relayer-demo")
-    rly_cfg = c.hermes.configpath
-    cfg = tomlkit.parse(rly_cfg.read_text())
-    cfg["chains"][1]["gas_price"] = {"denom": DEFAULT_DENOM, "price": DEFAULT_GAS_AMT}
-    rly_cfg.write_text(tomlkit.dumps(cfg))
-    c.ibc1.supervisorctl("start", "relayer-demo")
-
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
-    assert_hermes_transfer(
-        c.hermes,
-        cli,
-        "signer1",
-        amt2,
-        cli2,
-        cli2.address("signer2"),
-        denom=dst_denom,
-    )
-    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
-    assert_hermes_transfer(
-        c.hermes,
-        cli2,
-        "signer2",
-        amt2,
-        cli,
-        cli.address("signer1"),
-        denom=dst_denom2,
-        prefix=prefix,
-        migrate_denom=DEFAULT_DENOM,
+        upgrade_cb=upgrade,
     )
 
 

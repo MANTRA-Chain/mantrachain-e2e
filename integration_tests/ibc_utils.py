@@ -245,3 +245,60 @@ def find_transfer_fee(cli):
     tx = cli.tx_search(criteria, limit=1)["txs"][0]
     events = parse_events_rpc(tx["events"])
     return int(parse_amount(events["tx"]["fee"]))
+
+
+def assert_ibc_evmd_flow(
+    c: IBCNetwork, denom=DEFAULT_DENOM, upgrade_cb=None
+) -> tuple[str, str]:
+    cli = c.ibc1.cosmos_cli()
+    cli2 = c.ibc2.cosmos_cli()
+    amt = 10
+    amt2 = 5
+    prefix = "cosmos"
+    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 10atest
+    dst_denom, _ = assert_hermes_transfer(
+        c.hermes,
+        cli2,
+        "signer2",
+        amt,
+        cli,
+        cli.address("signer1"),
+        denom="atest",
+        prefix=prefix,
+    )
+    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 10baseunit
+    dst_denom2, _ = assert_hermes_transfer(
+        c.hermes,
+        cli,
+        "signer1",
+        amt,
+        cli2,
+        cli2.address("signer2"),
+        denom=denom,
+    )
+    migrate_denom = None
+    if upgrade_cb:
+        upgrade_cb()
+        migrate_denom = DEFAULT_DENOM
+    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
+        cli,
+        "signer1",
+        amt2,
+        cli2,
+        cli2.address("signer2"),
+        denom=dst_denom,
+    )
+    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
+    assert_hermes_transfer(
+        c.hermes,
+        cli2,
+        "signer2",
+        amt2,
+        cli,
+        cli.address("signer1"),
+        denom=dst_denom2,
+        prefix=prefix,
+        migrate_denom=migrate_denom,
+    )
