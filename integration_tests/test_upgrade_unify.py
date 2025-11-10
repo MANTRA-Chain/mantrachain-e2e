@@ -264,7 +264,10 @@ async def exec(c, tmp_path):
     # test delegate
     delegate_amt = 5000000000000000000
     rsp = cli.delegate_amount(
-        val_ops[0], f"{delegate_amt}{LEGACY_DENOM}", _from="signer1", gas_prices=gas_prices
+        val_ops[0],
+        f"{delegate_amt}{LEGACY_DENOM}",
+        _from="signer1",
+        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
