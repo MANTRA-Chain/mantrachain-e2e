@@ -2,6 +2,7 @@ import json
 import time
 
 import pytest
+from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction
 from eth_contract.weth import WETH
@@ -26,6 +27,7 @@ from .utils import (
     assert_transfer,
     assert_transfer_tokenfactory_denom,
     bech32_to_eth,
+    build_contract,
     create_periodic_vesting_acct,
     denom_to_erc20_address,
     deploy_wom,
@@ -72,8 +74,14 @@ async def exec(c, tmp_path):
     # check set contract tx works
     acc_c = derive_new_account(101)
     addr_c = eth_to_bech32(acc_c.address)
+    delegate_amt = 5_000_000_000_000_000_000
     assert_transfer(
-        cli, addr_a, addr_c, amt=10**6, denom=LEGACY_DENOM, gas_prices=gas_prices
+        cli,
+        addr_a,
+        addr_c,
+        amt=10**6 + delegate_amt,
+        denom=LEGACY_DENOM,
+        gas_prices=gas_prices,
     )
     greeter = Greeter("Greeter", acc_c.key)
     greeter.deploy(c.w3)
@@ -133,8 +141,9 @@ async def exec(c, tmp_path):
 
     old_height = cli.block_height()
 
+    STAKING = "0x0000000000000000000000000000000000000800"
     active_precompiles = [
-        "0x0000000000000000000000000000000000000800",
+        STAKING,
         "0x0000000000000000000000000000000000000801",
         "0x0000000000000000000000000000000000000805",
     ]
@@ -262,7 +271,6 @@ async def exec(c, tmp_path):
     ] == str(spend_limit)
 
     # test delegate
-    delegate_amt = 5000000000000000000
     rsp = cli.delegate_amount(
         val_ops[0],
         f"{delegate_amt}{LEGACY_DENOM}",
@@ -275,10 +283,12 @@ async def exec(c, tmp_path):
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
 
     # delegate after migration
-    rsp = cli.delegate_amount(
-        val_ops[0], f"{delegate_amt}{DEFAULT_DENOM}", _from="signer1", gas=gas
+    PRECOMPILE = Contract(build_contract("StakingI")["abi"])
+    DELEGATE = PRECOMPILE.fns.delegate
+    res = await DELEGATE(acc_c.address, val_ops[0], delegate_amt).transact(
+        async_w3, acc_c, to=STAKING, gas=gas
     )
-    assert rsp["code"] == 0, rsp["raw_log"]
+    assert res.status == 1
 
     # wom after migration
     await weth.fns.transfer(receiver, transfer_amt2).transact(
