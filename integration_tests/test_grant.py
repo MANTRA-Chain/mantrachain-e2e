@@ -94,7 +94,7 @@ def test_flow(mantra):
         from_=granter,
         msg_type=msg_type,
     )
-    assert rsp["code"] == 0
+    assert rsp["code"] == 0, rsp["raw_log"]
 
     generic_grant = find_grant("/cosmos.authz.v1beta1.GenericAuthorization")
     assert generic_grant and generic_grant["authorization"]["value"]["msg"] == msg_type

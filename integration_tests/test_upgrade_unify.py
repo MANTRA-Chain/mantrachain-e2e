@@ -204,7 +204,7 @@ async def exec(c, tmp_path):
         == 500
     )
 
-    # test fee grant
+    # test grant
     granter = cli.address("signer1")
     grantee = cli.address("signer2")
     rsp = cli.grant_fee_allowance(granter, grantee, gas_prices=gas_prices)
@@ -222,6 +222,12 @@ async def exec(c, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
+    def find_grant(auth_type):
+        grants = cli.query_grants(granter, grantee)
+        return next(
+            (g for g in grants if g["authorization"]["type"] == auth_type), None
+        )
+
     # grant_authorization
     max_tokens_limit = 10
     validators = cli.validators()
@@ -230,14 +236,30 @@ async def exec(c, tmp_path):
         grantee,
         "delegate",
         from_=granter,
-        spend_limit="%s%s" % (max_tokens_limit, LEGACY_DENOM),
+        spend_limit=f"{max_tokens_limit}{LEGACY_DENOM}",
         allow_list=[val_ops[0]],
         deny_validators=val_ops[1],
         gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    authorization = cli.query_grants(granter, grantee)[0]["authorization"]
-    assert authorization["value"]["max_tokens"]["amount"] == str(max_tokens_limit)
+    stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
+    assert stake_grant and stake_grant["authorization"]["value"]["max_tokens"][
+        "amount"
+    ] == str(max_tokens_limit)
+
+    spend_limit = 200
+    rsp = cli.grant_authorization(
+        grantee,
+        "send",
+        from_=granter,
+        spend_limit=f"{spend_limit}{LEGACY_DENOM}",
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
+    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
+        "amount"
+    ] == str(spend_limit)
 
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
@@ -286,10 +308,10 @@ async def exec(c, tmp_path):
     }
 
     # grant_authorization after migration
-    authorization = cli.query_grants(granter, grantee)[0]["authorization"]
-    assert authorization["value"]["max_tokens"]["amount"] == str(
-        max_tokens_limit * SCALE_FACTOR
-    )
+    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
+    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
+        "amount"
+    ] == str(spend_limit * SCALE_FACTOR)
 
     c.supervisorctl("stop", "all")
     distribution = cli.export(modules_to_export="distribution")["app_state"][
