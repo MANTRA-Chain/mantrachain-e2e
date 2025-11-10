@@ -261,8 +261,23 @@ async def exec(c, tmp_path):
         "amount"
     ] == str(spend_limit)
 
+    # test delegate
+    delegate_amt = 5000000000000000000
+    rsp = cli.delegate_amount(
+        val_ops[0], f"{delegate_amt}{LEGACY_DENOM}", _from="signer1", gas_prices=gas_prices
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
+
+    # delegate after migration
+    rsp = cli.delegate_amount(
+        val_ops[0], f"{delegate_amt}{DEFAULT_DENOM}", _from="signer1", gas=gas
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # wom after migration
     await weth.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
