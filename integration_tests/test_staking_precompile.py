@@ -1,6 +1,6 @@
+import asyncio
 import json
 import os
-import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -213,7 +213,7 @@ async def test_join_validator(mantra):
     edit_app_cfg(clustercli, node_index)
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
-    time.sleep(1)
+    await asyncio.sleep(0.5)
     wait_for_block(cli, cli.block_height())
 
     count = len(cli.validators())
@@ -242,7 +242,7 @@ async def test_join_validator(mantra):
         PRECOMPILE.events.CreateValidator.topic,
         address_to_bytes32(addr),
     ]
-    time.sleep(2)
+    await asyncio.sleep(2)
     assert len(cli.validators()) == count + 1
 
     val = cli.validator(val_addr)

@@ -8,6 +8,7 @@ from pystarport.utils import wait_for_fn_async
 from .ibc_utils import (
     assert_hermes_transfer,
     assert_ibc_transfer,
+    assert_receiver_events,
     prepare_network,
     run_hermes_transfer,
 )
@@ -110,20 +111,6 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     return denom, tf_erc20_addr
 
 
-def assert_receiver_events(cli, cli2, target):
-    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
-    events = cli.tx_search(criteria)["txs"][0]["events"]
-    events = parse_events_rpc(events)
-    receiver = events.get("ibc_transfer").get("receiver")
-    assert receiver == target
-
-    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
-    events = cli2.tx_search(criteria)["txs"][0]["events"]
-    events = parse_events_rpc(events)
-    receiver = events.get("fungible_token_packet").get("receiver")
-    assert receiver == target
-
-
 async def test_ibc_transfer(ibc):
     w3 = ibc.ibc1.async_w3
     cli = ibc.ibc1.cosmos_cli()
@@ -150,6 +137,7 @@ async def test_ibc_transfer(ibc):
     # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community (eth addr) 5 baseunit
     amount = 5
     assert_ibc_transfer(
+        ibc.hermes,
         cli,
         cli2,
         addr_signer1,

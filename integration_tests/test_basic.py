@@ -10,7 +10,6 @@ from eth_contract.utils import broadcast_transaction
 from eth_contract.utils import send_transaction as send_transaction_async
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
-from pystarport.utils import w3_wait_for_new_blocks_async
 
 from .utils import (
     ACCOUNTS,
@@ -33,6 +32,7 @@ from .utils import (
     recover_community,
     send_transaction,
     transfer_via_cosmos,
+    w3_wait_for_new_blocks_async,
 )
 
 

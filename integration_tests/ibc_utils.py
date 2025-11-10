@@ -15,11 +15,14 @@ from .cosmoscli import CosmosCLI
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
     ADDRESS_PREFIX,
+    ADDRS,
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
+    DEFAULT_GAS_PRICE,
     SCALE_FACTOR,
     escrow_address,
+    find_fee,
     parse_events_rpc,
     wait_for_balance_change,
 )
@@ -198,11 +201,8 @@ def assert_hermes_transfer(
         path = f"{port}/{channel}/{denom}"
         denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
         dst_denom = f"ibc/{denom_hash}"
-        cfg = tomlkit.parse(hermes.configpath.read_text())
-        for chain in cfg["chains"]:
-            if chain["id"] == src_cli.chain_id and chain["gas_price"]["denom"] == denom:
-                fee = find_transfer_fee(src_cli)
-                break
+        if should_deduct_fee(hermes, src_cli.chain_id, denom):
+            fee = find_transfer_fee(src_cli)
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
     assert dst_balance == dst_balance_bf + (
@@ -216,24 +216,41 @@ def assert_hermes_transfer(
     return dst_denom, dst_balance
 
 
+def should_deduct_fee(hermes: Hermes, chain_id, denom: str) -> bool:
+    cfg = tomlkit.parse(hermes.configpath.read_text())
+    for chain in cfg["chains"]:
+        if chain["id"] == chain_id:
+            return chain.get("gas_price", {}).get("denom") == denom
+    return False
+
+
 def assert_ibc_transfer(
-    src_cli: CosmosCLI,
+    hermes: Hermes,
+    src_cli,
     dst_cli: CosmosCLI,
-    src_addr: str,
-    to: str,
+    src_addr,
+    dst_eth_addr: str,
     amt: int,
     dst_denom: str,
-    src_denom=DEFAULT_DENOM,
+    denom=DEFAULT_DENOM,
+    channel="channel-0",
+    migrate_denom=None,
     **kwargs,
 ) -> None:
+    src_balance_bf = src_cli.balance(src_addr, denom=denom)
     rsp = src_cli.ibc_transfer(
-        to, f"{amt}{src_denom}", "channel-0", from_=src_addr, **kwargs
+        dst_eth_addr, f"{amt}{denom}", channel, from_=src_addr, **kwargs
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    dst_addr = dst_cli.debug_addr(to, bech="acc")
+    fee = find_fee(rsp) if should_deduct_fee(hermes, src_cli.chain_id, denom) else 0
+    dst_addr = dst_cli.debug_addr(dst_eth_addr, bech="acc")
+    dst_denom = migrate_denom if migrate_denom else dst_denom
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
-    assert dst_balance == dst_balance_bf + amt
+    assert dst_balance == dst_balance_bf + (
+        amt * SCALE_FACTOR if migrate_denom else amt
+    )
+    assert src_cli.balance(src_addr, denom=denom) == src_balance_bf - amt - fee
 
 
 def ibc_denom_hash(path):
@@ -242,63 +259,150 @@ def ibc_denom_hash(path):
 
 def find_transfer_fee(cli):
     criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
-    tx = cli.tx_search(criteria, limit=1)["txs"][0]
+    tx = cli.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
     events = parse_events_rpc(tx["events"])
     return int(parse_amount(events["tx"]["fee"]))
 
 
+def assert_receiver_events(cli, cli2: CosmosCLI, dst_eth_addr: str):
+    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
+    events = cli.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
+    events = parse_events_rpc(events["events"])
+    assert events.get("ibc_transfer").get("receiver") == dst_eth_addr
+
+    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
+    events = cli2.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
+    events = parse_events_rpc(events["events"])
+    assert events.get("fungible_token_packet").get("receiver") == dst_eth_addr
+
+
 def assert_ibc_evmd_flow(
-    c: IBCNetwork, denom=DEFAULT_DENOM, upgrade_cb=None
+    ibc: IBCNetwork, denom=DEFAULT_DENOM, upgrade_cb=None
 ) -> tuple[str, str]:
-    cli = c.ibc1.cosmos_cli()
-    cli2 = c.ibc2.cosmos_cli()
+    cli = ibc.ibc1.cosmos_cli()
+    cli2 = ibc.ibc2.cosmos_cli()
     amt = 10
-    amt2 = 5
-    prefix = "cosmos"
-    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 10atest
+    amt2 = 2
+    amt3 = 3
+    amt4 = 4
+    evmd_denom = "atest"
+    evmd_prefix = "cosmos"
+    evmd_gas_prices = f"10000000000{evmd_denom}"
+    port = "transfer"
+    channel = "channel-0"
+    eth_community = ADDRS["community"]
+    for c in [cli, cli2]:
+        add_key(ibc.hermes, c.chain_id, "COMMUNITY_MNEMONIC", "community")
+
+    print(f"evm signer2 -> mantra signer1 {amt}{evmd_denom}")
     dst_denom, _ = assert_hermes_transfer(
-        c.hermes,
+        ibc.hermes,
         cli2,
         "signer2",
         amt,
         cli,
         cli.address("signer1"),
-        denom="atest",
-        prefix=prefix,
+        denom=evmd_denom,
+        prefix=evmd_prefix,
     )
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 10baseunit
+
+    print(f"mantra signer1 -> evm signer2 {amt2}{denom}")
     dst_denom2, _ = assert_hermes_transfer(
-        c.hermes,
-        cli,
-        "signer1",
-        amt,
-        cli2,
-        cli2.address("signer2"),
-        denom=denom,
-    )
-    migrate_denom = None
-    if upgrade_cb:
-        upgrade_cb()
-        migrate_denom = DEFAULT_DENOM
-    # mantra-canary-net-1 signer1 -> evm-canary-net-1 signer2 with 5ibc_token
-    assert_hermes_transfer(
-        c.hermes,
+        ibc.hermes,
         cli,
         "signer1",
         amt2,
         cli2,
         cli2.address("signer2"),
+        denom=denom,
+    )
+
+    print(f"mantra community -> evm eth_community {amt3}{denom}")
+    denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
+    dst_denom3 = f"ibc/{denom_hash}"
+    gas_prices = f"1{denom}" if upgrade_cb else DEFAULT_GAS_PRICE
+    assert_ibc_transfer(
+        ibc.hermes,
+        cli,
+        cli2,
+        "community",
+        eth_community,
+        amt3,
+        dst_denom3,
+        denom=denom,
+        gas_prices=gas_prices,
+    )
+    assert_receiver_events(cli, cli2, eth_community)
+
+    print(f"evm community -> mantra eth_community {amt4}{evmd_denom}")
+    denom_hash = ibc_denom_hash(f"{port}/{channel}/{evmd_denom}")
+    dst_denom4 = f"ibc/{denom_hash}"
+    assert_ibc_transfer(
+        ibc.hermes,
+        cli2,
+        cli,
+        "community",
+        eth_community,
+        amt4,
+        dst_denom4,
+        denom=evmd_denom,
+        gas_prices=evmd_gas_prices,
+    )
+    assert_receiver_events(cli2, cli, eth_community)
+
+    migrate_denom = None
+    if upgrade_cb:
+        upgrade_cb()
+        migrate_denom = DEFAULT_DENOM
+
+    print(f"mantra signer1 -> evm signer2 back {amt}{dst_denom}")
+    assert_hermes_transfer(
+        ibc.hermes,
+        cli,
+        "signer1",
+        amt,
+        cli2,
+        cli2.address("signer2"),
         denom=dst_denom,
     )
-    # evm-canary-net-1 signer2 -> mcantra-canary-net-1 signer1 5ibc_token
+
+    print(f"evm signer2 -> mantra signer1 back {amt2}{dst_denom2}")
     assert_hermes_transfer(
-        c.hermes,
+        ibc.hermes,
         cli2,
         "signer2",
         amt2,
         cli,
         cli.address("signer1"),
         denom=dst_denom2,
-        prefix=prefix,
+        prefix=evmd_prefix,
         migrate_denom=migrate_denom,
     )
+
+    print(f"evm community -> mantra eth_community back {amt3}{dst_denom3}")
+    assert_ibc_transfer(
+        ibc.hermes,
+        cli2,
+        cli,
+        "community",
+        eth_community,
+        amt3,
+        denom,
+        denom=dst_denom3,
+        migrate_denom=migrate_denom,
+        gas_prices=evmd_gas_prices,
+    )
+    assert_receiver_events(cli2, cli, eth_community)
+
+    print(f"mantra community -> evm eth_community back {amt4}{dst_denom4}")
+    assert_ibc_transfer(
+        ibc.hermes,
+        cli,
+        cli2,
+        "community",
+        eth_community,
+        amt4,
+        evmd_denom,
+        denom=dst_denom4,
+    )
+    assert_receiver_events(cli, cli2, eth_community)
