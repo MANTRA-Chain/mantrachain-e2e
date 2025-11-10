@@ -51,14 +51,50 @@ def test_flow(mantra):
     max_tokens_limit = 10
     validators = cli.validators()
     val_ops = [v["operator_address"] for v in validators[:2]]
+
     rsp = cli.grant_authorization(
         grantee,
         "delegate",
         from_=granter,
-        spend_limit="%s%s" % (max_tokens_limit, DEFAULT_DENOM),
+        spend_limit=f"{max_tokens_limit}{DEFAULT_DENOM}",
         allow_list=[val_ops[0]],
         deny_validators=val_ops[1],
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    authorization = cli.query_grants(granter, grantee)[0]["authorization"]
-    assert authorization["value"]["max_tokens"]["amount"] == str(max_tokens_limit)
+
+    def find_grant(auth_type):
+        grants = cli.query_grants(granter, grantee)
+        return next(
+            (g for g in grants if g["authorization"]["type"] == auth_type), None
+        )
+
+    stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
+    assert stake_grant and stake_grant["authorization"]["value"]["max_tokens"][
+        "amount"
+    ] == str(max_tokens_limit)
+
+    spend_limit = 200
+    rsp = cli.grant_authorization(
+        grantee,
+        "send",
+        from_=granter,
+        spend_limit=f"{spend_limit}{DEFAULT_DENOM}",
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
+    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
+        "amount"
+    ] == str(spend_limit)
+
+    msg_type = "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward"
+    rsp = cli.grant_authorization(
+        grantee,
+        "generic",
+        from_=granter,
+        msg_type=msg_type,
+    )
+    assert rsp["code"] == 0
+
+    generic_grant = find_grant("/cosmos.authz.v1beta1.GenericAuthorization")
+    assert generic_grant and generic_grant["authorization"]["value"]["msg"] == msg_type
