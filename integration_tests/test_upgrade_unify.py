@@ -222,6 +222,23 @@ async def exec(c, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
+    # grant_authorization
+    max_tokens_limit = 10
+    validators = cli.validators()
+    val_ops = [v["operator_address"] for v in validators[:2]]
+    rsp = cli.grant_authorization(
+        grantee,
+        "delegate",
+        from_=granter,
+        spend_limit="%s%s" % (max_tokens_limit, LEGACY_DENOM),
+        allow_list=[val_ops[0]],
+        deny_validators=val_ops[1],
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    authorization = cli.query_grants(granter, grantee)[0]["authorization"]
+    assert authorization["value"]["max_tokens"]["amount"] == str(max_tokens_limit)
+
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
     await weth.fns.transfer(receiver, transfer_amt2).transact(
@@ -267,6 +284,12 @@ async def exec(c, tmp_path):
             }
         ]
     }
+
+    # grant_authorization after migration
+    authorization = cli.query_grants(granter, grantee)[0]["authorization"]
+    assert authorization["value"]["max_tokens"]["amount"] == str(
+        max_tokens_limit * SCALE_FACTOR
+    )
 
     c.supervisorctl("stop", "all")
     distribution = cli.export(modules_to_export="distribution")["app_state"][
