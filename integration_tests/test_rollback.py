@@ -1,41 +1,22 @@
-import configparser
 import subprocess
 from pathlib import Path
 
 import pytest
 from pystarport import ports
-from pystarport.cluster import SUPERVISOR_CONFIG_FILE
 from pystarport.utils import (
     wait_for_block,
     wait_for_port,
 )
 
 from .network import setup_custom_mantra
-from .utils import CMD, supervisorctl
+from .utils import CHAIN_ID, CMD, supervisorctl, update_node_cmd
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 
 
-def update_node_cmd(path, cmd, i):
-    ini_path = path / SUPERVISOR_CONFIG_FILE
-    ini = configparser.RawConfigParser()
-    ini.read(ini_path)
-    for section in ini.sections():
-        if section == f"program:mantra-canary-net-1-node{i}":
-            ini[section].update(
-                {
-                    "command": f"{cmd} start --home %(here)s/node{i}",
-                    "autorestart": "false",  # don't restart when stopped
-                }
-            )
-    with ini_path.open("w") as fp:
-        ini.write(fp)
-
-
 def post_init(broken_binary):
     def inner(path, base_port, config, genesis):
-        chain_id = "mantra-canary-net-1"
-        update_node_cmd(path / chain_id, broken_binary, 1)
+        update_node_cmd(path / CHAIN_ID, broken_binary, 1)
 
     return inner
 

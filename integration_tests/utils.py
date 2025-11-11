@@ -17,6 +17,7 @@ from pathlib import Path
 
 import bech32
 import eth_utils
+import jsonmerge
 import requests
 import rlp
 from dateutil.parser import isoparse
@@ -982,18 +983,21 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance_bf = receiver_balance
 
 
-def edit_app_cfg(cli, i):
+def edit_app_cfg(cli, i, app_config={}):
     # Modify the json-rpc addresses to avoid conflict
     cluster.edit_app_cfg(
         cli.home(i) / "config/app.toml",
         cli.base_port(i),
-        {
-            "json-rpc": {
-                "enable": True,
-                "address": "127.0.0.1:{EVMRPC_PORT}",
-                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+        jsonmerge.merge(
+            {
+                "json-rpc": {
+                    "enable": True,
+                    "address": "127.0.0.1:{EVMRPC_PORT}",
+                    "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
+                },
             },
-        },
+            app_config,
+        ),
     )
 
 
@@ -1031,3 +1035,19 @@ async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
         if cur_height >= target:
             break
         await asyncio.sleep(sleep)
+
+
+def update_node_cmd(path, cmd, i):
+    ini_path = path / cluster.SUPERVISOR_CONFIG_FILE
+    ini = configparser.RawConfigParser()
+    ini.read(ini_path)
+    for section in ini.sections():
+        if section == f"program:{CHAIN_ID}-node{i}":
+            ini[section].update(
+                {
+                    "command": f"{cmd} start --home %(here)s/node{i}",
+                    "autorestart": "false",  # don't restart when stopped
+                }
+            )
+    with ini_path.open("w") as fp:
+        ini.write(fp)

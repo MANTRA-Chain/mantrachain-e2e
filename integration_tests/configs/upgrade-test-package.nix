@@ -9,11 +9,11 @@ let
     "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
   } // (
     pkgs.lib.optionalAttrs includeMantrachaind {
-      "v7.0.0-rc0" = pkgs.callPackage ../../nix/mantrachain { };
+      "v7.0.0-rc1" = pkgs.callPackage ../../nix/mantrachain { };
     }
   ) // (
     pkgs.lib.optionalAttrs (!includeMantrachaind) {
-      "v7.0.0-rc0" = pkgs.writeShellScriptBin "mantrachaind" ''
+      "v7.0.0-rc1" = pkgs.writeShellScriptBin "mantrachaind" ''
         exec mantrachaind "$@"
       '';
     }
