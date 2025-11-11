@@ -72,7 +72,6 @@ async def test_transfers_not_allowed(custom_mantra):
         "sanction",
         "precisebank",
         "wasm",
-        "v7.0.0-rc0",
     ]
     modules.extend(module for module in modules2 if cli.has_module(module))
     users = cli.list_accounts()

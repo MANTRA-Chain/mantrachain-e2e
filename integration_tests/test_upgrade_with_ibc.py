@@ -16,6 +16,7 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_AMT,
+    SCALE_FACTOR,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
@@ -79,6 +80,9 @@ def exec(c, tmp_path):
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
     )
+
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c.ibc1, "v7.0.0-rc1", target_height, min_deposit=1 * SCALE_FACTOR)
 
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):

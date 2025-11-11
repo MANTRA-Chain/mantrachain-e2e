@@ -26,11 +26,12 @@ LEGACY_DENOM = "uom"
 LEGACY_EXTENDED_DENOM = "aom"
 
 
-def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM):
+def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, min_deposit=1):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
+    gas_prices = f"{80 * DEFAULT_GAS_AMT}{denom}"
 
     rsp = cli.software_upgrade(
         "community",
@@ -40,13 +41,12 @@ def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": f"1{denom}",
+            "deposit": f"{min_deposit}{denom}",
         },
         gas=300000,
-        gas_prices=f"0.8{denom}",
+        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{denom}"
     approve_proposal(c, rsp["events"], gas_prices=gas_prices)
 
     # update cli chain binary

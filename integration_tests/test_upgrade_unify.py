@@ -344,6 +344,16 @@ async def exec(c, tmp_path):
     ]
     assert "uom" not in json.dumps(distribution)
 
+    nodes = [f"mantra-canary-net-1-node{i}" for i in range(3)]
+    c.supervisorctl("start", *nodes)
+    wait_for_new_blocks(cli, 1)
+
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc1", target_height, min_deposit=1 * SCALE_FACTOR)
+
+    assert await weth.fns.name().call(async_w3, to=wom) == "Wrapped MANTRA"
+    assert await weth.fns.symbol().call(async_w3, to=wom) == "wMANTRA"
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     await exec(custom_mantra, tmp_path)
