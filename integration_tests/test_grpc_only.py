@@ -1,11 +1,8 @@
 import base64
-import json
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
-import requests
 from pystarport import ports
 from pystarport.utils import wait_for_block, wait_for_port
 from web3._utils.contracts import encode_transaction_data
@@ -17,6 +14,7 @@ from .utils import (
     EVM_CHAIN_ID,
     Contract,
     decode_bech32,
+    grpc_eth_call,
     supervisorctl,
 )
 
@@ -33,34 +31,6 @@ def custom_mantra(request, tmp_path_factory):
         Path(__file__).parent / "configs/fullnode.jsonnet",
         chain=chain,
     )
-
-
-def grpc_eth_call(
-    port: int,
-    args: dict,
-    expect_cb,
-    chain_id=None,
-    proposer_address=None,
-):
-    max_retry = 3
-    sleep = 1
-    success = False
-    for i in range(max_retry):
-        params = {
-            "args": base64.b64encode(json.dumps(args).encode()).decode(),
-        }
-        if chain_id is not None:
-            params["chain_id"] = str(chain_id)
-        if proposer_address is not None:
-            params["proposer_address"] = str(proposer_address)
-        rsp = requests.get(
-            f"http://localhost:{port}/cosmos/evm/vm/v1/eth_call", params
-        ).json()
-        success = expect_cb(rsp)
-        if success:
-            break
-        time.sleep(sleep)
-    assert success, str(rsp)
 
 
 def test_grpc_mode(custom_mantra):

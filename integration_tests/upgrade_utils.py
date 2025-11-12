@@ -28,6 +28,7 @@ def do_upgrade(c, plan_name, target):
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
+    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
 
     rsp = cli.software_upgrade(
         "community",
@@ -40,10 +41,9 @@ def do_upgrade(c, plan_name, target):
             "deposit": f"1{DEFAULT_DENOM}",
         },
         gas=300000,
-        gas_prices=f"0.8{DEFAULT_DENOM}",
+        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
     approve_proposal(c, rsp["events"], gas_prices=gas_prices)
 
     # update cli chain binary

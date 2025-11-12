@@ -710,8 +710,13 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
     )
     proposal_id = ev["proposal_id"]
     for i in range(len(n.config["validators"])):
+        node = n.config["validators"][i]
+        # skip fullnodes
+        if "staked" not in node:
+            continue
+        account_name = node.get("name", "validator")
         rsp = n.cosmos_cli(i).gov_vote(
-            "validator",
+            account_name,
             proposal_id,
             "yes",
             event_query_tx=event_query_tx,
@@ -1052,3 +1057,31 @@ def update_node_cmd(path, cmd, i):
             )
     with ini_path.open("w") as fp:
         ini.write(fp)
+
+
+def grpc_eth_call(
+    port: int,
+    args: dict,
+    expect_cb,
+    chain_id=None,
+    proposer_address=None,
+):
+    max_retry = 3
+    sleep = 1
+    success = False
+    for i in range(max_retry):
+        params = {
+            "args": base64.b64encode(json.dumps(args).encode()).decode(),
+        }
+        if chain_id is not None:
+            params["chain_id"] = str(chain_id)
+        if proposer_address is not None:
+            params["proposer_address"] = str(proposer_address)
+        rsp = requests.get(
+            f"http://localhost:{port}/cosmos/evm/vm/v1/eth_call", params
+        ).json()
+        success = expect_cb(rsp)
+        if success:
+            break
+        time.sleep(sleep)
+    assert success, str(rsp)
