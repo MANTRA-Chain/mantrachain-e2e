@@ -1,4 +1,4 @@
-local config = import 'default.jsonnet';
+local config = import 'fullnode.jsonnet';
 
 config {
   'mantra-canary-net-1'+: {

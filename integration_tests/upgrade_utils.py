@@ -92,9 +92,10 @@ def post_init(path, base_port, config, genesis):
     )
 
 
-def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis, chain):
+def setup_mantra_upgrade(
+    tmp_path_factory, nix_name, cfg_name, genesis, chain, port=26200
+):
     path = tmp_path_factory.mktemp("upgrade")
-    port = 26200
     configdir = Path(__file__).parent
     cmd = [
         "nix-build",
