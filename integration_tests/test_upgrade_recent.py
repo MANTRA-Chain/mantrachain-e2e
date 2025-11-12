@@ -14,7 +14,7 @@ from .upgrade_utils import (
     do_upgrade,
     setup_mantra_upgrade,
 )
-from .utils import CHAIN_ID, Greeter
+from .utils import ADDRS, CHAIN_ID, Greeter
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
@@ -93,6 +93,11 @@ async def exec(c):
             assert (
                 greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
             )
+            tx = greeter.contract.functions.setGreeting("world").build_transaction(
+                {"from": ADDRS["community"]}
+            )
+            gas = w3.eth.estimate_gas(tx, block_identifier=old_height)
+            assert gas > 0
         finally:
             proc.terminate()
             proc.wait()

@@ -85,10 +85,10 @@ buildGo123Module' rec {
   src = fetchFromGitHub {
     owner = "mmsqe";
     repo = pname;
-    rev = "fb765b112a3491d252c34c8f376b61e981a119e0";
-    hash = "sha256-lwZD//ChRA8Pl8mckYdWYvITsHjCq7i8l8CDwSW4nGo=";
+    rev = "586c85ba4d850657c36b3ed161e736228cdfd981";
+    hash = "sha256-tUggfz+LdxvAw5GNeuEElag4XoX+dj9xQ5cMprCkjdw=";
   };
-  vendorHash = "sha256-kpkS67+LRW8UcJlx7Iwa5MCwkkq8eHVFO8vfMf3p5kE=";
+  vendorHash = "sha256-J9buMhNj0lJhwupgkIYjO0WMiM/v03FpQ2RKH7AoPJ4=";
   proxyVendor = true;
   subPackages = [ "cmd/mantrachaind" ];
   CGO_ENABLED = "1";
