@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import web3
 from eth_abi import encode
 from eth_contract.contract import Contract, ContractFunction
 from eth_contract.create2 import create2_address
@@ -33,11 +34,10 @@ from eth_contract.multicall3 import (
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_hash.auto import keccak
-from eth_utils import function_signature_to_4byte_selector, to_bytes
+from eth_utils import to_bytes
 from web3 import AsyncWeb3
-from web3._utils.contracts import encode_abi, encode_transaction_data
+from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
-from web3.utils.abi import get_abi_element
 
 from .utils import (
     ACCOUNTS,
@@ -50,7 +50,6 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
-    contract_address,
     create_contract_transaction,
     w3_wait_for_new_blocks_async,
 )
@@ -352,7 +351,6 @@ async def test_deploy_multi(mantra):
 async def test_upgrade(mantra):
     w3 = mantra.async_w3
     owner = ADDRS["community"]
-    account = ACCOUNTS["community"]
     token = await build_and_deploy_contract_async(w3, "MyToken")
     proxy = await build_and_deploy_contract_async(
         w3,
@@ -365,38 +363,44 @@ async def test_upgrade(mantra):
         ),
         dir="openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/proxy/ERC1967",  # noqa: E501
     )
-
-    token2_tx = await create_contract_transaction(w3, "MyToken2", key=account.key)
-    nonce = await w3.eth.get_transaction_count(owner)
-    token2_tx["nonce"] = nonce
-    token2_address = contract_address(owner, nonce)
-    upgrade_abi = get_abi_element(
-        token.abi, "upgradeToAndCall", token2_address, b"", abi_codec=w3.codec
+    token2 = await build_and_deploy_contract_async(w3, "MyToken2")
+    proxy = w3.eth.contract(address=proxy.address, abi=token.abi)
+    hash = await proxy.functions.upgradeToAndCall(token2.address, b"").transact(
+        {"from": owner}
     )
-    upgrade_data = encode_abi(w3, upgrade_abi, [token2_address, b""], data="0x")
-    selector = function_signature_to_4byte_selector("upgradeToAndCall(address,bytes)")
-    upgrade_data = selector.hex() + upgrade_data[2:]
-
-    upgrade_tx = {
-        "from": owner,
-        "to": proxy.address,
-        "data": upgrade_data,
-        "nonce": nonce + 1,
-        "gas": 200000,
-    }
-    await w3_wait_for_new_blocks_async(w3, 1)
-    receipts = await asyncio.gather(
-        send_transaction(w3, owner, **token2_tx),
-        send_transaction(w3, owner, **upgrade_tx),
-    )
-
-    assert receipts[0].status == 1
-    assert receipts[1].status == 1
-    assert receipts[1]["blockNumber"] == receipts[0]["blockNumber"]
-    token2_abi = build_contract("MyToken2")["abi"]
-    proxy = w3.eth.contract(address=proxy.address, abi=token2_abi)
+    assert (await w3.eth.wait_for_transaction_receipt(hash)).status == 1
+    proxy = w3.eth.contract(address=proxy.address, abi=token2.abi)
     assert (await proxy.functions.newFeature().call()) == "Upgraded!"
-    assert receipts[0]["contractAddress"] == token2_address
+
+
+async def test_replace_underpriced(mantra):
+    w3 = mantra.async_w3
+    account = ACCOUNTS["community"]
+    owner = account.address
+    nonce = await w3.eth.get_transaction_count(owner)
+    gas_price = await w3.eth.gas_price
+    tx1 = {
+        "from": owner,
+        "to": ADDRS["signer1"],
+        "value": 1000,
+        "nonce": nonce,
+        "gasPrice": gas_price,
+    }
+
+    tx2 = {
+        "from": owner,
+        "to": ADDRS["signer2"],
+        "value": 2000,
+        "nonce": nonce,
+        "gasPrice": gas_price,
+    }
+    with pytest.raises(
+        web3.exceptions.Web3RPCError, match="replacement transaction underpriced"
+    ):
+        hash1 = await w3.eth.send_transaction(tx1)
+        await asyncio.sleep(0.5)
+        await w3.eth.send_transaction(tx2)
+        await w3.eth.wait_for_transaction_receipt(hash1)
 
 
 async def test_storage_layout(mantra):
