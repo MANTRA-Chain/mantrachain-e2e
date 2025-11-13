@@ -1,22 +1,13 @@
-local config = import 'default.jsonnet';
+local config = import 'fullnode.jsonnet';
 
 config {
   'mantra-canary-net-1'+: {
     genesis+: {
       app_state+: {
-        erc20+: {
-          token_pairs+: [
-            {
-              contract_owner: 1,
-              erc20_address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-              denom: 'aom',
-              enabled: true,
-            },
-          ],
+        evm+: {
           params+: {
-            native_precompiles: ['0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'],
+            extended_denom_options:: super.params.extended_denom_options,
           },
-          native_precompiles:: super.native_precompiles,
         },
       },
     },

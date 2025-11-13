@@ -85,8 +85,8 @@ buildGo123Module' rec {
   src = fetchFromGitHub {
     owner = "mmsqe";
     repo = pname;
-    rev = "e152cb3898b379c711668fe8e5c7bad283353cf4";
-    hash = "sha256-GHLr1YKXs9xTFMdA1BjR6h8fje0FRJw0y8yDDtgkny0=";
+    rev = "93b47e99d1b018adbddd7c7e208e45a690c85508";
+    hash = "sha256-DSYIzcZY9PEzLf/YGffsEN2JgfQgwgYnf30uQ5S44Mo=";
   };
   vendorHash = "sha256-Rso7wlINNw8R+xuYBdaM5vjb8DK6KfRcZvwDYrgVN88=";
   proxyVendor = true;
