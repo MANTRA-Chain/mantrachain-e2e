@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import web3
 from eth_abi import encode
 from eth_contract.contract import Contract, ContractFunction
 from eth_contract.create2 import create2_address
@@ -370,6 +371,39 @@ async def test_upgrade(mantra):
     assert (await w3.eth.wait_for_transaction_receipt(hash)).status == 1
     proxy = w3.eth.contract(address=proxy.address, abi=token2.abi)
     assert (await proxy.functions.newFeature().call()) == "Upgraded!"
+
+
+async def test_replace_underpriced(mantra):
+    w3 = mantra.async_w3
+    owner = ACCOUNTS["community"].address
+    nonce = await w3.eth.get_transaction_count(owner)
+    gas_price = await w3.eth.gas_price
+    tx1 = {
+        "from": owner,
+        "to": ADDRS["signer1"],
+        "value": 1000,
+        "nonce": nonce,
+        "gasPrice": gas_price,
+    }
+    tx2 = {
+        **tx1,
+        "to": ADDRS["signer2"],
+        "value": 2000,
+    }
+    hash1 = await w3.eth.send_transaction(tx1)
+    await asyncio.sleep(0.5)
+    pending = await w3.geth.txpool.content()
+    owner_checksum = next(
+        addr for addr in pending["pending"] if addr.lower() == owner.lower()
+    )
+    pending_tx = pending["pending"][owner_checksum][str(nonce)]
+    assert pending_tx["to"].lower() == ADDRS["signer1"].lower()
+    assert int(pending_tx["value"], 16) == 1000
+    with pytest.raises(
+        web3.exceptions.Web3RPCError, match="replacement transaction underpriced"
+    ):
+        await w3.eth.send_transaction(tx2)
+    await w3.eth.wait_for_transaction_receipt(hash1)
 
 
 async def test_storage_layout(mantra):
