@@ -16,7 +16,6 @@ let
       '';
     }
   );
-
 in
 pkgs.linkFarm "upgrade-test-package" (
   pkgs.lib.mapAttrsToList (name: path: { inherit name path; }) releases

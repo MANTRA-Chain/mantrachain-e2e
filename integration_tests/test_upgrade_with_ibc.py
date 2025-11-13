@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
-    nix_name = "upgrade-test-package-recent"
+    nix_name = "upgrade-test-package-ibc"
     configdir = Path(__file__).parent
     name = "cosmovisor_with_ibc"
     path = tmp_path_factory.mktemp(name)

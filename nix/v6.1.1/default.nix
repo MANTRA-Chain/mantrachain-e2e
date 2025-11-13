@@ -12,9 +12,9 @@ let
   };
 in
 builder {
-  version = "v7.0.0-rc1";
+  version = "v6.1.1";
   owner = "mmsqe";
-  rev = "7a463448a72119ac4c11c4ac87c11b765d687a23"; 
-  hash = "sha256-BPY66WK9vYowEadCf+dDUvyVu5Y/3ZJKP7q1Cw9js1Q=";
-  vendorHash = "sha256-GXXSfOhEA4xRrljtz41nCIORnbDvdPJxWpZ2nXND/hw=";
+  rev = "9bf9b6337ab45aa8a5ed87035b4b6c80590e799d";
+  hash = "sha256-gqHQgqc2IhuGA2tyjEyjMB8PQyf8jiWGlqaAUFXQcwk=";
+  vendorHash = "sha256-25QLzb53iE/ITdc7TRtAsnB3r+RQS5G5rxJh0BnXMDE=";
 }
