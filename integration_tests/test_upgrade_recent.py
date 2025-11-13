@@ -3,8 +3,9 @@ import subprocess
 
 import pytest
 import tomlkit
+import web3
 from pystarport import ports
-from pystarport.utils import wait_for_block, wait_for_new_blocks, wait_for_port
+from pystarport.utils import wait_for_new_blocks, wait_for_port
 
 from .network import Mantra
 from .upgrade_utils import (
@@ -81,7 +82,7 @@ def exec(c):
             cfg["json-rpc"]["backup-grpc-address-block-range"] = backup_config
             path.write_text(tomlkit.dumps(cfg))
             c.supervisorctl("start", f"{CHAIN_ID}-node0")
-            wait_for_block(cli, cli.block_height() + 1)
+            wait_for_new_blocks(cli, 1)
 
             evmrpc_port = ports.evmrpc_port(c.base_port(0))
             wait_for_port(evmrpc_port)
@@ -97,9 +98,39 @@ def exec(c):
             assert (
                 w3.eth.get_balance(community, block_identifier=old_height) == balance_bf
             )
-        finally:
+
+            # test restart grpc-only node
             proc.terminate()
-            proc.wait()
+            proc.wait(timeout=5)
+
+            with pytest.raises(
+                web3.exceptions.Web3RPCError, match="Error while dialing"
+            ):
+                greeter.contract.caller(block_identifier=old_height).greet()
+
+            balance = w3.eth.get_balance(community)
+            proc = subprocess.Popen(
+                [grpc_cmd, "start", "--grpc-only", "--home", base_dir / "node1"],
+                stdout=logfile,
+                stderr=subprocess.STDOUT,
+            )
+            for port in (grpc_port, api_port):
+                wait_for_port(port)
+
+            wait_for_new_blocks(cli, 1)
+            assert (
+                greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
+            )
+            assert (
+                w3.eth.get_balance(community, block_identifier=old_height) == balance_bf
+            )
+            assert w3.eth.estimate_gas(tx, block_identifier=old_height) > 0
+            wait_for_new_blocks(cli, 1)
+            assert w3.eth.get_balance(community) == balance
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
 
 
 def test_cosmovisor_upgrade(custom_mantra: Mantra):
