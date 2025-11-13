@@ -44,6 +44,9 @@ def exec(c):
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v6.0.0", target_height)
 
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc0", target_height)
+
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
     grpc_port = ports.grpc_port(c.base_port(grpc_node))
@@ -66,9 +69,6 @@ def exec(c):
             for port in (grpc_port, api_port):
                 wait_for_port(port)
 
-            target_height = cli.block_height() + 15
-            cli = do_upgrade(c, "v7.0.0-rc0", target_height)
-
             cli = c.cosmos_cli()
             c.supervisorctl("stop", f"{CHAIN_ID}-node0")
             path = cli.data_dir / "config/app.toml"
@@ -89,8 +89,7 @@ def exec(c):
             tx = greeter.contract.functions.setGreeting("world").build_transaction(
                 {"from": ADDRS["community"]}
             )
-            gas = w3.eth.estimate_gas(tx, block_identifier=old_height)
-            assert gas > 0
+            assert w3.eth.estimate_gas(tx, block_identifier=old_height) > 0
         finally:
             proc.terminate()
             proc.wait()
