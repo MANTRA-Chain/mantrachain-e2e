@@ -385,18 +385,24 @@ async def test_replace_underpriced(mantra):
         "nonce": nonce,
         "gasPrice": gas_price,
     }
-    tx2 = {
-        **tx1,
-        "to": ADDRS["signer2"],
-        "value": 2000,
-    }
+    tx2 = {**tx1, "to": ADDRS["signer2"], "value": 2000}
     hash1 = await w3.eth.send_transaction(tx1)
-    await asyncio.sleep(0.5)
-    pending = await w3.geth.txpool.content()
-    owner_checksum = next(
-        addr for addr in pending["pending"] if addr.lower() == owner.lower()
-    )
-    pending_tx = pending["pending"][owner_checksum][str(nonce)]
+    for _ in range(5):
+        pending = await w3.geth.txpool.content()
+        owner_pending = next(
+            (
+                addr
+                for addr in pending.get("pending", {})
+                if addr.lower() == owner.lower()
+            ),
+            None,
+        )
+        if owner_pending:
+            break
+        await asyncio.sleep(0.1)
+    else:
+        pytest.fail("no pending transaction in txpool")
+    pending_tx = pending["pending"][owner_pending][str(nonce)]
     assert pending_tx["to"].lower() == ADDRS["signer1"].lower()
     assert int(pending_tx["value"], 16) == 1000
     with pytest.raises(
