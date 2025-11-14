@@ -20,6 +20,7 @@ import eth_utils
 import jsonmerge
 import requests
 import rlp
+import web3
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
@@ -510,6 +511,29 @@ async def retry_on_nonce_mismatch(fn, *args, max_retries=3, **kwargs):
                 continue
             raise e
     return None
+
+
+def call_with_retry(fn, expect_error=False, max_retries=3, retry_delay=0.1):
+    for attempt in range(1, max_retries + 1):
+        try:
+            fn()
+            if expect_error:
+                print(f"no error but query succeeded on attempt {attempt}")
+                return False
+            print(f"query successful on attempt {attempt}")
+            return True
+        except web3.exceptions.Web3RPCError as e:
+            error_str = str(e)
+            if "Error while dialing" in error_str or "connection refused" in error_str:
+                if expect_error:
+                    return True
+                if attempt == max_retries:
+                    print(f"failed after {max_retries} attempts")
+                    return False
+                time.sleep(retry_delay)
+            else:
+                raise
+    return False
 
 
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
@@ -1043,18 +1067,23 @@ async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
         await asyncio.sleep(sleep)
 
 
-def update_node_cmd(path, cmd, i):
+def update_node_cmd(path, cmd, i, **kwargs):
     ini_path = path / cluster.SUPERVISOR_CONFIG_FILE
     ini = configparser.RawConfigParser()
     ini.read(ini_path)
     for section in ini.sections():
         if section == f"program:{CHAIN_ID}-node{i}":
-            ini[section].update(
-                {
-                    "command": f"{cmd} start --home %(here)s/node{i}",
-                    "autorestart": "false",  # don't restart when stopped
-                }
-            )
+            updates = {}
+            base_cmd = f"{cmd} start --home %(here)s/node{i}"
+            if kwargs:
+                extra_flags = " ".join(
+                    f"--{k.replace('_', '-')}" for k in kwargs.keys()
+                )
+                updates["command"] = f"{base_cmd} {extra_flags}"
+            else:
+                updates["command"] = base_cmd
+            updates["autorestart"] = "false"
+            ini[section].update(updates)
     with ini_path.open("w") as fp:
         ini.write(fp)
 
