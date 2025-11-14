@@ -956,6 +956,18 @@ def address_to_bytes32(addr) -> HexBytes:
     return HexBytes(addr).rjust(32, b"\x00")
 
 
+def assert_approval_log(receipt, owner, spender, expected):
+    approval_topic = HexBytes(ERC20.events.Approval.topic.hex())
+    approval_logs = [
+        log for log in receipt["logs"] if log["topics"][0] == approval_topic
+    ]
+    assert len(approval_logs) == 1
+    approval_log = approval_logs[0]
+    assert approval_log["topics"][1] == address_to_bytes32(owner), "owner mismatch"
+    assert approval_log["topics"][2] == address_to_bytes32(spender), "spender mismatch"
+    return int.from_bytes(approval_log["data"], "big") == expected
+
+
 async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     # signer1 transfer 5tf_erc20 to receiver
     transfer_amt = 5
@@ -983,33 +995,43 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     approve_amt = 2
     assert signer1_balance_bf >= approve_amt
 
-    await retry_on_nonce_mismatch(
+    res = await retry_on_nonce_mismatch(
         ERC20.fns.approve(signer2, approve_amt).transact,
         w3,
         signer1,
         to=tf_erc20_addr,
-        gasPrice=(await w3.eth.gas_price),
+        gasPrice=await w3.eth.gas_price,
     )
+    assert_approval_log(res, signer1, signer2, approve_amt)
     await asyncio.sleep(0.5)
+
     allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
     assert allowance == approve_amt
 
-    # transferFrom signer1 to receiver via signer2 with 2tf_erc20
-    await retry_on_nonce_mismatch(
-        ERC20.fns.transferFrom(signer1, receiver, approve_amt).transact,
+    approve_amt1 = 1
+    res = await retry_on_nonce_mismatch(
+        ERC20.fns.transferFrom(signer1, receiver, approve_amt1).transact,
         w3,
         signer2,
         to=tf_erc20_addr,
-        gasPrice=(await w3.eth.gas_price),
+        gasPrice=await w3.eth.gas_price,
     )
+    transfer_logs = [
+        log
+        for log in res["logs"]
+        if log["topics"][0] == HexBytes(ERC20.events.Transfer.topic.hex())
+    ]
+    assert len(transfer_logs) == 1
+    assert_approval_log(res, signer1, signer2, approve_amt - approve_amt1)
+
     signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    assert signer1_balance == signer1_balance_bf - approve_amt
+    assert signer1_balance == signer1_balance_bf - approve_amt1
     signer1_balance_bf = signer1_balance
 
     signer2_balance = await ERC20.fns.balanceOf(signer2).call(w3, to=tf_erc20_addr)
     assert signer2_balance == signer2_balance_bf
     receiver_balance = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-    assert receiver_balance == receiver_balance_bf + approve_amt
+    assert receiver_balance == receiver_balance_bf + approve_amt1
     receiver_balance_bf = receiver_balance
 
 
