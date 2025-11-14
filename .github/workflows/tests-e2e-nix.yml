@@ -42,17 +42,11 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-24.11
           extra_nix_config: |
-            access-tokens = github.com=${{ secrets.NIX_GH_TOKEN }}
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
             sandbox = false
         if: steps.changed-files.outputs.only_changed == 'false'
-      - uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f # v12
+      - uses: DeterminateSystems/magic-nix-cache-action@main
         if: steps.changed-files.outputs.only_changed == 'false'
-        with:
-          name: mantrachain-e2e
-          extraPullNames: dapp
-          # github don't pass secrets for pull request from fork repos,
-          # in that case the push is disabled naturally.
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Run integration tests
         if: steps.changed-files.outputs.only_changed == 'false'
         run: make test-e2e-nix
@@ -99,14 +93,8 @@ jobs:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
         if: steps.changed-files.outputs.only_changed == 'false'
-      - uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f # v12
+      - uses: DeterminateSystems/magic-nix-cache-action@main
         if: steps.changed-files.outputs.only_changed == 'false'
-        with:
-          name: mantrachain-e2e
-          extraPullNames: dapp
-          # github don't pass secrets for pull request from fork repos,
-          # in that case the push is disabled naturally.
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: 'instantiate integration test env'
         if: steps.changed-files.outputs.only_changed == 'false'
         run: nix-store -r $(nix-instantiate integration_tests/shell.nix)
