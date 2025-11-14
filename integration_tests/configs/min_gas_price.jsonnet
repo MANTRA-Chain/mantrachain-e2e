@@ -1,6 +1,6 @@
 local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
-local gas_price = 100;
+local gas_price = 400000000000000;
 
 config {
   'mantra-canary-net-1'+: {

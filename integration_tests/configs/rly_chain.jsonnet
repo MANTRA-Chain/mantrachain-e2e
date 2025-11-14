@@ -8,7 +8,7 @@
     },
   },
   gas_price: {
-    price: 0.1,
+    price: 40000000000,
   },
   event_source: {
     batch_delay: '250ms',

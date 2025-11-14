@@ -68,7 +68,7 @@ def test_dynamic_fee_tx(custom_cluster):
     amount = 10000
     before = w3.eth.get_balance(ADDRS["community"])
     tip_price = 1000000
-    max_price = 100000000000000 + tip_price
+    max_price = 400000000000000 + tip_price
     tx = {
         "to": "0x0000000000000000000000000000000000000000",
         "value": amount,

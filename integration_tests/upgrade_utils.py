@@ -22,13 +22,16 @@ from .utils import (
     send_transaction,
 )
 
+LEGACY_DENOM = "uom"
+LEGACY_EXTENDED_DENOM = "aom"
 
-def do_upgrade(c, plan_name, target):
+
+def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, min_deposit=1):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+    gas_prices = f"{80 * DEFAULT_GAS_AMT}{denom}"
 
     rsp = cli.software_upgrade(
         "community",
@@ -38,7 +41,7 @@ def do_upgrade(c, plan_name, target):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": f"1{DEFAULT_DENOM}",
+            "deposit": f"{min_deposit}{denom}",
         },
         gas=300000,
         gas_prices=gas_prices,
@@ -92,9 +95,10 @@ def post_init(path, base_port, config, genesis):
     )
 
 
-def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis, chain):
+def setup_mantra_upgrade(
+    tmp_path_factory, nix_name, cfg_name, genesis, chain, port=26200
+):
     path = tmp_path_factory.mktemp("upgrade")
-    port = 26200
     configdir = Path(__file__).parent
     cmd = [
         "nix-build",

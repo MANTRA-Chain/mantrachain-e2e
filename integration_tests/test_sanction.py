@@ -22,7 +22,7 @@ def test_blacklist(mantra, tmp_path):
         pytest.skip("sanction module not enabled")
     community = cli.address("community")
     user = cli.create_account("user")["address"]
-    amt = 3_000_000_000_000_000 // WEI_PER_DENOM
+    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
     assert_transfer(cli, community, user, amt=amt)
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",

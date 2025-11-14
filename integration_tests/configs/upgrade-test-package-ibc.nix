@@ -3,14 +3,11 @@ let
   common = import ./mantrachain-common.nix { inherit pkgs; };
   platform = common.platform;
   releases = {
-    genesis = common.mkMantrachain { version = "v4.0.1"; };
-    "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
-    "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
-    "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
+    genesis = pkgs.callPackage ../../nix/v6.1.1/default.nix {};
     "v7.0.0-rc0" = pkgs.callPackage ../../nix/v7.0.0-rc0/default.nix {};
   } // (
     pkgs.lib.optionalAttrs includeMantrachaind {
-      "v7.0.0-rc1" = pkgs.callPackage ../../nix/mantrachain { };
+      "v7.0.0-rc1" = pkgs.callPackage ../../nix/mantrachain {};
     }
   ) // (
     pkgs.lib.optionalAttrs (!includeMantrachaind) {
@@ -19,7 +16,6 @@ let
       '';
     }
   );
-
 in
 pkgs.linkFarm "upgrade-test-package" (
   pkgs.lib.mapAttrsToList (name: path: { inherit name path; }) releases

@@ -63,19 +63,19 @@ ACCOUNTS = {
 KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
-DEFAULT_DENOM = os.getenv("EVM_DENOM", "uom")
-DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "aom")
+DEFAULT_DENOM = os.getenv("EVM_DENOM", "amantra")
+DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "amantra")
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
 EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests
-DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 0.01))
+DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 40000000000))
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
 DEFAULT_GAS = 200000
-DEFAULT_FEE = int(DEFAULT_GAS_AMT * DEFAULT_GAS)
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
-WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 10**12))  # 10^12 wei == 1 uom
+WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
 ADDRESS_PREFIX = os.getenv("ADDRESS_PREFIX", "mantra")
 CMD = os.getenv("CMD", "mantrachaind")
+SCALE_FACTOR = 4_000_000_000_000
 
 
 WETH_SALT = 999
@@ -421,8 +421,7 @@ def get_balance(cli, name):
         if "key not found" not in str(e):
             raise
         addr = name
-    uom = cli.balance(addr)
-    return uom
+    return cli.balance(addr)
 
 
 def assert_balance(cli, w3, name, evm=False):
@@ -432,13 +431,13 @@ def assert_balance(cli, w3, name, evm=False):
         if "key not found" not in str(e):
             raise
         addr = name
-    uom = get_balance(cli, name)
+    balance = get_balance(cli, name)
     wei = w3.eth.get_balance(bech32_to_eth(addr))
-    assert uom == wei // WEI_PER_DENOM
+    assert balance == wei // WEI_PER_DENOM
     print(
         f"wei: {wei}, ether: {wei // WEI_PER_ETH}.",
     )
-    return wei if evm else uom
+    return wei if evm else balance
 
 
 def find_fee(rsp):
@@ -446,14 +445,14 @@ def find_fee(rsp):
     return int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
 
 
-def assert_transfer(cli, addr_a, addr_b, amt=1):
-    balance_a = cli.balance(addr_a)
-    balance_b = cli.balance(addr_b)
-    rsp = cli.transfer(addr_a, addr_b, f"{amt}{DEFAULT_DENOM}")
+def assert_transfer(cli, addr_a, addr_b, amt=1, denom=DEFAULT_DENOM, **kwargs):
+    balance_a = cli.balance(addr_a, denom=denom)
+    balance_b = cli.balance(addr_b, denom=denom)
+    rsp = cli.transfer(addr_a, addr_b, f"{amt}{denom}", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     fee = find_fee(rsp)
-    assert cli.balance(addr_a) == balance_a - amt - fee
-    assert cli.balance(addr_b) == balance_b + amt
+    assert cli.balance(addr_a, denom=denom) == balance_a - amt - fee
+    assert cli.balance(addr_b, denom=denom) == balance_b + amt
 
 
 def denom_to_erc20_address(denom):
@@ -598,7 +597,7 @@ def assert_transfer_tokenfactory_denom(cli, denom, receiver, amt, **kwargs):
     # check transfer tokenfactory denom
     sender = kwargs.get("_from")
     balance = cli.balance(sender, denom)
-    rsp = cli.transfer(sender, receiver, f"{amt}{denom}")
+    rsp = cli.transfer(sender, receiver, f"{amt}{denom}", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     current = cli.balance(sender, denom)
     assert current == balance - amt
@@ -858,7 +857,7 @@ def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     signer2 = cli.address(signer2_name)
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    amt = 4_000_000_000_000_000 // WEI_PER_DENOM
+    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
     rsp = cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
     assert rsp["code"] == 0, rsp["raw_log"]
     acc = cli.account(multi_addr)

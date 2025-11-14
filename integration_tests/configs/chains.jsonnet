@@ -33,7 +33,7 @@
   },
   mantrachaind: {
     'account-prefix': 'mantra',
-    evm_denom: 'uom',
+    evm_denom: 'amantra',
     cmd: 'mantrachaind',
     evm_chain_id: 7888,
     bank: {
@@ -41,30 +41,31 @@
         description: 'The native staking token of the Mantrachain.',
         denom_units: [
           {
-            denom: 'uom',
+            denom: 'amantra',
+            exponent: 0,
           },
           {
-            denom: 'om',
-            exponent: 6,
+            denom: 'mantra',
+            exponent: 18,
           },
         ],
-        base: 'uom',
-        display: 'om',
-        name: 'om',
-        symbol: 'OM',
+        base: 'amantra',
+        display: 'mantra',
+        name: 'mantra',
+        symbol: 'MANTRA',
       }],
     },
     evm: {
       params: {
         extended_denom_options: {
-          extended_denom: 'aom',
+          extended_denom: 'amantra',
         },
       },
     },
     feemarket: {
       params: {
-        base_fee: '0.010000000000000000',
-        min_gas_price: '0.010000000000000000',
+        base_fee: '40000000000',
+        min_gas_price: '40000000000',
       },
     },
   },

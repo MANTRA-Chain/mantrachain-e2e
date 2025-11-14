@@ -222,7 +222,15 @@ def setup_custom_mantra(
     try:
         if wait_port:
             wait_for_port(ports.rpc_port(base_port))
-        c = Mantra(path / CHAIN_ID, chain_binary=chain_binary or chain)
+        chain_binary = (
+            chain
+            if chain_binary is None
+            else next(
+                (b.strip() for b in chain_binary.split(",") if chain in b),
+                chain,
+            )
+        )
+        c = Mantra(path / CHAIN_ID, chain_binary=chain_binary)
         wait_for_block(c.cosmos_cli(), 1)
         yield c
     finally:

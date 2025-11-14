@@ -121,7 +121,7 @@ async def test_ibc_transfer(ibc):
     addr_signer2 = eth_to_bech32(signer2)
     addr_signer1 = eth_to_bech32(signer1)
 
-    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
+    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100 baseunit
     transfer_amt = 100
     dst_denom, _ = assert_hermes_transfer(
         ibc.hermes,
@@ -134,7 +134,7 @@ async def test_ibc_transfer(ibc):
     assert_dynamic_fee(cli)
     assert_dup_events(cli)
 
-    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community eth addr with 5uom
+    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community (eth addr) 5 baseunit
     amount = 5
     assert_ibc_transfer(
         ibc.hermes,
