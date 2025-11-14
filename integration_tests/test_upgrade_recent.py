@@ -3,7 +3,6 @@ import subprocess
 
 import pytest
 import tomlkit
-import web3
 from pystarport import ports
 from pystarport.utils import wait_for_new_blocks, wait_for_port
 
@@ -14,7 +13,14 @@ from .upgrade_utils import (
     do_upgrade,
     setup_mantra_upgrade,
 )
-from .utils import ADDRS, CHAIN_ID, SCALE_FACTOR, Greeter
+from .utils import (
+    ADDRS,
+    CHAIN_ID,
+    SCALE_FACTOR,
+    Greeter,
+    call_with_retry,
+    update_node_cmd,
+)
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 
@@ -45,6 +51,7 @@ def exec(c):
     wait_for_new_blocks(cli, 1)
     grpc_cmd = cli.raw.cmd
     c.supervisorctl("stop", f"{CHAIN_ID}-node1")
+    update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
 
     target_height0 = cli.block_height() + 15
     cli = do_upgrade(c, "v7.0.0-rc0", target_height0, denom=LEGACY_DENOM)
@@ -56,20 +63,28 @@ def exec(c):
     api_port = ports.api_port(c.base_port(grpc_node))
     grpc_port = ports.grpc_port(c.base_port(grpc_node))
 
-    # run grpc-only mode directly with existing chain state
-    base_dir = c.base_dir
-    with (base_dir / "node1.log").open("a") as logfile:
-        proc = subprocess.Popen(
-            [
-                grpc_cmd,
-                "start",
-                "--grpc-only",
-                "--home",
-                base_dir / "node1",
-            ],
+    def start_grpc_node(logfile):
+        return subprocess.Popen(
+            [grpc_cmd, "start", "--grpc-only", "--home", c.base_dir / "node1"],
             stdout=logfile,
             stderr=subprocess.STDOUT,
         )
+
+    def test_historical_queries():
+        tx = greeter.contract.functions.setGreeting("world").build_transaction(
+            {"from": community}
+        )
+        assert greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
+        assert w3.eth.estimate_gas(tx, block_identifier=old_height) > 0
+        assert w3.eth.get_balance(community, block_identifier=old_height) == balance_bf
+
+    def query_greeter():
+        return greeter.contract.caller(block_identifier=old_height).greet()
+
+    # run grpc-only mode directly with existing chain state
+    with (c.base_dir / "node1.log").open("a") as logfile:
+        proc = start_grpc_node(logfile)
+
         try:
             for port in (grpc_port, api_port):
                 wait_for_port(port)
@@ -88,44 +103,23 @@ def exec(c):
             wait_for_port(evmrpc_port)
 
             # test historical contract calls
-            assert (
-                greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
-            )
-            tx = greeter.contract.functions.setGreeting("world").build_transaction(
-                {"from": community}
-            )
-            assert w3.eth.estimate_gas(tx, block_identifier=old_height) > 0
-            assert (
-                w3.eth.get_balance(community, block_identifier=old_height) == balance_bf
-            )
+            test_historical_queries()
 
             # test restart grpc-only node
             proc.terminate()
             proc.wait(timeout=5)
 
-            with pytest.raises(
-                web3.exceptions.Web3RPCError, match="Error while dialing"
-            ):
-                greeter.contract.caller(block_identifier=old_height).greet()
+            assert call_with_retry(query_greeter, expect_error=True)
 
             balance = w3.eth.get_balance(community)
-            proc = subprocess.Popen(
-                [grpc_cmd, "start", "--grpc-only", "--home", base_dir / "node1"],
-                stdout=logfile,
-                stderr=subprocess.STDOUT,
-            )
+            proc = start_grpc_node(logfile)
             for port in (grpc_port, api_port):
                 wait_for_port(port)
+            wait_for_new_blocks(cli, 1)
 
-            wait_for_new_blocks(cli, 1)
-            assert (
-                greeter.contract.caller(block_identifier=old_height).greet() == "Hello"
-            )
-            assert (
-                w3.eth.get_balance(community, block_identifier=old_height) == balance_bf
-            )
-            assert w3.eth.estimate_gas(tx, block_identifier=old_height) > 0
-            wait_for_new_blocks(cli, 1)
+            assert call_with_retry(query_greeter, expect_error=False)
+            # test historical queries work after reconnection
+            test_historical_queries()
             assert w3.eth.get_balance(community) == balance
         finally:
             if proc.poll() is None:

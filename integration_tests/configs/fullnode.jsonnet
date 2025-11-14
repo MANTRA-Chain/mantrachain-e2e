@@ -4,6 +4,11 @@ config {
   'mantra-canary-net-1'+: {
     validators: super.validators[0:1] + [{
       name: 'fullnode',
+      'app-config'+: {
+        'json-rpc': {
+          enable: false,
+        },
+      },
     }],
   },
 }
