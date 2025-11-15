@@ -25,6 +25,7 @@
               inherit (pkgs.darwin.apple_sdk.frameworks) IOKit;
             };
             dapp = pkgs.dapp;
+            solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
           })
           (import "${poetry2nix}/overlay.nix")
           (_: pkgs: {
@@ -87,7 +88,7 @@
             buildInputs =
               [
                 pkgs.nixfmt-rfc-style
-                pkgs.solc
+                pkgs.solc_0_8_21
                 pkgs.python312
                 pkgs.python312Packages.jsonnet
                 pkgs.uv
