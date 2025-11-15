@@ -1,8 +1,7 @@
 {
   lib,
   stdenv,
-  buildGoModule,
-  go_1_25,
+  buildGo125Module,
   fetchFromGitHub,
   rev ? "dirty",
   nativeByteOrder ? true, # nativeByteOrder mode will panic on big endian machines
@@ -14,11 +13,11 @@ let
   pname = "evmd";
 
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv; buildGoModule = buildGoModule.override { go = go_1_25; }; };
+  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module; };
   buildStdenv = buildPackages.stdenv;
   buildGoModule' = if stdenv.isLinux 
-    then (buildPackages.buildGoModule.override { go = go_1_25; })
-    else (buildGoModule.override { go = go_1_25; });
+    then buildPackages.buildGo125Module
+    else buildGo125Module;
 
   tags =
     [
@@ -48,7 +47,7 @@ let
     ];
 
 in
-  buildGoModule' rec {
+buildGoModule' rec {
   inherit
     pname
     version
