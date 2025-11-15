@@ -1,15 +1,9 @@
 name: E2E Nix Tests
 on:
-  push: 
-    branches:
-      - main
-      - develop
-      - release/**
+  push:
+    branches: [ main, develop, release/** ]
   pull_request:
-    branches:
-      - main
-      - develop
-      - release/**
+    branches: [ main, develop, release/** ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,14 +14,16 @@ jobs:
     runs-on: ubuntu-latest-x64-xlarge
     timeout-minutes: 240
     strategy:
+      fail-fast: true
       matrix:
         tests: [asyncio, unmarked, slow, all]
     env:
       TESTS_TO_RUN: ${{ matrix.tests }}
     steps:
       - name: Create more disk space
-        run: sudo rm -rf /usr/share/dotnet && sudo rm -rf /opt/ghc && sudo rm -rf "/usr/local/share/boost" && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-      - uses: actions/checkout@v3
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY" || true
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
@@ -38,23 +34,31 @@ jobs:
             docs
             *.md
             **/*.md
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - name: Early exit (docs-only)
+        if: steps.changed-files.outputs.only_changed == 'true'
+        run: |
+          echo "Only docs/markdown changed. Skipping E2E tests."
+          exit 0
+      - name: Install Nix
+        if: steps.changed-files.outputs.only_changed == 'false'
+        uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           nix_path: nixpkgs=channel:nixos-25.05
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
             sandbox = false
+      - name: Enable Magic Nix Cache
         if: steps.changed-files.outputs.only_changed == 'false'
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-        if: steps.changed-files.outputs.only_changed == 'false'
+        uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Run integration tests
         if: steps.changed-files.outputs.only_changed == 'false'
         run: make test-e2e-nix
       - name: 'Tar debug files'
         if: failure()
-        run: tar cfz debug_files.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" .
-      - uses: actions/upload-artifact@v4
+        run: tar cfz debug_files.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" . || true
+      - name: Upload debug artifacts
         if: failure()
+        uses: actions/upload-artifact@v4
         with:
           name: debug-files-${{ matrix.tests }}
           path: debug_files.tar.gz
