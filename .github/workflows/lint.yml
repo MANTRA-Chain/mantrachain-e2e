@@ -16,7 +16,7 @@ jobs:
     name: Lint python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: changed-files
@@ -33,16 +33,9 @@ jobs:
       - name: Install uv
         if: steps.changed-files.outputs.any_changed == 'true'
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Install dependencies
+      - name: Add uv to PATH
         if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          cd integration_tests
-          ~/.cargo/bin/uv sync
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Run flake8
-        if: steps.changed-files.outputs.any_changed == 'true' || failure()
-        uses: suo/flake8-github-action@releases/v1
-        with:
-          checkName: 'lint-python'
-          path: 'integration_tests'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make lint-py
