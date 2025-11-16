@@ -3,18 +3,13 @@
     nixpkgs.url = "github:NixOS/nixpkgs/release-25.05";
     flake-utils.url = "github:numtide/flake-utils";
     flake-compat.url = "github:edolstra/flake-compat";
-    poetry2nix = {
-      url = "github:nix-community/poetry2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-    };
     hermes-src = {
       url = "github:mmsqe/ibc-rs/ae80ab348952840696e6c9a0c7096d2de11ea579";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, flake-compat, poetry2nix, hermes-src, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-compat, hermes-src, flake-utils, ... }:
     let
       overlays =
         [
@@ -27,7 +22,6 @@
             dapp = pkgs.dapp;
             solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
           })
-          (import "${poetry2nix}/overlay.nix")
           (_: pkgs: {
             hermes = pkgs.callPackage ./nix/hermes.nix { src = hermes-src; };
           })
