@@ -53,6 +53,12 @@ jobs:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
             sandbox = false
+      - name: Enable Cachix (push builds so mantrachain can pull)
+        if: steps.set-run-tests.outputs.run_tests == 'true'
+        uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        with:
+          name: mantrachain-e2e
+          authToken: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')) && secrets.CACHIX_AUTH_TOKEN || '' }}
       - name: Enable Magic Nix Cache
         if: steps.set-run-tests.outputs.run_tests == 'true'
         uses: DeterminateSystems/magic-nix-cache-action@main
