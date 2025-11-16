@@ -36,6 +36,10 @@ def pytest_collection_modifyitems(items, config):
     chain_config = config.getoption("chain_config")
 
     for item in items:
+        # If both slow and asyncio → drop asyncio so -m asyncio skips it
+        if "slow" in item.keywords and "asyncio" in item.keywords:
+            item.own_markers = [m for m in item.own_markers if m.name != "asyncio"]
+
         # add "unmarked" marker to tests that have no markers
         if not any(item.iter_markers()):
             item.add_marker("unmarked")

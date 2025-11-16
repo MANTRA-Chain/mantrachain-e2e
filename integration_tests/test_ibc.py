@@ -31,7 +31,7 @@ from .utils import (
     generate_isolated_address,
 )
 
-pytestmark = pytest.mark.asyncio
+pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
