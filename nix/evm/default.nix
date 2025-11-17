@@ -22,6 +22,7 @@ let
   tags =
     [
       "ledger"
+      "ledger_zemu"
       "netgo"
       "osusergo"
       "pebbledb"
@@ -66,10 +67,10 @@ buildGoModule' rec {
   proxyVendor = true;
   sourceRoot = "source/evmd";
   subPackages = [ "cmd/evmd" ];
+  env.CGO_ENABLED = "1";
 
   preBuild = ''
     mkdir -p $TMPDIR/lib
-    export CGO_ENABLED=1
     export CGO_LDFLAGS="-L$TMPDIR/lib $CGO_LDFLAGS"
     export GOTOOLCHAIN=local
   '';

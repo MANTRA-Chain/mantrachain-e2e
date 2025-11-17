@@ -76,6 +76,7 @@
               dotenv = toString ./scripts/.env;
             };
           };
+          includeMantrachaind = builtins.getEnv "INCLUDE_MANTRACHAIND" != "0";
 
         in {
           default = pkgs.mkShell {
@@ -93,11 +94,14 @@
                 pkgs.evmd
                 pkgs.cosmovisor
                 scripts.start-scripts
-                pkgs.mantrachaind
-              ];
+              ]
+              ++ pkgs.lib.optionals includeMantrachaind [ pkgs.mantrachaind ];
             
             shellHook = ''
               export PATH=${pkgs.go-ethereum}/bin:$PATH
+              if [ -d integration_tests/.venv ]; then
+                source integration_tests/.venv/bin/activate
+              fi
             '';
           };
         }
