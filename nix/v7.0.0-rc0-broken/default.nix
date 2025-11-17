@@ -14,7 +14,7 @@ in
 builder {
   version = "v7.0.0-rc1";
   owner = "mmsqe";
-  rev = "586c85ba4d850657c36b3ed161e736228cdfd981"; 
-  hash = "sha256-tUggfz+LdxvAw5GNeuEElag4XoX+dj9xQ5cMprCkjdw=";
-  vendorHash = "sha256-J9buMhNj0lJhwupgkIYjO0WMiM/v03FpQ2RKH7AoPJ4=";
+  rev = "29125ea31603966379b1479ccef49f519c433c1e"; 
+  hash = "sha256-DInSYwCfZhXiNPHqkvo2swm3GStsWKMhVysliBRUITw=";
+  vendorHash = "sha256-mJ4aRVM0wgtBYmhXJNMHQ6o74p9BzipevTbf3eCxtxQ=";
 }
