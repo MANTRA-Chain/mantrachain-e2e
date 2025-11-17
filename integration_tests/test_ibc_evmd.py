@@ -2,7 +2,7 @@ import pytest
 
 from .ibc_utils import assert_ibc_transfer_flow, prepare_network
 
-pytestmark = pytest.mark.slow
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="module")
