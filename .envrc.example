@@ -1,2 +1,4 @@
-use flake .#full
+use flake
+export VIRTUAL_ENV="integration_tests/.venv"
+layout python
 TMPDIR=/tmp

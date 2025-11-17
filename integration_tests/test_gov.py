@@ -105,7 +105,7 @@ async def test_submit_send_enabled(mantra, tmp_path):
     send_enable = [
         {"denom": DEFAULT_DENOM, "enabled": True},
         {"denom": denom},
-        {"denom": erc20_denom},
+        {"denom": erc20_denom, "enabled": True},
     ]
     submit_gov_proposal(
         mantra,
@@ -125,6 +125,8 @@ async def test_submit_send_enabled(mantra, tmp_path):
         gas=gas,
     )
     assert normalize(cli.query_bank_send()) == normalize(send_enable)
+    disabled_err = "send transactions are disabled"
+
     # compare balance after convert all erc20
     rsp = cli.convert_erc20(WETH_ADDRESS, total, _from=sender, gas=999999)
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -132,9 +134,7 @@ async def test_submit_send_enabled(mantra, tmp_path):
     assert await ERC20.fns.balanceOf(community).call(w3, to=WETH_ADDRESS) == 0
 
     rsp = cli.transfer(sender, receiver, f"1{erc20_denom}")
-    disabled_err = "send transactions are disabled"
-    assert rsp["code"] != 0
-    assert disabled_err in rsp["raw_log"]
+    assert rsp["code"] == 0
 
     rsp = cli.transfer(sender, receiver, f"1{denom}")
     assert rsp["code"] != 0

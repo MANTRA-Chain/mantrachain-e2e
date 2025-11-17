@@ -16,7 +16,7 @@ jobs:
     name: Lint python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: changed-files
@@ -26,15 +26,16 @@ jobs:
             **/poetry.lock
             **/pyproject.toml
             **/*.py
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
-        with:
-          nix_path: nixpkgs=channel:nixos-24.11
-          extra_nix_config: |
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
-        if: steps.changed-files.outputs.any_changed == 'true'
-      - uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f # v12
+      - uses: actions/setup-python@v5
         if: steps.changed-files.outputs.any_changed == 'true'
         with:
-          name: mantrachain-e2e
-      - run: nix-shell -I nixpkgs=./nix -p test-env --run "make lint-py"
+          python-version: '3.12'
+      - name: Install uv
         if: steps.changed-files.outputs.any_changed == 'true'
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Add uv to PATH
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Run flake8
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: make lint-py

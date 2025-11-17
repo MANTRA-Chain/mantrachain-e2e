@@ -1,18 +1,18 @@
 import json
-import math
 
 import pytest
 from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_fn_async
+from web3 import AsyncWeb3
 
 from .ibc_utils import (
     assert_hermes_transfer,
-    assert_ibc_transfer,
-    assert_receiver_events,
+    assert_ibc_transfer_flow,
     prepare_network,
     run_hermes_transfer,
 )
 from .utils import (
+    ADDRESS_PREFIX,
     ADDRS,
     DEFAULT_DENOM,
     KEYS,
@@ -28,13 +28,10 @@ from .utils import (
     derive_new_account,
     escrow_address,
     eth_to_bech32,
-    find_duplicate,
     generate_isolated_address,
-    ibc_denom_address,
-    parse_events_rpc,
 )
 
-pytestmark = pytest.mark.asyncio
+pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
@@ -46,28 +43,6 @@ def ibc(request, tmp_path_factory):
     yield from prepare_network(path, name, chain)
 
 
-def assert_dynamic_fee(cli):
-    # assert that the relayer transactions do enables the dynamic fee extension option.
-    criteria = "message.action='/ibc.core.channel.v1.MsgChannelOpenInit'"
-    tx = cli.tx_search(criteria)["txs"][0]
-    events = parse_events_rpc(tx["events"])
-    fee = int(events["tx"]["fee"].removesuffix(DEFAULT_DENOM))
-    gas = int(tx["gas_wanted"])
-    # the effective fee is decided by the max_priority_fee (base fee is zero)
-    # rather than the normal gas price
-    cosmos_evm_dynamic_fee = 10000000000000000 / 10**18
-    assert fee == math.ceil(gas * cosmos_evm_dynamic_fee)
-
-
-def assert_dup_events(cli):
-    # check duplicate OnRecvPacket events
-    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
-    events = cli.tx_search(criteria)["txs"][0]["events"]
-    for event in events:
-        dup = find_duplicate(event["attributes"])
-        assert not dup, f"duplicate {dup} in {event['type']}"
-
-
 async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     subdenom = "test"
     gas = 300000
@@ -76,39 +51,49 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     burn_amt = 10**3
     addr_signer1 = eth_to_bech32(signer1)
     addr_receiver = eth_to_bech32(receiver)
-    denom = assert_create_tokenfactory_denom(
+    tf_denom = assert_create_tokenfactory_denom(
         cli, subdenom, _from=addr_signer1, gas=620000
     )
-    tf_erc20_addr = denom_to_erc20_address(denom)
+    tf_erc20_addr = denom_to_erc20_address(tf_denom)
     assert (await ERC20.fns.decimals().call(w3, to=tf_erc20_addr)) == 0
     total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    balance = cli.balance(addr_signer1, denom)
+    balance = cli.balance(addr_signer1, tf_denom)
     assert total == balance == signer1_balance_eth == 0
 
     balance = assert_mint_tokenfactory_denom(
-        cli, denom, tf_amt, _from=addr_signer1, gas=gas
+        cli, tf_denom, tf_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     total = await ERC20.fns.totalSupply().call(w3, to=tf_erc20_addr)
     assert total == balance == signer1_balance_eth == tf_amt
 
     balance = assert_transfer_tokenfactory_denom(
-        cli, denom, addr_receiver, transfer_amt, _from=addr_signer1, gas=gas
+        cli, tf_denom, addr_receiver, transfer_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == tf_amt - transfer_amt
 
     balance = assert_burn_tokenfactory_denom(
-        cli, denom, burn_amt, _from=addr_signer1, gas=gas
+        cli, tf_denom, burn_amt, _from=addr_signer1, gas=gas
     )
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == tf_amt - transfer_amt - burn_amt
 
-    balance = cli.balance(addr_receiver, denom)
+    balance = cli.balance(addr_receiver, tf_denom)
     signer1_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == transfer_amt
-    return denom, tf_erc20_addr
+    return tf_denom, tf_erc20_addr
+
+
+async def wait_for_balance_change_async(
+    w3: AsyncWeb3, addr, token_addr: str, init_balance: int
+):
+    async def check_balance():
+        current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
+        return current_balance if current_balance != init_balance else None
+
+    return await wait_for_fn_async("balance change", check_balance)
 
 
 async def test_ibc_transfer(ibc):
@@ -117,49 +102,22 @@ async def test_ibc_transfer(ibc):
     cli2 = ibc.ibc2.cosmos_cli()
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
-    community = ADDRS["community"]
     addr_signer2 = eth_to_bech32(signer2)
     addr_signer1 = eth_to_bech32(signer1)
-
-    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 100uom
-    transfer_amt = 100
-    dst_denom, _ = assert_hermes_transfer(
-        ibc.hermes,
-        cli2,
-        "signer2",
-        transfer_amt,
-        cli,
-        addr_signer1,
+    ibc_erc20_addr = await assert_ibc_transfer_flow(
+        ibc,
+        chain2_denom=DEFAULT_DENOM,
+        chain2_prefix=ADDRESS_PREFIX,
+        return_ratio=0.5,
     )
-    assert_dynamic_fee(cli)
-    assert_dup_events(cli)
-
-    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 community eth addr with 5uom
-    amount = 5
-    assert_ibc_transfer(
-        ibc.hermes,
-        cli,
-        cli2,
-        addr_signer1,
-        community,
-        amount,
-        dst_denom,
-    )
-    assert_receiver_events(cli, cli2, community)
-
-    ibc_erc20_addr = ibc_denom_address(dst_denom)
-    assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
-    total = await ERC20.fns.totalSupply().call(w3, to=ibc_erc20_addr)
     receiver = derive_new_account(4).address
-    assert total == transfer_amt
 
-    # check the approve transfer and transferFrom flow of tf tokens
     await assert_tf_flow(w3, receiver, signer1, signer2, ibc_erc20_addr)
     # check create mint transfer and burn tokenfactory denom
-    denom, tf_erc20_addr = await assert_tokenfactory_flow(cli, w3, signer1, receiver)
+    tf_denom, tf_erc20_addr = await assert_tokenfactory_flow(cli, w3, signer1, receiver)
 
-    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50 tf_token
     transfer_amt = 50
+    print(f"chain1 signer1 -> chain2 signer2 {transfer_amt}{tf_denom}")
     dst_denom, signer2_balance = assert_hermes_transfer(
         ibc.hermes,
         cli,
@@ -167,12 +125,12 @@ async def test_ibc_transfer(ibc):
         transfer_amt,
         cli2,
         addr_signer2,
-        denom=denom,
+        denom=tf_denom,
     )
 
-    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50 tf_token
+    print(f"chain2 signer2 -> chain1 signer1 {transfer_amt}{dst_denom}")
     balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
-    assert balance_bf == cli.balance(addr_signer1, denom)
+    assert balance_bf == cli.balance(addr_signer1, tf_denom)
     run_hermes_transfer(
         ibc.hermes,
         cli2,
@@ -183,18 +141,12 @@ async def test_ibc_transfer(ibc):
         denom=dst_denom,
     )
     assert cli2.balance(addr_signer2, dst_denom) == signer2_balance - transfer_amt
-
-    async def wait_for_balance_change_async(w3, addr, token_addr, init_balance):
-        async def check_balance():
-            current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
-            return current_balance if current_balance != init_balance else None
-
-        return await wait_for_fn_async("balance change", check_balance)
-
     balance_af = await wait_for_balance_change_async(
         w3, signer1, tf_erc20_addr, balance_bf
     )
-    assert balance_af == cli.balance(addr_signer1, denom) == balance_bf + transfer_amt
+    assert (
+        balance_af == cli.balance(addr_signer1, tf_denom) == balance_bf + transfer_amt
+    )
     assert cli2.balance(addr_signer2, dst_denom) == 0
 
 
@@ -233,8 +185,8 @@ async def test_ibc_cb(ibc):
     res = cli.query_erc20_token_pair(erc20_denom)
     assert res["erc20_address"] == WETH_ADDRESS, res
 
-    # mantra-canary-net-1 signer1 -> mantra-canary-net-2 signer2 50erc20_denom
     transfer_amt = total // 2
+    print(f"chain1 signer1 -> chain2 signer2 {transfer_amt}{erc20_denom}")
     port = "transfer"
     channel = "channel-0"
     isolated = generate_isolated_address(channel, addr_signer2)
@@ -258,7 +210,7 @@ async def test_ibc_cb(ibc):
     cb_contract, dest_cb = await prepare_dest_callback(w3, signer1, transfer_amt)
     cb_balance_bf = await ERC20.fns.balanceOf(cb_contract).call(w3, to=WETH_ADDRESS)
 
-    # mantra-canary-net-2 signer2 -> mantra-canary-net-1 signer1 50erc20_denom
+    print(f"chain2 signer2 -> chain1 signer1 {transfer_amt}{dst_denom}")
     run_hermes_transfer(
         ibc.hermes,
         cli2,
@@ -270,14 +222,6 @@ async def test_ibc_cb(ibc):
         memo=dest_cb,
     )
     assert cli2.balance(addr_signer2, dst_denom) == signer2_balance - transfer_amt
-
-    async def wait_for_balance_change_async(w3, addr, token_addr, init_balance):
-        async def check_balance():
-            current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
-            return current_balance if current_balance != init_balance else None
-
-        return await wait_for_fn_async("balance change", check_balance)
-
     cb_balance = await wait_for_balance_change_async(
         w3, cb_contract, WETH_ADDRESS, cb_balance_bf
     )

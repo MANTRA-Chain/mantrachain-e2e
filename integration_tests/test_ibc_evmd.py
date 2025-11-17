@@ -1,6 +1,6 @@
 import pytest
 
-from .ibc_utils import assert_ibc_evmd_flow, prepare_network
+from .ibc_utils import assert_ibc_transfer_flow, prepare_network
 
 pytestmark = pytest.mark.slow
 
@@ -16,5 +16,5 @@ def ibc(request, tmp_path_factory):
     )
 
 
-def test_ibc_transfer(ibc):
-    assert_ibc_evmd_flow(ibc)
+async def test_ibc_transfer(ibc):
+    await assert_ibc_transfer_flow(ibc)

@@ -19,11 +19,13 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 1. **Create env file from template:**
    ```sh
    cp scripts/env.template scripts/.env
+   cp .envrc.example .envrc
    ```
 
 2. **Build environment and dependencies:**
    ```sh
-   nix-shell integration_tests/shell.nix 
+   nix develop
+   cd integration_tests && uv sync
    ```
 
 3. **Configuration (config to set up local nodes):**

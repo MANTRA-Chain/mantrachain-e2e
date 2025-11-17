@@ -1,4 +1,6 @@
-{ pkgs ? import ../../nix { }, includeMantrachaind ? true }:
+{ 
+  pkgs ? (builtins.getFlake (toString ../..)).legacyPackages.${builtins.currentSystem or "x86_64-linux"}, includeMantrachaind ? true
+}:
 let
   common = import ./mantrachain-common.nix { inherit pkgs; };
   platform = common.platform;
@@ -9,7 +11,7 @@ let
     "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
   } // (
     pkgs.lib.optionalAttrs includeMantrachaind {
-      "v7.0.0-rc0" = pkgs.callPackage ../../nix/mantrachain { };
+      "v7.0.0-rc0" = pkgs.mantrachaind;
     }
   ) // (
     pkgs.lib.optionalAttrs (!includeMantrachaind) {
