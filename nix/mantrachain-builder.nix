@@ -93,7 +93,7 @@ buildGo123Module' rec {
   };
   proxyVendor = true;
   subPackages = [ "cmd/mantrachaind" ];
-  CGO_ENABLED = "1";
+  env.CGO_ENABLED = "1";
 
   preBuild = ''
     mkdir -p $TMPDIR/lib

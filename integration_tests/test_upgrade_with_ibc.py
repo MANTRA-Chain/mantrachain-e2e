@@ -7,7 +7,7 @@ import pytest
 import tomlkit
 
 from .ibc_utils import (
-    assert_ibc_evmd_flow,
+    assert_ibc_transfer_flow,
     prepare_network,
 )
 from .network import Mantra
@@ -19,7 +19,7 @@ from .utils import (
     SCALE_FACTOR,
 )
 
-pytestmark = [pytest.mark.slow, pytest.mark.skipped]
+pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
 
 @pytest.fixture(scope="module")
@@ -57,7 +57,7 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-def exec(c, tmp_path):
+async def exec(c, tmp_path):
     cli = c.ibc1.cosmos_cli()
 
     def upgrade():
@@ -75,7 +75,7 @@ def exec(c, tmp_path):
         rly_cfg.write_text(tomlkit.dumps(cfg))
         c.ibc1.supervisorctl("start", "relayer-demo")
 
-    assert_ibc_evmd_flow(
+    await assert_ibc_transfer_flow(
         c,
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
@@ -85,6 +85,6 @@ def exec(c, tmp_path):
     cli = do_upgrade(c.ibc1, "v7.0.0-rc1", target_height, min_deposit=1 * SCALE_FACTOR)
 
 
-def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
-    exec(custom_mantra, tmp_path)
+async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
+    await exec(custom_mantra, tmp_path)
     cleanup_upgrades_folder(custom_mantra.ibc1.cosmos_cli().data_dir)

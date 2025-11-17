@@ -16,50 +16,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  integration_tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    strategy:
-      matrix:
-        tests: [connect]
-    env:
-      TESTS_TO_RUN: ${{ matrix.tests }}
-      ENVS: ${{ secrets.ENVS }}
-    environment:
-      name: ${{ github.event.inputs.environment }}
+  build-env:
+    runs-on: ubuntu-latest-x64-xlarge
+    outputs:
+      run_tests: ${{ steps.set-run-tests.outputs.run_tests }}
     steps:
-      - name: Create more disk space
-        run: sudo rm -rf /usr/share/dotnet && sudo rm -rf /opt/ghc && sudo rm -rf "/usr/local/share/boost" && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - name: Skip marker (commit message)
+        run: |
+          msg="$(git log -1 --pretty=%B)"
+          if echo "$msg" | grep -qi '\[skip connect\]'; then
+            echo "Skip marker found."
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+      - id: changed-files
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46.0.5
         with:
-          nix_path: nixpkgs=channel:nixos-24.11
+          files: |
+            docs/**
+            **/*.md
+      - id: set-run-tests
+        run: |
+          if [ "${{ steps.changed-files.outputs.only_changed }}" = "true" ]; then
+            echo "Docs-only change detected. Skipping connect tests."
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run_tests=true" >> "$GITHUB_OUTPUT"
+      - name: Free disk space
+        if: steps.set-run-tests.outputs.run_tests == 'true'
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY" || true
+      - name: Install Nix
+        if: steps.set-run-tests.outputs.run_tests == 'true'
+        uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          nix_path: nixpkgs=channel:nixos-25.05
           extra_nix_config: |
-            access-tokens = github.com=${{ secrets.NIX_GH_TOKEN }}
-      - uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f # v12
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            sandbox = false
+      - name: Enable Cachix
+        if: steps.set-run-tests.outputs.run_tests == 'true'
+        uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
         with:
           name: mantrachain-e2e
-          extraPullNames: dapp
-          # github don't pass secrets for pull request from fork repos,
-          # in that case the push is disabled naturally.
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-      - uses: Boostport/setup-cloudflare-warp@v1.16.0
-        with:
-          organization: ${{ secrets.CLOUDFLARE_ORGANIZATION }}
-          auth_client_id: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_ID }}
-          auth_client_secret: ${{ secrets.CLOUDFLARE_AUTH_CLIENT_SECRET }}
-      - name: Run integration tests
+      - name: Pre-build dependencies (warm cache)
+        if: steps.set-run-tests.outputs.run_tests == 'true'
         run: |
-          make test-connect-e2e-nix
-      - name: 'Tar debug files'
-        if: failure()
-        run: tar cfz debug_files.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" .
-      - uses: actions/upload-artifact@v4
-        if: failure()
+          nix build .#mantrachaind .#evmd .#hermes || true
+  connect_tests:
+    needs: build-env
+    if: needs.build-env.outputs.run_tests == 'true'
+    runs-on: ubuntu-latest-x64-xlarge
+    timeout-minutes: 240
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: debug-files
-          path: debug_files.tar.gz
+          submodules: recursive
+          fetch-depth: 1
+      - name: Install Nix
+        uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          nix_path: nixpkgs=channel:nixos-25.05
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            sandbox = false
+      - name: Enable Cachix
+        uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        with:
+          name: mantrachain-e2e
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: Run connect tests via Makefile
+        run: make test-connect-e2e-nix
+      - name: Collect debug artifacts
+        if: failure()
+        run: tar cfz debug_connect.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" . || true
+      - name: Upload debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-connect
+          path: debug_connect.tar.gz
           if-no-files-found: ignore

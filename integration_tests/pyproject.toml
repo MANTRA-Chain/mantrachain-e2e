@@ -1,41 +1,48 @@
-[tool.poetry]
+[project]
 name = "integration-tests"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-pytest = "^8.3.4"
-pystarport = { git = "https://github.com/MANTRA-Chain/pystarport.git", branch = "main" }
-pytest-github-actions-annotate-failures = "^0.3.0"
-flake8-black = "^0.3.6"
-flake8-isort = "^6.1.2"
-pyunormalize = "^16.0.0"
-cprotobuf = { git = "https://github.com/yihuang/cprotobuf.git", branch = "master" }
-web3 = "^7.3.0"
-eth-bloom = "^3.0"
-flaky = "^3.8.1"
-pytest-asyncio = "0.25.3"
-eth-contract = { git = "https://github.com/mmsqe/eth-contract.git", branch = "event" }
-py-ecc = "^8.0.0"
-pyrevm = { git = "https://github.com/yihuang/pyrevm.git", branch = "master" }
-
-[tool.poetry.dev-dependencies]
-attrs = "24.2.0"
-referencing = "v0.35.1"
-rpds-py = "v0.22.3"
-aiohappyeyeballs = "2.4.4"
-types-requests = "2.32.0.20250328"
-typing-inspection = "0.4.0"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8.3.4",
+    "pystarport @ git+https://github.com/MANTRA-Chain/pystarport.git@main",
+    "pytest-github-actions-annotate-failures>=0.3.0",
+    "flake8-black>=0.3.6",
+    "flake8-isort>=6.1.2",
+    "pyunormalize>=16.0.0",
+    "cprotobuf>=0.1.12",
+    "eth-bloom>=3.0",
+    "flaky>=3.8.1",
+    "pytest-asyncio==0.25.3",
+    "eth-contract @ git+https://github.com/mmsqe/eth-contract.git@event",
+    "py-ecc>=8.0.0",
+    "pyrevm @ git+https://github.com/yihuang/pyrevm.git@master",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
 
 [tool.black]
 line-length = 88
 
 [tool.isort]
 profile = "black"
+
+[tool.uv]
+dev-dependencies = [
+    "attrs==24.2.0",
+    "referencing==0.35.1",
+    "rpds-py==0.22.3",
+    "aiohappyeyeballs==2.4.4",
+    "types-requests==2.32.0.20250328",
+    "typing-inspection==0.4.0",
+]
