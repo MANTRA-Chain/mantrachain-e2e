@@ -94,7 +94,7 @@ def exec(c):
             path = cli.data_dir / "config/app.toml"
             cfg = tomlkit.parse(path.read_text())
             backup_config = json.dumps({f"127.0.0.1:{grpc_port}": [0, target_height0]})
-            cfg["json-rpc"]["backup-grpc-address-block-range"] = backup_config
+            cfg["grpc"]["backup-grpc-address-block-range"] = backup_config
             path.write_text(tomlkit.dumps(cfg))
             c.supervisorctl("start", f"{CHAIN_ID}-node0")
             wait_for_new_blocks(cli, 1)

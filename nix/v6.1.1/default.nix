@@ -1,14 +1,14 @@
 {
   lib,
   stdenv,
-  buildGo123Module,
+  buildGo125Module,
   fetchFromGitHub,
   fetchurl,
   pkgsStatic,
 }:
 let
   builder = import ../mantrachain-builder.nix {
-    inherit lib stdenv buildGo123Module fetchFromGitHub fetchurl pkgsStatic;
+    inherit lib stdenv buildGo125Module fetchFromGitHub fetchurl pkgsStatic;
   };
 in
 builder {
