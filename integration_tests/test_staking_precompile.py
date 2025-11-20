@@ -27,10 +27,12 @@ from .utils import (
     WEI_PER_ETH,
     address_to_bytes32,
     bech32_to_eth,
+    build_and_deploy_contract_async,
     build_contract,
     duration,
     edit_app_cfg,
     find_log_event_attrs,
+    send_transaction_async,
 )
 
 PRECOMPILE = Contract(build_contract("StakingI")["abi"])
@@ -94,6 +96,25 @@ async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     assert cli.staking_pool() == bonded + amt
     balance = await w3.eth.get_balance(acct.address)
     assert balance_bf == balance + amt * WEI_PER_DENOM + fee
+
+
+async def test_staking_call_delegate(mantra):
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    name = "signer1"
+    amt = 2
+    acct = ACCOUNTS[name]
+    bonded = cli.staking_pool()
+    res = await get_validators(w3)
+    addr = res[0][0]
+    validator = cli.debug_addr(addr, bech="val")
+    gas = 200_000
+    contract = await build_and_deploy_contract_async(w3, "TestStaking")
+    tx = await contract.functions.callDelegate(validator, amt).build_transaction(
+        {"from": acct.address, "gas": gas, "value": amt * WEI_PER_DENOM}
+    )
+    assert (await send_transaction_async(w3, acct.address, **tx)).status == 1
+    assert cli.staking_pool() == bonded + amt
 
 
 @pytest.mark.connect

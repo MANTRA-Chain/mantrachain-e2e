@@ -50,13 +50,14 @@ def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
     if check_reserve:
         # check vesting account
         cli = mantra.cosmos_cli()
-        denom = cli.get_params("evm")["evm_denom"]
-        addr = cli.address("reserve")
-        account = cli.account(addr)["account"]
-        assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
-        assert account["value"]["base_vesting_account"]["original_vesting"] == [
-            {"denom": denom, "amount": "100000000000000000000"}
-        ]
+        if cli.has_module("evm"):
+            denom = cli.get_params("evm")["evm_denom"]
+            addr = cli.address("reserve")
+            account = cli.account(addr)["account"]
+            assert account["type"] == "/cosmos.vesting.v1beta1.DelayedVestingAccount"
+            assert account["value"]["base_vesting_account"]["original_vesting"] == [
+                {"denom": denom, "amount": "100000000000000000000"}
+            ]
 
 
 @pytest.mark.connect

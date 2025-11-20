@@ -86,4 +86,14 @@
       },
     },
   },
+  simd: {
+    'account-prefix': 'cosmos',
+    'coin-type': 118,
+    evm_denom: 'stake',
+    cmd: 'simd',
+    evm_chain_id: 7888,
+    bank: {},
+    evm: {},
+    feemarket: {},
+  },
 }

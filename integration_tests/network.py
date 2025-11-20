@@ -23,7 +23,7 @@ from web3 import AsyncHTTPProvider, AsyncWeb3, HTTPProvider, WebSocketProvider
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
-from .cosmoscli import CosmosCLI
+from .cosmoscli import ChainCommand, CosmosCLI
 from .utils import (
     CHAIN_ID,
     CMD,
@@ -236,7 +236,13 @@ def connect_custom_mantra():
     evm_rpc = os.getenv("EVM_RPC", "http://127.0.0.1:26651")
     evm_rpc_ws = os.getenv("EVM_RPC_WS", "ws://127.0.0.1:26652")
     wait_for_url(rpc)
-    wait_for_url(evm_rpc)
+    has_evm = True
+    try:
+        ChainCommand(CMD)("q", "evm")
+    except AssertionError:
+        has_evm = False
+    if has_evm:
+        wait_for_url(evm_rpc)
     yield ConnectMantra(rpc, evm_rpc, evm_rpc_ws, CHAIN_ID, chain_binary=CMD)
 
 
