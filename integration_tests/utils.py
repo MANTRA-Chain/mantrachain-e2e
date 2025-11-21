@@ -114,9 +114,11 @@ class AsyncGreeter(AsyncContract):
     def __init__(self, key=KEYS["community"]):
         super().__init__("Greeter", key)
 
-    async def greet(self):
+    async def greet(self, block_identifier=None):
         self._check_deployed()
-        return await self.contract.fns.greet().call(self.w3, to=self.address)
+        return await self.contract.fns.greet().call(
+            self.w3, to=self.address, block_identifier=block_identifier
+        )
 
     async def int_value(self):
         self._check_deployed()
@@ -530,6 +532,29 @@ def call_with_retry(fn, expect_error=False, max_retries=3, retry_delay=0.1):
                     print(f"failed after {max_retries} attempts")
                     return False
                 time.sleep(retry_delay)
+            else:
+                raise
+    return False
+
+
+async def call_with_retry_async(fn, expect_error=False, max_retries=3, retry_delay=0.1):
+    for attempt in range(1, max_retries + 1):
+        try:
+            await fn()
+            if expect_error:
+                print(f"no error but query succeeded on attempt {attempt}")
+                return False
+            print(f"query successful on attempt {attempt}")
+            return True
+        except web3.exceptions.Web3RPCError as e:
+            error_str = str(e)
+            if "Error while dialing" in error_str or "connection refused" in error_str:
+                if expect_error:
+                    return True
+                if attempt == max_retries:
+                    print(f"failed after {max_retries} attempts")
+                    return False
+                await asyncio.sleep(retry_delay)
             else:
                 raise
     return False
