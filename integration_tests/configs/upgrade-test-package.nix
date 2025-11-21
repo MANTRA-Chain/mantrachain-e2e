@@ -9,13 +9,14 @@ let
     "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
     "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
     "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
+    "v7.0.0-rc2" = pkgs.callPackage ../../nix/v7.0.0-rc2/default.nix {};
   } // (
     pkgs.lib.optionalAttrs includeMantrachaind {
-      "v7.0.0-rc2" = pkgs.mantrachaind;
+      "v7.0.0-rc2-supply" = pkgs.mantrachaind;
     }
   ) // (
     pkgs.lib.optionalAttrs (!includeMantrachaind) {
-      "v7.0.0-rc2" = pkgs.writeShellScriptBin "mantrachaind" ''
+      "v7.0.0-rc2-supply" = pkgs.writeShellScriptBin "mantrachaind" ''
         exec mantrachaind "$@"
       '';
     }

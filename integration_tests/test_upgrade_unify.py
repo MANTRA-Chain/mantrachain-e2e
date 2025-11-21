@@ -7,6 +7,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
+from pystarport.utils import wait_for_new_blocks
 
 from .network import Mantra
 from .upgrade_utils import (
@@ -342,6 +343,17 @@ async def exec(c, tmp_path):
         "distribution"
     ]
     assert "uom" not in json.dumps(distribution)
+
+    nodes = [f"mantra-canary-net-1-node{i}" for i in range(3)]
+    c.supervisorctl("start", *nodes)
+    wait_for_new_blocks(cli, 1)
+
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(
+        c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
+    )
+    print("mm-pp", cli.get_params("mint"))
+    assert cli.get_params("mint")["max_supply"] == 10_000_000_000 * 10**18
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
