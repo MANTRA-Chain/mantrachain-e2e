@@ -95,28 +95,34 @@ def post_init(path, base_port, config, genesis):
     )
 
 
+def build_upgrade_package(upgrades_dir, nix_file, output="./result"):
+    cmd = [
+        "nix-build",
+        nix_file,
+        "-o",
+        output,
+    ]
+    use_lite_mode = os.environ.get("NIX_LITE_MODE", "").lower() == "true"
+    cmd += ["--arg", "useLiteMode", str(use_lite_mode).lower()]
+    print(f"build {'lite' if use_lite_mode else 'full'} mode")
+    print(*cmd)
+    subprocess.run(cmd, check=True)
+    # copy the content so the new directory is writable.
+    shutil.copytree(output, upgrades_dir)
+    mod = stat.S_IRWXU
+    upgrades_dir.chmod(mod)
+    for d in upgrades_dir.iterdir():
+        d.chmod(mod)
+    return cmd
+
+
 def setup_mantra_upgrade(
     tmp_path_factory, nix_name, cfg_name, genesis, chain, port=26200
 ):
     path = tmp_path_factory.mktemp("upgrade")
     configdir = Path(__file__).parent
-    cmd = [
-        "nix-build",
-        configdir / f"configs/{nix_name}.nix",
-    ]
-    if os.environ.get("INCLUDE_MANTRACHAIND", "true").lower() != "true":
-        cmd += ["--arg", "includeMantrachaind", "false"]
-    print(*cmd)
-    subprocess.run(cmd, check=True)
-
-    # copy the content so the new directory is writable.
     upgrades = path / "upgrades"
-    shutil.copytree("./result", upgrades)
-    mod = stat.S_IRWXU
-    upgrades.chmod(mod)
-    for d in upgrades.iterdir():
-        d.chmod(mod)
-
+    build_upgrade_package(upgrades, configdir / f"configs/{nix_name}.nix")
     # init with genesis binary
     with contextmanager(setup_custom_mantra)(
         path,

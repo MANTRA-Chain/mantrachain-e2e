@@ -277,7 +277,7 @@ async def exec(c, tmp_path):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc0", target_height, denom=LEGACY_DENOM)
+    cli = do_upgrade(c, "v7.0.0-rc2", target_height, denom=LEGACY_DENOM)
 
     # delegate after migration
     PRECOMPILE = Contract(build_contract("StakingI")["abi"])
@@ -298,8 +298,8 @@ async def exec(c, tmp_path):
     )
 
     # after migration
-    assert await weth.fns.name().call(async_w3, to=wom) == "WMANTRA Token"
-    assert await weth.fns.symbol().call(async_w3, to=wom) == "WMANTRA"
+    assert await weth.fns.name().call(async_w3, to=wom) == "Wrapped MANTRA"
+    assert await weth.fns.symbol().call(async_w3, to=wom) == "wMANTRA"
     assert await weth.fns.decimals().call(async_w3, to=wom) == 18
     assert await weth.fns.balanceOf(deployer.address).call(async_w3, to=wom) == 4000
     assert (
@@ -349,10 +349,11 @@ async def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc1", target_height, min_deposit=1 * SCALE_FACTOR)
-
-    assert await weth.fns.name().call(async_w3, to=wom) == "Wrapped MANTRA"
-    assert await weth.fns.symbol().call(async_w3, to=wom) == "wMANTRA"
+    cli = do_upgrade(
+        c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
+    )
+    print("mm-pp", cli.get_params("mint"))
+    assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):

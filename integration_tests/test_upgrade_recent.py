@@ -14,7 +14,6 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
-    ACCOUNTS,
     ADDRS,
     CHAIN_ID,
     SCALE_FACTOR,
@@ -42,7 +41,6 @@ def custom_mantra(request, tmp_path_factory):
 async def exec(c):
     cli = c.cosmos_cli()
     w3 = c.async_w3
-    deployer = ACCOUNTS["community"]
     community = ADDRS["community"]
     greeter = AsyncGreeter()
     await greeter.deploy(w3)
@@ -60,12 +58,12 @@ async def exec(c):
     update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
 
     target_height0 = cli.block_height() + 15
-    print("mm-target_height0", target_height0)
-    cli = do_upgrade(c, "v7.0.0-rc0", target_height0, denom=LEGACY_DENOM)
+    cli = do_upgrade(c, "v7.0.0-rc2", target_height0, denom=LEGACY_DENOM)
 
-    target_height1 = cli.block_height() + 15
-    print("mm-target_height1", target_height1)
-    cli = do_upgrade(c, "v7.0.0-rc1", target_height1, min_deposit=1 * SCALE_FACTOR)
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(
+        c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
+    )
 
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))

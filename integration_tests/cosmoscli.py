@@ -369,3 +369,6 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def total_supply_of(self, denom=DEFAULT_DENOM, **kwargs):
+        return super().total_supply_of(denom=denom, **kwargs)

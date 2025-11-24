@@ -1,5 +1,6 @@
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local gas_price = 40000000000;
+local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != null then chain['coin-type'] else 60;
 
 {
   dotenv: '../../scripts/.env',
@@ -37,13 +38,13 @@ local gas_price = 40000000000;
       },
     },
     validators: [{
-      'coin-type': 60,
+      'coin-type': coin_type,
       coins: '100000000000000000000' + chain.evm_denom,
       staked: '10000000000000000000' + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
       mnemonic: '${VALIDATOR1_MNEMONIC}',
     }, {
-      'coin-type': 60,
+      'coin-type': coin_type,
       coins: '100000000000000000000' + chain.evm_denom,
       staked: '10000000000000000000' + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
@@ -55,7 +56,7 @@ local gas_price = 40000000000;
         'app-db-backend': 'pebbledb',
       },
     }, {
-      'coin-type': 60,
+      'coin-type': coin_type,
       coins: '100000000000000000000' + chain.evm_denom,
       staked: '10000000000000000000' + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
@@ -68,22 +69,22 @@ local gas_price = 40000000000;
       },
     }],
     accounts: [{
-      'coin-type': 60,
+      'coin-type': coin_type,
       name: 'community',
       coins: '100000000000000000000' + chain.evm_denom + ',1000000000000atoken',
       mnemonic: '${COMMUNITY_MNEMONIC}',
     }, {
-      'coin-type': 60,
+      'coin-type': coin_type,
       name: 'signer1',
       coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER1_MNEMONIC}',
     }, {
-      'coin-type': 60,
+      'coin-type': coin_type,
       name: 'signer2',
       coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${SIGNER2_MNEMONIC}',
     }, {
-      'coin-type': 60,
+      'coin-type': coin_type,
       name: 'reserve',
       coins: '100000000000000000000' + chain.evm_denom,
       mnemonic: '${RESERVE_MNEMONIC}',
