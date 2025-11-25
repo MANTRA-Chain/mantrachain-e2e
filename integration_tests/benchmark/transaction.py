@@ -210,7 +210,6 @@ async def async_sendtx(session, raw, rpc, sync=False):
     method = "broadcast_tx_sync" if sync else "broadcast_tx_async"
     async with session.post(rpc, json=json_rpc_send_body(raw, method)) as rsp:
         data = await rsp.json()
-        print("mm-data", data)
         if "error" in data:
             print("send tx error, will retry,", data["error"])
             return False

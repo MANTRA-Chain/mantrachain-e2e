@@ -143,7 +143,6 @@ def patch_configs(home: Path, peers: str, config_patch: dict, app_patch: dict):
             "size": MEMPOOL_SIZE,
         },
         "consensus": {"timeout_commit": "1s"},
-        "tx_index": {"indexer": "null"},
     }
     default_app_patch = {
         "minimum-gas-prices": f"0{DEFAULT_DENOM}",

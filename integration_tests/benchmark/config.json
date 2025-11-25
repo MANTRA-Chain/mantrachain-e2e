@@ -4,12 +4,11 @@
   "fullnodes": 0,
   "validator_generate_load": true,
   "num_accounts": 8000,
-  "num_txs": 1,
+  "num_txs": 20,
   "tx_type": "simple-transfer",
   "app_patch": {
     "json-rpc": {
-      "enable": true,
-      "enable-indexer": false
+      "enable": true
     },
     "mempool": {
       "max-txs": -1
