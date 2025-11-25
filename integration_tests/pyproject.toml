@@ -19,6 +19,8 @@ dependencies = [
     "eth-contract @ git+https://github.com/mmsqe/eth-contract.git@event",
     "py-ecc>=8.0.0",
     "pyrevm @ git+https://github.com/yihuang/pyrevm.git@master",
+    "backoff>=2.2.1",
+    "ujson>=5.11.0",
 ]
 
 [build-system]
@@ -36,6 +38,9 @@ line-length = 88
 
 [tool.isort]
 profile = "black"
+
+[tool.poetry.scripts]
+stateless-testcase = "benchmark.stateless:cli"
 
 [tool.uv]
 dev-dependencies = [
