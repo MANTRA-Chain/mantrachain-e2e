@@ -95,6 +95,49 @@ def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"
     add_key(hermes, b_chain, "SIGNER2_MNEMONIC", "signer2")
 
 
+def create_connection(hermes, chain_id):
+    client_id = "07-tendermint-0"
+    subprocess.check_call(
+        [
+            "hermes",
+            "--config",
+            hermes.configpath,
+            "create",
+            "connection",
+            "--a-chain",
+            chain_id,
+            "--a-client",
+            client_id,
+            "--b-client",
+            client_id,
+        ]
+    )
+
+
+def create_channel(hermes, chain_id, a_port, b_port):
+    subprocess.check_call(
+        [
+            "hermes",
+            "--config",
+            hermes.configpath,
+            "create",
+            "channel",
+            "--a-chain",
+            chain_id,
+            "--a-port",
+            a_port,
+            "--b-port",
+            b_port,
+            "--order",
+            "ordered",
+            "--channel-version",
+            "1",
+            "--a-connection",
+            "connection-0",
+        ]
+    )
+
+
 def prepare_network(tmp_path, name, chain, b_chain="mantra-canary-net-2", cmd=CMD):
     name = f"configs/{name}.jsonnet"
     with contextmanager(setup_custom_mantra)(

@@ -27,9 +27,8 @@
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
-          (_: pkgs: {
-            evmd = pkgs.callPackage ./nix/evm/default.nix { };
-          })
+          (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
+          (_: pkgs: { inveniamd = pkgs.callPackage ./nix/inveniam/default.nix { }; })
         ];
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in
@@ -55,6 +54,7 @@
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
           evmd = pkgs.evmd;
+          inveniamd = pkgs.inveniamd;
           hermes = pkgs.hermes;
           cosmovisor = pkgs.cosmovisor;
           go-ethereum = pkgs.go-ethereum;

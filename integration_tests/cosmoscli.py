@@ -369,3 +369,63 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def provider_create_consumer(self, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "create-consumer",
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def provider_update_consumer(self, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "update-consumer",
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def provider_consumer_genesis(self, consumer_id, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "provider",
+                "consumer-genesis",
+                consumer_id,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def provider_opt_in(self, consumer_id, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "opt-in",
+                consumer_id,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp

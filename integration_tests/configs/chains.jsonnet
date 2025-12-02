@@ -72,7 +72,7 @@
     'account-prefix': 'inveniam',
     evm_denom: 'anvnm',
     cmd: 'inveniamd',
-    evm_chain_id: 7888,
+    evm_chain_id: 58886,
     bank: {
       denom_metadata: [{
         description: 'Native 18-decimal denom metadata for Cosmos EVM chain',
