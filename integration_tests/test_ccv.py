@@ -1,6 +1,7 @@
 import datetime
 import json
 import shutil
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from pystarport.utils import wait_for_fn, wait_for_new_blocks, wait_for_port
 
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
 from .network import Hermes, Mantra, setup_custom_mantra
-from .utils import find_log_event_attrs
+from .utils import DEFAULT_DENOM, bech32_to_eth, find_log_event_attrs
 
 pytestmark = pytest.mark.slow
 
@@ -53,7 +54,7 @@ def ibc(request, tmp_path_factory):
                 "binary_hash": dummy_hash,
                 "spawn_time": now.isoformat().replace("+00:00", "Z"),
                 "ccv_timeout_period": 2419200000000000,
-                "unbonding_period": 88000000000,
+                "unbonding_period": 100000000000,
                 "transfer_timeout_period": 60000000000,
                 "consumer_redistribution_fraction": "0.75",
                 "blocks_per_distribution_transmission": 10,
@@ -158,13 +159,27 @@ def ibc(request, tmp_path_factory):
         hermes = Hermes(path.with_suffix(".toml"))
         create_connection(hermes, b_chain)
         create_channel(hermes, b_chain, "consumer", "provider")
+
+        # Delegate tokens to validator and relay the resulting VSC packet to consumer
+        val = cli.debug_addr(bech32_to_eth(owner_address), bech="val")
+        res = cli.delegations(owner_address)
+        val = res[0]["delegation"]["validator_address"]
+        delegate_amt = 1000000
+        gas = 350_000
+        coin = f"{delegate_amt}{DEFAULT_DENOM}"
+        rsp = cli.delegate_amount(val, coin, _from="validator", gas=gas)
+        assert rsp["code"] == 0, rsp["raw_log"]
+        time.sleep(15)
+
         ibc1.supervisorctl("start", "relayer-demo")
+
         yield IBCNetwork(ibc1, ibc2, hermes)
         wait_for_port(hermes.port)
 
 
 async def test_ccv(ibc):
     cli = ibc.ibc1.cosmos_cli()
+    cli2 = ibc.ibc2.cosmos_cli()
     res = cli.ibc_query_channel("provider", "channel-0").get("channel")
     assert res.get("state") == "STATE_OPEN"
 
@@ -173,3 +188,13 @@ async def test_ccv(ibc):
         return res.get("state") == "STATE_OPEN"
 
     wait_for_fn("channel ready", check_channel_ready, timeout=30)
+
+    val_set = cli.comet_validator_set(0)
+    val_set2 = cli2.comet_validator_set(0)
+
+    def extract_voting_power(valset):
+        return [v["voting_power"] for v in valset["validators"]]
+
+    vp = extract_voting_power(val_set)
+    vp2 = extract_voting_power(val_set2)
+    assert vp == vp2, "voting_power should match"
