@@ -43,8 +43,8 @@ let
       filename = "mantrachaind-7.0.0-rc2-${platform}.tar.gz";
       sha256 = {
         darwin-amd64 = "sha256-1uzvEuQ0gb67QJaWtmHDpU/BVdy2u7UcA1AF0NV3+m0=";
-        linux-arm64 = "sha256-p8qDIdziEdlvP3AkbDIV9pPaQHoiQ/JQYzB4ktBH9QM=";
-        linux-amd64 = "sha256-p8qDIdziEdlvP3AkbDIV9pPaQHoiQ/JQYzB4ktBH9QM=";
+        linux-arm64 = "sha256-s3W9BdooUaELs6efHHWb80OlKWa2QV3CWM8NJ1jN4R0=";
+        linux-amd64 = "sha256-s3W9BdooUaELs6efHHWb80OlKWa2QV3CWM8NJ1jN4R0=";
       };
     };
   };
