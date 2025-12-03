@@ -1,7 +1,6 @@
 import datetime
 import json
 import shutil
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -172,8 +171,19 @@ def ibc(request, tmp_path_factory):
         coin = f"{delegate_amt}{DEFAULT_DENOM}"
         rsp = cli.delegate_amount(val, coin, _from="validator", gas=gas)
         assert rsp["code"] == 0, rsp["raw_log"]
+
         # wait enough for an epoch to elapse
-        time.sleep(5)
+        cli2 = ibc2.cosmos_cli()
+
+        def extract_voting_power(valset):
+            return [v["voting_power"] for v in valset["validators"]]
+
+        def check_voting_power():
+            vp = extract_voting_power(cli.comet_validator_set(0))
+            vp2 = extract_voting_power(cli2.comet_validator_set(0))
+            return vp == vp2
+
+        wait_for_fn("voting_power should match", check_voting_power, timeout=30)
 
         yield IBCNetwork(ibc1, ibc2, hermes)
         wait_for_port(hermes.port)
@@ -181,7 +191,6 @@ def ibc(request, tmp_path_factory):
 
 async def test_ccv(ibc):
     cli = ibc.ibc1.cosmos_cli()
-    cli2 = ibc.ibc2.cosmos_cli()
     res = cli.ibc_query_channel("provider", "channel-0").get("channel")
     assert res.get("state") == "STATE_OPEN"
 
@@ -194,13 +203,3 @@ async def test_ccv(ibc):
         return res is not None and res.get("state") == "STATE_OPEN"
 
     wait_for_fn("channel ready", check_channel_ready, timeout=30)
-
-    val_set = cli.comet_validator_set(0)
-    val_set2 = cli2.comet_validator_set(0)
-
-    def extract_voting_power(valset):
-        return [v["voting_power"] for v in valset["validators"]]
-
-    vp = extract_voting_power(val_set)
-    vp2 = extract_voting_power(val_set2)
-    assert vp == vp2, "voting_power should match"
