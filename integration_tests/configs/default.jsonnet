@@ -98,7 +98,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
             max_gas: '81500000',
           },
           abci: {
-            vote_extensions_enable_height: '1',
+            vote_extensions_enable_height: '0',
           },
         },
       },
