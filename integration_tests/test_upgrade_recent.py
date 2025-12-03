@@ -62,6 +62,9 @@ def exec(c):
         c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
     )
 
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc3", target_height, min_deposit=1 * SCALE_FACTOR)
+
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
     grpc_port = ports.grpc_port(c.base_port(grpc_node))

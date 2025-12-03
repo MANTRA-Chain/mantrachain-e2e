@@ -65,6 +65,9 @@ async def exec(c, tmp_path):
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
 
+    res = cli.oracle_query_currency_pairs()
+    assert len(res) > 0, res
+
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v5.0", target_height, denom=LEGACY_DENOM)
 
@@ -352,8 +355,13 @@ async def exec(c, tmp_path):
     cli = do_upgrade(
         c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
     )
-    print("mm-pp", cli.get_params("mint"))
     assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
+
+    target_height = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc3", target_height, min_deposit=1 * SCALE_FACTOR)
+
+    res = cli.oracle_query_currency_pairs()
+    assert len(res) == 0, res
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):

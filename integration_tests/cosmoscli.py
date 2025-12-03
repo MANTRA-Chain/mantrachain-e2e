@@ -432,3 +432,30 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def oracle_add_currency_pairs(self, pairs, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "oracle",
+                "add-currency-pairs",
+                "--currency-pairs",
+                json.dumps(pairs),
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def oracle_query_currency_pairs(self, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "oracle",
+                "currency-pairs",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("currency_pairs", [])
