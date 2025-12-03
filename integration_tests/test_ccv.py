@@ -54,7 +54,7 @@ def ibc(request, tmp_path_factory):
                 "binary_hash": dummy_hash,
                 "spawn_time": now.isoformat().replace("+00:00", "Z"),
                 "ccv_timeout_period": 2419200000000000,
-                "unbonding_period": 100000000000,
+                "unbonding_period": 80000000000,
                 "transfer_timeout_period": 60000000000,
                 "consumer_redistribution_fraction": "0.75",
                 "blocks_per_distribution_transmission": 10,
@@ -109,6 +109,7 @@ def ibc(request, tmp_path_factory):
         wait_for_new_blocks(cli, 1)
 
         consumer_genesis = cli.provider_consumer_genesis(consumer_id)
+        now = datetime.datetime.now(datetime.UTC)
 
         for i in range(num_nodes):
             cons_node_dir = ibc2.base_dir / f"node{i}"
@@ -120,6 +121,7 @@ def ibc(request, tmp_path_factory):
             genesis_path = cons_cfg / "genesis.json"
             with open(genesis_path) as f:
                 genesis = json.load(f)
+            genesis["genesis_time"] = now.isoformat().replace("+00:00", "Z")
             genesis["app_state"]["ccvconsumer"] = consumer_genesis
             genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = ["anvnm"]
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
@@ -160,6 +162,7 @@ def ibc(request, tmp_path_factory):
         create_connection(hermes, b_chain)
         create_channel(hermes, b_chain, "consumer", "provider")
 
+        ibc1.supervisorctl("start", "relayer-demo")
         # Delegate tokens to validator and relay the resulting VSC packet to consumer
         val = cli.debug_addr(bech32_to_eth(owner_address), bech="val")
         res = cli.delegations(owner_address)
@@ -169,9 +172,8 @@ def ibc(request, tmp_path_factory):
         coin = f"{delegate_amt}{DEFAULT_DENOM}"
         rsp = cli.delegate_amount(val, coin, _from="validator", gas=gas)
         assert rsp["code"] == 0, rsp["raw_log"]
-        time.sleep(15)
-
-        ibc1.supervisorctl("start", "relayer-demo")
+        # wait enough for an epoch to elapse
+        time.sleep(5)
 
         yield IBCNetwork(ibc1, ibc2, hermes)
         wait_for_port(hermes.port)
@@ -184,8 +186,12 @@ async def test_ccv(ibc):
     assert res.get("state") == "STATE_OPEN"
 
     def check_channel_ready():
-        res = cli.ibc_query_channel("transfer", "channel-1").get("channel")
-        return res.get("state") == "STATE_OPEN"
+        try:
+            res = cli.ibc_query_channel("transfer", "channel-1").get("channel")
+        except Exception as e:
+            print(f"channel-1 not ready: {e}")
+            res = None
+        return res is not None and res.get("state") == "STATE_OPEN"
 
     wait_for_fn("channel ready", check_channel_ready, timeout=30)
 
