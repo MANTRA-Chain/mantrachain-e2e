@@ -27,6 +27,7 @@
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
+          (_: pkgs: { mantrachaind_provider = pkgs.callPackage ./nix/mantrachain-provider/default.nix { }; })
           (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
           (_: pkgs: { inveniamd = pkgs.callPackage ./nix/inveniam/default.nix { }; })
         ];
@@ -53,6 +54,7 @@
         in {
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
+          mantrachaind_provider = pkgs.mantrachaind_provider;
           evmd = pkgs.evmd;
           inveniamd = pkgs.inveniamd;
           hermes = pkgs.hermes;

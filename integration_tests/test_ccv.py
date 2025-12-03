@@ -1,6 +1,7 @@
 import datetime
 import json
 import shutil
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -11,9 +12,23 @@ from pystarport.utils import wait_for_fn, wait_for_new_blocks, wait_for_port
 
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
 from .network import Hermes, Mantra, setup_custom_mantra
-from .utils import DEFAULT_DENOM, bech32_to_eth, find_log_event_attrs
+from .utils import (
+    CHAIN_ID,
+    CMD,
+    DEFAULT_DENOM,
+    bech32_to_eth,
+    find_log_event_attrs,
+    update_node_cmd,
+)
 
-pytestmark = pytest.mark.slow
+pytestmark = pytest.mark.ccv
+
+
+def post_init(broken_binary):
+    def inner(path, base_port, config, genesis):
+        update_node_cmd(path / CHAIN_ID, broken_binary, 1)
+
+    return inner
 
 
 @pytest.fixture(scope="module")
@@ -22,16 +37,24 @@ def ibc(request, tmp_path_factory):
     name = "configs/ibc_inveniamd.jsonnet"
     path = tmp_path_factory.mktemp("ibc_inveniamd")
     b_chain = "inveniam-canary-net-1"
-    cmd = "inveniamd"
+    cmd = [
+        "nix-build",
+        "--no-out-link",
+        Path(__file__).parent / "configs/provider.nix",
+    ]
+    print(*cmd)
+    binary = Path(subprocess.check_output(cmd).strip().decode()) / f"bin/{CMD}"
     with contextmanager(setup_custom_mantra)(
         path,
         27400,
         Path(__file__).parent / name,
         relayer=cluster.Relayer.HERMES.value,
+        post_init=post_init(binary),
         chain=chain,
+        chain_binary=f"inveniamd,{str(binary)}",
     ) as ibc1:
         num_nodes = 3
-        ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary=cmd)
+        ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary="inveniamd")
         nodes = [f"{b_chain}-node{i}" for i in range(num_nodes)]
         ibc2.supervisorctl("stop", *nodes)
         cli = ibc1.cosmos_cli()
