@@ -212,7 +212,7 @@ def ibc(request, tmp_path_factory):
         wait_for_port(hermes.port)
 
 
-async def test_ccv(ibc):
+def test_ccv(ibc):
     cli = ibc.ibc1.cosmos_cli()
     res = cli.ibc_query_channel("provider", "channel-0").get("channel")
     assert res.get("state") == "STATE_OPEN"
