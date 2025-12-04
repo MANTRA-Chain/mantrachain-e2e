@@ -459,3 +459,10 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
         return res.get("currency_pairs", [])
+
+    def cleanup_block_events(self, height):
+        return self.raw(
+            "cleanup-block-events",
+            height,
+            home=self.data_dir,
+        )
