@@ -68,7 +68,7 @@ def exec(c):
     c.supervisorctl("stop", f"{CHAIN_ID}-node1")
     update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
 
-    target_height0 = cli.block_height() + 100
+    target_height0 = cli.block_height() + 150
     cli = do_upgrade(c, "v7.0.0-rc2", target_height0, denom=LEGACY_DENOM)
 
     rewards_bf = cli.distribution_rewards(signer1, height=target_height0 - 1)
