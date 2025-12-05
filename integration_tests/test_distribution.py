@@ -8,6 +8,7 @@ from pystarport.utils import (
 
 from .utils import (
     DEFAULT_DENOM,
+    assert_withdraw_rewards,
     find_fee,
     find_log_event_attrs,
 )
@@ -65,61 +66,18 @@ def test_commission(mantra):
 
 
 @pytest.mark.connect
-def test_connect_delegation_rewards_flow(connect_mantra, tmp_path):
-    test_delegation_rewards_flow(None, connect_mantra, tmp_path)
+def test_connect_withdraw_rewards(connect_mantra, tmp_path):
+    test_withdraw_rewards(None, connect_mantra, tmp_path)
 
 
-def test_delegation_rewards_flow(mantra):
+def test_withdraw_rewards(mantra):
     cli = mantra.cosmos_cli()
-    val = cli.address("validator", "val")
-    validator = cli.address("validator")
-    delegate_amt = 20_000_000
-    gas0 = 250_000
-    coin = f"{delegate_amt}{DEFAULT_DENOM}"
-    signer1 = cli.address("signer1")
-    signer2 = cli.address("signer2")
 
-    rsp = cli.set_withdraw_addr(signer2, from_=signer1)
-    assert rsp["code"] == 0, rsp["raw_log"]
+    def cb(cli):
+        wait_for_new_blocks(cli, 1)
+        return cli, cli.block_height()
 
-    rsp = cli.delegate_amount(val, coin, _from=signer1, gas=gas0)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    height = int(rsp["height"])
-
-    rsp = cli.delegate_amount(val, coin, _from=validator, gas=gas0)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    wait_for_new_blocks(cli, 3)
-
-    rewards = [
-        cli.distribution_rewards(signer1, height=height),
-        cli.distribution_rewards(signer1),
-    ]
-    assert rewards[1] >= rewards[0], "rewards should increase"
-
-    period = cli.query_delegator_starting_info(signer1, val)["previous_period"]
-    start = parse_amount(
-        cli.query_validator_historical_rewards(val, period).get(
-            "cumulative_reward_ratio", [{}]
-        )[0]
-    )
-
-    rsp = cli.withdraw_rewards(val, from_=signer1)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    height = int(rsp["height"])
-    period = cli.query_delegator_starting_info(signer1, val, height=height)[
-        "previous_period"
-    ]
-    end = parse_amount(
-        cli.query_validator_historical_rewards(val, period, height=height).get(
-            "cumulative_reward_ratio", [{}]
-        )[0]
-    )
-    balances = [
-        cli.balance(signer2, height=height - 1),
-        cli.balance(signer2, height=height),
-    ]
-    assert int(delegate_amt * (end - start)) == balances[1] - balances[0]
+    assert_withdraw_rewards(cli, cb, gas=250_000)
 
 
 @pytest.mark.connect

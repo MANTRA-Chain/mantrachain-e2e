@@ -39,6 +39,7 @@ from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from pystarport import cluster
 from pystarport.utils import (
+    parse_amount,
     wait_for_block_time,
     wait_for_fn,
     wait_for_new_blocks,
@@ -1135,3 +1136,52 @@ def grpc_eth_call(
             break
         time.sleep(sleep)
     assert success, str(rsp)
+
+
+def assert_withdraw_rewards(cli, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+    val = cli.address("validator", "val")
+    validator = cli.address("validator")
+    signer1 = cli.address("signer1")
+    signer2 = cli.address("signer2")
+    amt = 20_000_000
+    coin = f"{amt}{denom}"
+
+    rsp = cli.set_withdraw_addr(signer2, from_=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=validator, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    cli, target_height = cb(cli)
+    rewards = [
+        cli.distribution_rewards(signer1, height=target_height - 1),
+        cli.distribution_rewards(signer1, height=target_height),
+    ]
+    diff = rewards[1] / (rewards[0] * scale)
+    assert diff >= 1 and diff <= 2, "rewards should increase"
+
+    period = cli.query_delegator_starting_info(signer1, val)["previous_period"]
+    start = parse_amount(
+        cli.query_validator_historical_rewards(val, period).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
+
+    rsp = cli.withdraw_rewards(val, from_=signer1)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    height = int(rsp["height"])
+    info = cli.query_delegator_starting_info(signer1, val, height=height)
+    stake = float(info["stake"]) / scale
+    period = info["previous_period"]
+    end = parse_amount(
+        cli.query_validator_historical_rewards(val, period, height=height).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
+    balances = [
+        cli.balance(signer2, height=height - 1),
+        cli.balance(signer2, height=height),
+    ]
+    assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
+    return target_height
