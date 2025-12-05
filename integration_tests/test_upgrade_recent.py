@@ -4,7 +4,7 @@ import subprocess
 import pytest
 import tomlkit
 from pystarport import ports
-from pystarport.utils import wait_for_new_blocks, wait_for_port
+from pystarport.utils import parse_amount, wait_for_new_blocks, wait_for_port
 
 from .network import Mantra
 from .upgrade_utils import (
@@ -45,10 +45,11 @@ def exec(c):
     coin = f"{delegate_amt}{LEGACY_DENOM}"
     gas_prices = f"1{LEGACY_DENOM}"
     val = cli.validators()[0]["operator_address"]
-    signer1 = cli.address("signer1")
     validator = eth_to_bech32(cli.debug_addr(val, bech="hex"))
+    signer1 = cli.address("signer1")
+    signer2 = cli.address("signer2")
 
-    rsp = cli.delegate_amount(val, coin, _from=validator, gas_prices=gas_prices)
+    rsp = cli.set_withdraw_addr(signer2, from_=signer1, gas_prices=gas_prices)
     assert rsp["code"] == 0, rsp["raw_log"]
     rsp = cli.delegate_amount(val, coin, _from=signer1, gas_prices=gas_prices)
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -71,14 +72,44 @@ def exec(c):
     target_height0 = cli.block_height() + 150
     cli = do_upgrade(c, "v7.0.0-rc2", target_height0, denom=LEGACY_DENOM)
 
-    rewards_bf = cli.distribution_rewards(signer1, height=target_height0 - 1)
     wait_for_new_blocks(cli, 20)
-    rewards_af = cli.distribution_rewards(signer1)
-    diff = rewards_af / (rewards_bf * SCALE_FACTOR)
+    rewards = [
+        cli.distribution_rewards(signer1, height=target_height0 - 1),
+        cli.distribution_rewards(signer1),
+    ]
+    diff = rewards[1] / (rewards[0] * SCALE_FACTOR)
     assert diff >= 1 and diff < 2, "rewards should increase"
+
+    period = cli.query_delegator_starting_info(signer1, val)["previous_period"]
+    start = parse_amount(
+        cli.query_validator_historical_rewards(val, period).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
 
     rsp = cli.withdraw_rewards(val, from_=signer1)
     assert rsp["code"] == 0, rsp["raw_log"]
+    height = int(rsp["height"])
+    period = int(
+        cli.query_delegator_starting_info(signer1, val, height=height)[
+            "previous_period"
+        ]
+    )
+    period = cli.query_delegator_starting_info(signer1, val, height=height)[
+        "previous_period"
+    ]
+    end = parse_amount(
+        cli.query_validator_historical_rewards(val, period, height=height).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
+    balances = [
+        cli.balance(signer2, height=height - 1),
+        cli.balance(signer2, height=height),
+    ]
+    assert int(delegate_amt * (end - start)) == int(
+        (balances[1] - balances[0]) / SCALE_FACTOR
+    )
     return
 
     target_height = cli.block_height() + 15

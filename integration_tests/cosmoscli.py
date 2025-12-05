@@ -466,3 +466,37 @@ class CosmosCLI(PystarportCosmosCLI):
             height,
             home=self.data_dir,
         )
+
+    def query_delegator_starting_info(
+        self,
+        delegator,
+        validator,
+        **kwargs,
+    ):
+        return json.loads(
+            self.raw(
+                "q",
+                "distribution",
+                "delegator-starting-info",
+                delegator,
+                validator,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("starting_info")
+
+    def query_validator_historical_rewards(
+        self,
+        delegator,
+        period,
+        **kwargs,
+    ):
+        return json.loads(
+            self.raw(
+                "q",
+                "distribution",
+                "validator-historical-rewards",
+                delegator,
+                period,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("rewards")

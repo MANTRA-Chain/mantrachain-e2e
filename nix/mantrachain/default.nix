@@ -13,8 +13,8 @@ let
 in
 builder {
   version = "v7";
-  owner = "MANTRA-Chain";
-  rev = "778e7815605fe8b5773d1ac9b9b0dd275870812e";
-  hash = "sha256-QaKlZcTq7xVKh4OzwkwjYR28PST6lPX9Ple1DR21obY=";
-  vendorHash = "sha256-F9S6ddxqBmZz8JNSgM7dfGK9GBnX/+EqrG+gQjMaAV4=";
+  owner = "mmsqe";
+  rev = "4d1bbbbf9c0bb6a52e9098714a4f6b3d811195dc";
+  hash = "sha256-B+aDbrRYh1iEBnJ7Vu/gJtLOcmwMRwpLOQp39AufKV4=";
+  vendorHash = "sha256-Zj+E0T/xx+D5UOrk2bI5uemgkAtZn98w3/AaWqP0CkY=";
 }
