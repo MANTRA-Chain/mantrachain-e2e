@@ -6,6 +6,11 @@ config {
     'app-config'+: {
       'minimum-gas-prices': '0' + legacy_evm_denom,
     },
+    config+: {
+      consensus+: {
+        timeout_commit: '100ms',
+      },
+    },
     validators: [
       if i == 0 then
         validator {

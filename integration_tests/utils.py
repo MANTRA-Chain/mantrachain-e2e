@@ -746,7 +746,7 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
             **kwargs,
         )
         assert rsp["code"] == 0, rsp["raw_log"]
-    wait_for_new_blocks(cli, 1)
+    wait_for_new_blocks(cli, 1, sleep=0.01)
     res = cli.query_tally(proposal_id)
     res = res.get("tally") or res
     assert (
