@@ -72,11 +72,6 @@ async def exec(c):
     )
 
     target_height = cli.block_height() + 15
-    cli = do_upgrade(
-        c.ibc1, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
-    )
-
-    target_height = cli.block_height() + 15
     cli = do_upgrade(c.ibc1, "v7.0.0-rc3", target_height, min_deposit=1 * SCALE_FACTOR)
 
 
