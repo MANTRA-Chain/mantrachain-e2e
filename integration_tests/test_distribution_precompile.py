@@ -9,8 +9,10 @@ from .utils import (
     WEI_PER_DENOM,
     bech32_to_eth,
     build_contract,
+    eth_to_bech32,
     find_fee,
     find_log_event_attrs,
+    w3_wait_for_new_blocks_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -27,9 +29,9 @@ async def community_pool(w3):
     return res[0][1] if res else 0
 
 
-async def rewards(w3, val, val_addr):
-    res = await PRECOMPILE.fns.delegationRewards(val, val_addr).call(
-        w3, to=DISTRIBUTION
+async def get_rewards(w3, delegator, val_addr, block=None):
+    res = await PRECOMPILE.fns.delegationRewards(delegator, val_addr).call(
+        w3, to=DISTRIBUTION, block_identifier=block
     )
     return res[0][1] if res else 0
 
@@ -64,46 +66,69 @@ async def test_distribution(mantra, connect_mantra, tmp_path):
 
 
 @pytest.mark.connect
-async def test_connect_delegation_rewards_flow(connect_mantra, tmp_path):
-    await test_delegation_rewards_flow(None, connect_mantra, tmp_path)
+async def test_connect_withdraw_rewards(connect_mantra, tmp_path):
+    await test_withdraw_rewards(None, connect_mantra, tmp_path)
 
 
-async def test_delegation_rewards_flow(mantra, connect_mantra, tmp_path):
+async def test_withdraw_rewards(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3
     acct = ACCOUNTS["signer1"]
-    val = cli.validators()[0]["operator_address"]
+    val = cli.address("validator", "val")
     validator = cli.debug_addr(val, bech="hex")
-    rewards_bf = await rewards(w3, validator, val)
     signer1 = cli.address("signer1")
     signer2 = cli.address("signer2")
+    signer1_eth = bech32_to_eth(signer1)
     signer2_eth = bech32_to_eth(signer2)
+    delegate_amt = 20_000_000
+    gas0 = 250_000
+    coin = f"{delegate_amt}{DEFAULT_DENOM}"
 
     res = await PRECOMPILE.fns.setWithdrawAddress(acct.address, signer2).transact(
         w3, acct, to=DISTRIBUTION, gas=gas
     )
     assert res.status == 1
 
-    delegate_amt = 4e6
-    gas0 = 250_000
-    coin = f"{delegate_amt}{DEFAULT_DENOM}"
     rsp = cli.delegate_amount(val, coin, _from=signer1, gas=gas0)
     assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=eth_to_bech32(validator), gas=gas0)
+    assert rsp["code"] == 0, rsp["raw_log"]
 
-    rewards_af = await rewards(w3, validator, val)
-    assert rewards_af >= rewards_bf, "rewards should increase"
+    await w3_wait_for_new_blocks_async(w3, 3)
+    block = await w3.eth.block_number
 
-    balance_bf = await w3.eth.get_balance(signer2_eth)
+    rewards = [
+        await get_rewards(w3, signer1_eth, val, block=block - 1),
+        await get_rewards(w3, signer1_eth, val, block=block),
+    ]
+    diff = rewards[1] / rewards[0]
+    assert diff >= 1 and diff <= 2, "rewards should increase"
+
+    period = cli.query_delegator_starting_info(signer1, val)["previous_period"]
+    start = parse_amount(
+        cli.query_validator_historical_rewards(val, period).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
+
     res = await PRECOMPILE.fns.withdrawDelegatorRewards(acct.address, val).transact(
         w3, acct, to=DISTRIBUTION, gas=gas
     )
     assert res.status == 1
-
-    balance_af = await w3.eth.get_balance(signer2_eth)
-    assert balance_af >= balance_bf, "balance should increase"
-
-    rsp = cli.unbond_amount(val, coin, _from=signer1, gas=gas0)
-    assert rsp["code"] == 0, rsp["raw_log"]
+    height = res["blockNumber"]
+    info = cli.query_delegator_starting_info(signer1, val, height=height)
+    stake = float(info["stake"])
+    period = info["previous_period"]
+    end = parse_amount(
+        cli.query_validator_historical_rewards(val, period, height=height).get(
+            "cumulative_reward_ratio", [{}]
+        )[0]
+    )
+    balances = [
+        await w3.eth.get_balance(signer2_eth, block_identifier=height - 1),
+        await w3.eth.get_balance(signer2_eth, block_identifier=height),
+    ]
+    assert int(stake * (end - start)) == int(balances[1] - balances[0])
 
 
 @pytest.mark.connect
