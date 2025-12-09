@@ -1138,7 +1138,8 @@ def grpc_eth_call(
     assert success, str(rsp)
 
 
-def assert_withdraw_rewards(cli, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+    cli = mantra.cosmos_cli()
     val = cli.address("validator", "val")
     validator = cli.address("validator")
     signer1 = cli.address("signer1")
@@ -1161,27 +1162,37 @@ def assert_withdraw_rewards(cli, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
     diff = rewards[1] / (rewards[0] * scale)
     assert diff >= 1 and diff <= 2, "rewards should increase"
 
-    period = cli.query_delegator_starting_info(signer1, val)["previous_period"]
-    start = parse_amount(
-        cli.query_validator_historical_rewards(val, period).get(
-            "cumulative_reward_ratio", [{}]
-        )[0]
-    )
-
+    height_bf = cli.block_height()
     rsp = cli.withdraw_rewards(val, from_=signer1)
     assert rsp["code"] == 0, rsp["raw_log"]
-    height = int(rsp["height"])
-    info = cli.query_delegator_starting_info(signer1, val, height=height)
-    stake = float(info["stake"]) / scale
-    period = info["previous_period"]
-    end = parse_amount(
-        cli.query_validator_historical_rewards(val, period, height=height).get(
-            "cumulative_reward_ratio", [{}]
-        )[0]
-    )
+    height_af = int(rsp["height"])
     balances = [
-        cli.balance(signer2, height=height - 1),
-        cli.balance(signer2, height=height),
+        cli.balance(signer2, height=height_af - 1),
+        cli.balance(signer2, height=height_af),
     ]
+    mantra.supervisorctl("stop", "all")
+
+    def get_reward_ratio(height):
+        dis = cli.export(
+            modules_to_export="distribution", height=height,
+        )["app_state"]["distribution"]
+        data = dis["delegator_starting_infos"]
+        info = [
+            r for r in data
+            if r["validator_address"] == val and r["delegator_address"] == signer1
+        ][0]["starting_info"]
+        period = info["previous_period"]
+        stake = float(info["stake"]) / scale
+        data = dis["validator_historical_rewards"]
+        rewards = [
+            r for r in data
+            if r["validator_address"] == val
+            and r["period"] == period
+        ]
+        assert len(rewards) == 1, rewards
+        return stake, float(rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"])
+
+    _, start = get_reward_ratio(height_bf)
+    stake, end = get_reward_ratio(height_af)
     assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
     return target_height

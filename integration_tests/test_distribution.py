@@ -71,13 +71,11 @@ def test_connect_withdraw_rewards(connect_mantra, tmp_path):
 
 
 def test_withdraw_rewards(mantra):
-    cli = mantra.cosmos_cli()
-
     def cb(cli):
         wait_for_new_blocks(cli, 1)
         return cli, cli.block_height()
 
-    assert_withdraw_rewards(cli, cb, gas=250_000)
+    assert_withdraw_rewards(mantra, cb, gas=250_000)
 
 
 @pytest.mark.connect
