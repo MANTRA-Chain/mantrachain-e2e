@@ -76,6 +76,8 @@ def test_withdraw_rewards(mantra):
         return cli, cli.block_height()
 
     assert_withdraw_rewards(mantra, cb, gas=250_000)
+    mantra.supervisorctl("start", "mantra-canary-net-1-node0")
+    wait_for_new_blocks(mantra.cosmos_cli(), 1)
 
 
 @pytest.mark.connect

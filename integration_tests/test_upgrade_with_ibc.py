@@ -19,7 +19,6 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_AMT,
-    SCALE_FACTOR,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
@@ -53,7 +52,7 @@ async def exec(c):
     def upgrade():
         nonlocal cli
         target_height = cli.block_height() + 15
-        cli = do_upgrade(c.ibc1, "v7.0.0-rc2", target_height, denom=LEGACY_DENOM)
+        cli = do_upgrade(c.ibc1, "v7.0.0-rc4", target_height, denom=LEGACY_DENOM)
 
         c.ibc1.supervisorctl("stop", "relayer-demo")
         rly_cfg = c.hermes.configpath
@@ -70,9 +69,6 @@ async def exec(c):
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
     )
-
-    target_height = cli.block_height() + 15
-    cli = do_upgrade(c.ibc1, "v7.0.0-rc3", target_height, min_deposit=1 * SCALE_FACTOR)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

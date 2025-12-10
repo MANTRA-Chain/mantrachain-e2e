@@ -56,11 +56,11 @@ def exec(c):
         update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
 
         target_height0 = cli.block_height() + 150
-        cli = do_upgrade(c, "v7.0.0-rc2", target_height0, denom=LEGACY_DENOM)
+        cli = do_upgrade(c, "v7.0.0-rc4", target_height0, denom=LEGACY_DENOM)
         return cli, target_height0
 
     target_height0 = assert_withdraw_rewards(
-        cli, cb, denom=LEGACY_DENOM, scale=SCALE_FACTOR, gas_prices=gas_prices
+        c, cb, denom=LEGACY_DENOM, scale=SCALE_FACTOR, gas_prices=gas_prices
     )
     return
 

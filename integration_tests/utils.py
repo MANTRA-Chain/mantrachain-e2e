@@ -39,7 +39,6 @@ from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from pystarport import cluster
 from pystarport.utils import (
-    parse_amount,
     wait_for_block_time,
     wait_for_fn,
     wait_for_new_blocks,
@@ -1170,27 +1169,31 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.balance(signer2, height=height_af - 1),
         cli.balance(signer2, height=height_af),
     ]
-    mantra.supervisorctl("stop", "all")
+    mantra.supervisorctl("stop", "mantra-canary-net-1-node0")
 
     def get_reward_ratio(height):
         dis = cli.export(
-            modules_to_export="distribution", height=height,
-        )["app_state"]["distribution"]
+            modules_to_export="distribution",
+            height=height,
+        )[
+            "app_state"
+        ]["distribution"]
         data = dis["delegator_starting_infos"]
         info = [
-            r for r in data
+            r
+            for r in data
             if r["validator_address"] == val and r["delegator_address"] == signer1
         ][0]["starting_info"]
         period = info["previous_period"]
         stake = float(info["stake"]) / scale
         data = dis["validator_historical_rewards"]
         rewards = [
-            r for r in data
-            if r["validator_address"] == val
-            and r["period"] == period
+            r for r in data if r["validator_address"] == val and r["period"] == period
         ]
         assert len(rewards) == 1, rewards
-        return stake, float(rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"])
+        return stake, float(
+            rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"]
+        )
 
     _, start = get_reward_ratio(height_bf)
     stake, end = get_reward_ratio(height_af)

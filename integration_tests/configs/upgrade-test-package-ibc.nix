@@ -7,8 +7,7 @@ let
   platform = common.platform;
   releases = {
     genesis = pkgs.callPackage ../../nix/v6.1.1/default.nix {};
-    "v7.0.0-rc2" = pkgs.callPackage ../../nix/v7.0.0-rc2/default.nix {};
-    "v7.0.0-rc3" = if useLiteMode
+    "v7.0.0-rc4" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };

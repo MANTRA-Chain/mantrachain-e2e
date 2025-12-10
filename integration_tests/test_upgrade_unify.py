@@ -281,7 +281,7 @@ async def exec(c, tmp_path):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     target_height_rc2 = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc2", target_height_rc2, denom=LEGACY_DENOM)
+    cli = do_upgrade(c, "v7.0.0-rc4", target_height_rc2, denom=LEGACY_DENOM)
     assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
 
     # delegate after migration
@@ -363,9 +363,6 @@ async def exec(c, tmp_path):
     nodes = [f"mantra-canary-net-1-node{i}" for i in range(3)]
     c.supervisorctl("start", *nodes)
     wait_for_new_blocks(cli, 1)
-
-    target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc3", target_height, min_deposit=1 * SCALE_FACTOR)
 
     res = cli.oracle_query_currency_pairs()
     assert len(res) == 0, res
