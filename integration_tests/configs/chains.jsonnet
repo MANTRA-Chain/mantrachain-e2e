@@ -69,17 +69,31 @@
       },
     },
   },
-  inveniemd: {
-    'account-prefix': 'inveniem',
+  inveniamd: {
+    'account-prefix': 'inveniam',
     evm_denom: 'anvnm',
-    cmd: 'inveniemd',
-    evm_chain_id: 7888,
-    bank: {},
-    evm: {
-      params: {
-        allow_unprotected_txs: true,
-      },
+    cmd: 'inveniamd',
+    evm_chain_id: 58886,
+    bank: {
+      denom_metadata: [{
+        description: 'Native 18-decimal denom metadata for Cosmos EVM chain',
+        denom_units: [
+          {
+            denom: 'anvnm',
+            exponent: 0,
+          },
+          {
+            denom: 'nvnm',
+            exponent: 18,
+          },
+        ],
+        base: 'anvnm',
+        display: 'nvnm',
+        name: 'nvnm',
+        symbol: 'NVNM',
+      }],
     },
+    evm: {},
     feemarket: {
       params: {
         base_fee: '1000000000',

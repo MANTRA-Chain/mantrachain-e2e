@@ -198,6 +198,8 @@ async def test_transaction(mantra, connect_mantra):
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
     res = await send_transaction_async(w3, acct, **data)
     assert res["transactionIndex"] == 0
+    res = await w3.eth.get_transaction(res["transactionHash"])
+    assert res["transactionIndex"] == 0
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
         data["nonce"] = await w3.eth.get_transaction_count(sender) - 1

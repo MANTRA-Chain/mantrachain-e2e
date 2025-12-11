@@ -54,7 +54,7 @@ def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, min_deposit=1):
         Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
     )
     # block should pass the target height
-    wait_for_block(c.cosmos_cli(), target + 2, timeout=480)
+    wait_for_block(c.cosmos_cli(), target + 1)
     wait_for_port(ports.rpc_port(base_port))
     return c.cosmos_cli()
 

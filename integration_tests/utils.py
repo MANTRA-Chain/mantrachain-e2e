@@ -771,7 +771,7 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
             **kwargs,
         )
         assert rsp["code"] == 0, rsp["raw_log"]
-    wait_for_new_blocks(cli, 1)
+    wait_for_new_blocks(cli, 1, sleep=0.01)
     res = cli.query_tally(proposal_id)
     res = res.get("tally") or res
     assert (
@@ -1160,3 +1160,67 @@ def grpc_eth_call(
             break
         time.sleep(sleep)
     assert success, str(rsp)
+
+
+def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+    cli = mantra.cosmos_cli()
+    val = cli.address("validator", "val")
+    validator = cli.address("validator")
+    signer1 = cli.address("signer1")
+    signer2 = cli.address("signer2")
+    amt = 20_000_000
+    coin = f"{amt}{denom}"
+
+    rsp = cli.set_withdraw_addr(signer2, from_=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=validator, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    cli, target_height = cb(cli)
+    rewards = [
+        cli.distribution_rewards(signer1, height=target_height - 1),
+        cli.distribution_rewards(signer1, height=target_height),
+    ]
+    diff = rewards[1] / (rewards[0] * scale)
+    assert diff > 0.99 and diff < 2, "rewards should increase"
+
+    height_bf = cli.block_height()
+    rsp = cli.withdraw_rewards(val, from_=signer1)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    height_af = int(rsp["height"])
+    balances = [
+        cli.balance(signer2, height=height_af - 1),
+        cli.balance(signer2, height=height_af),
+    ]
+    mantra.supervisorctl("stop", "mantra-canary-net-1-node0")
+
+    def get_reward_ratio(height):
+        dis = cli.export(
+            modules_to_export="distribution",
+            height=height,
+        )[
+            "app_state"
+        ]["distribution"]
+        data = dis["delegator_starting_infos"]
+        info = [
+            r
+            for r in data
+            if r["validator_address"] == val and r["delegator_address"] == signer1
+        ][0]["starting_info"]
+        period = info["previous_period"]
+        stake = float(info["stake"]) / scale
+        data = dis["validator_historical_rewards"]
+        rewards = [
+            r for r in data if r["validator_address"] == val and r["period"] == period
+        ]
+        assert len(rewards) == 1, rewards
+        return stake, float(
+            rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"]
+        )
+
+    _, start = get_reward_ratio(height_bf)
+    stake, end = get_reward_ratio(height_af)
+    assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
+    return target_height

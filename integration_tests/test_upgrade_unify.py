@@ -2,6 +2,7 @@ import json
 import time
 
 import pytest
+import requests
 from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction
@@ -64,6 +65,9 @@ async def exec(c, tmp_path):
     assert_set_tokenfactory_denom(
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
+
+    res = cli.oracle_query_currency_pairs()
+    assert len(res) > 0, res
 
     target_height = cli.block_height() + 15
     cli = do_upgrade(c, "v5.0", target_height, denom=LEGACY_DENOM)
@@ -276,8 +280,9 @@ async def exec(c, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    target_height = cli.block_height() + 15
-    cli = do_upgrade(c, "v7.0.0-rc2", target_height, denom=LEGACY_DENOM)
+    target_height_rc2 = cli.block_height() + 15
+    cli = do_upgrade(c, "v7.0.0-rc4", target_height_rc2, denom=LEGACY_DENOM)
+    assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
 
     # delegate after migration
     PRECOMPILE = Contract(build_contract("StakingI")["abi"])
@@ -338,6 +343,17 @@ async def exec(c, tmp_path):
         "amount"
     ] == str(spend_limit * SCALE_FACTOR)
 
+    def get_block_events():
+        rsp = requests.get(
+            f"{cli.node_rpc_http}/block_results?height={target_height_rc2}"
+        ).json()
+        result = rsp.get("result")
+        if result is None:
+            return []
+        return result.get("finalize_block_events") or []
+
+    assert len(get_block_events()) > 0
+
     c.supervisorctl("stop", "all")
     distribution = cli.export(modules_to_export="distribution")["app_state"][
         "distribution"
@@ -348,12 +364,15 @@ async def exec(c, tmp_path):
     c.supervisorctl("start", *nodes)
     wait_for_new_blocks(cli, 1)
 
-    target_height = cli.block_height() + 15
-    cli = do_upgrade(
-        c, "v7.0.0-rc2-supply", target_height, min_deposit=1 * SCALE_FACTOR
-    )
-    print("mm-pp", cli.get_params("mint"))
-    assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
+    res = cli.oracle_query_currency_pairs()
+    assert len(res) == 0, res
+
+    c.supervisorctl("stop", "all")
+    cli.cleanup_block_events(target_height_rc2)
+    c.supervisorctl("start", *nodes)
+    wait_for_new_blocks(cli, 1)
+
+    assert len(get_block_events()) == 0
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):

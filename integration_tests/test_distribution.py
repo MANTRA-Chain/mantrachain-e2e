@@ -1,18 +1,14 @@
-from datetime import timedelta
-
 import pytest
 import requests
-from dateutil.parser import isoparse
 from pystarport.utils import (
     parse_amount,
     wait_for_block,
-    wait_for_block_time,
     wait_for_new_blocks,
 )
 
 from .utils import (
     DEFAULT_DENOM,
-    eth_to_bech32,
+    assert_withdraw_rewards,
     find_fee,
     find_log_event_attrs,
 )
@@ -70,43 +66,18 @@ def test_commission(mantra):
 
 
 @pytest.mark.connect
-def test_connect_delegation_rewards_flow(connect_mantra, tmp_path):
-    test_delegation_rewards_flow(None, connect_mantra, tmp_path)
+def test_connect_withdraw_rewards(connect_mantra, tmp_path):
+    test_withdraw_rewards(None, connect_mantra, tmp_path)
 
 
-def test_delegation_rewards_flow(mantra, connect_mantra, tmp_path):
-    cli = connect_mantra.cosmos_cli(tmp_path)
-    val = cli.validators()[0]["operator_address"]
-    validator = eth_to_bech32(cli.debug_addr(val, bech="hex"))
-    rewards_bf = cli.distribution_rewards(validator)
-    signer1 = cli.address("signer1")
-    signer2 = cli.address("signer2")
+def test_withdraw_rewards(mantra):
+    def cb(cli):
+        wait_for_new_blocks(cli, 1)
+        return cli, cli.block_height()
 
-    rsp = cli.set_withdraw_addr(signer2, from_=signer1)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    delegate_amt = 4e6
-    gas0 = 250_000
-    coin = f"{delegate_amt}{DEFAULT_DENOM}"
-    rsp = cli.delegate_amount(val, coin, _from=signer1, gas=gas0)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    rewards_af = cli.distribution_rewards(validator)
-    assert rewards_af >= rewards_bf, "rewards should increase"
-
-    balance_bf = cli.balance(signer2)
-    rsp = cli.withdraw_rewards(val, from_=signer1)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    balance_af = cli.balance(signer2)
-    assert balance_af >= balance_bf, "balance should increase"
-
-    rsp = cli.unbond_amount(val, coin, _from=signer1, gas=gas0)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    data = find_log_event_attrs(
-        rsp["events"], "unbond", lambda attrs: "completion_time" in attrs
-    )
-    wait_for_block_time(cli, isoparse(data["completion_time"]) + timedelta(seconds=1))
+    assert_withdraw_rewards(mantra, cb, gas=250_000)
+    mantra.supervisorctl("start", "mantra-canary-net-1-node0")
+    wait_for_new_blocks(mantra.cosmos_cli(), 1)
 
 
 @pytest.mark.connect

@@ -11,6 +11,9 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
       mempool: {
         version: 'v1',
       },
+      consensus: {
+        timeout_commit: '1s',
+      },
     },
     'app-config': {
       evm: {
@@ -98,7 +101,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
             max_gas: '81500000',
           },
           abci: {
-            vote_extensions_enable_height: '1',
+            vote_extensions_enable_height: '0',
           },
         },
       },

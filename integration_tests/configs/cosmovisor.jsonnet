@@ -3,6 +3,11 @@ local legacy_evm_denom = 'uom';
 
 config {
   'mantra-canary-net-1'+: {
+    config: {
+      consensus: {
+        timeout_commit: '500ms',
+      },
+    },
     'app-config'+: {
       evm+: {
         'evm-chain-id': 5887,
@@ -32,6 +37,27 @@ config {
         },
       },
       app_state+: {
+        oracle+: {
+          currency_pair_genesis: [
+            {
+              currency_pair: {
+                Base: 'OM',
+                Quote: 'USD',
+              },
+              nonce: 0,
+              id: 1,
+            },
+            {
+              currency_pair: {
+                Base: 'USD',
+                Quote: 'OM',
+              },
+              nonce: 0,
+              id: 2,
+            },
+          ],
+          next_id: 3,
+        },
         bank+: {
           denom_metadata:: super.bank.denom_metadata,
         },
