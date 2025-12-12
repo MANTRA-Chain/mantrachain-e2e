@@ -500,3 +500,15 @@ class CosmosCLI(PystarportCosmosCLI):
                 **(self.get_base_kwargs() | kwargs),
             )
         ).get("rewards")
+
+    def query_precisebank_fraction(self, addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "precisebank",
+                "fractional-balance",
+                addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return int(res.get("fractional_balance", {}).get("amount", "0"))

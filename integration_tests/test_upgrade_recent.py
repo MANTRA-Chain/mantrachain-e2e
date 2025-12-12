@@ -21,6 +21,7 @@ from .utils import (
     assert_withdraw_rewards,
     call_with_retry_async,
     update_node_cmd,
+    verify_tax_distribution,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
@@ -67,6 +68,16 @@ async def exec(c):
         c, cb, denom=LEGACY_DENOM, scale=SCALE_FACTOR, gas_prices=gas_prices
     )
     stop_height = target_height - wait_height
+
+    c.supervisorctl("start", "mantra-canary-net-1-node0")
+    wait_for_new_blocks(c.cosmos_cli(), 1)
+
+    verify_tax_distribution(
+        cli,
+        target_height,
+        denom=LEGACY_DENOM,
+        scale_factor=SCALE_FACTOR,
+    )
 
     c.supervisorctl("start", "mantra-canary-net-1-node0")
     wait_for_new_blocks(c.cosmos_cli(), 1)

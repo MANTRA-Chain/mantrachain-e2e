@@ -5,6 +5,9 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
 local ibc_common = import 'ibc_common.jsonnet';
 local evmd_chain = (import 'chains.jsonnet').evmd;
+local constant = import 'constant.jsonnet';
+local coins = constant.coins;
+local staked = constant.staked;
 
 config {
   'mantra-canary-net-1'+: ibc_common {
@@ -15,7 +18,7 @@ config {
     key_name: 'signer1',
     'account-prefix': evmd_chain['account-prefix'],
     accounts: [account {
-      coins: '100000000000000000000' + evmd_chain.evm_denom,
+      coins: coins + evmd_chain.evm_denom,
     } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
     'app-config'+: {
       evm+: {
@@ -71,9 +74,9 @@ config {
     },
     validators: [validator {
       base_port: 26800 + i * 10,
-      coins: '100000000000000000000' + evmd_chain.evm_denom,
-      gas_prices: '0.01' + evmd_chain.evm_denom,
-      staked: '10000000000000000000' + evmd_chain.evm_denom,
+      coins: coins + evmd_chain.evm_denom,
+      gas_prices: constant.gas_price + evmd_chain.evm_denom,
+      staked: staked + evmd_chain.evm_denom,
     } for i in std.range(0, std.length(super.validators) - 1) for validator in [super.validators[i]]],
   },
   relayer: rly_common {

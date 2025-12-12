@@ -1,15 +1,15 @@
 local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
-local gas_price = 40000000000;
+local constant = import 'constant.jsonnet';
 
 config {
   'mantra-canary-net-1'+: {
     validators: super.validators + [{
       'coin-type': 60,
-      coins: '100000000000000000000' + chain.evm_denom,
-      staked: '10000000000000000000' + chain.evm_denom,
-      gas_prices: gas_price + chain.evm_denom,
-      min_self_delegation: 1000000000000000000,
+      coins: constant.coins + chain.evm_denom,
+      staked: constant.staked + chain.evm_denom,
+      gas_prices: constant.gas_price + chain.evm_denom,
+      min_self_delegation: constant.min_self_delegation,
       mnemonic: '${VALIDATOR4_MNEMONIC}',
     }],
   },

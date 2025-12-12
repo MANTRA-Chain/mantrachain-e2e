@@ -1162,6 +1162,80 @@ def grpc_eth_call(
     assert success, str(rsp)
 
 
+def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
+    tax_params = cli.get_params("tax")
+    mca_tax = float(tax_params.get("mca_tax", "0")) / 1e18
+    if mca_tax == 0:
+        return None
+
+    mca_addr = tax_params["mca_address"]
+    modules = ["distribution", "fee_collector", "precisebank"]
+    addrs = [module_address(m) for m in modules]
+    height_bf = height - 1
+    denom_af = DEFAULT_DENOM if scale_factor > 1 else denom
+
+    balances_bf = {
+        name: cli.balance(addr, denom=denom, height=height_bf)
+        for name, addr in zip(modules, addrs)
+    }
+    balances_bf["mca"] = cli.balance(mca_addr, denom=denom, height=height_bf)
+
+    balances_af = {
+        name: cli.balance(addr, denom=denom_af, height=height)
+        for name, addr in zip(modules, addrs)
+    }
+    balances_af["mca"] = cli.balance(mca_addr, denom=denom_af, height=height)
+    assert balances_af["fee_collector"] == balances_af["precisebank"] == 0
+
+    fee_collector = addrs[1]
+    fee_frac = cli.query_precisebank_fraction(fee_collector, height=height_bf)
+
+    rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
+    block_mint = int(
+        find_log_event_attrs(
+            rsp["result"]["finalize_block_events"], "mint", lambda a: "amount" in a
+        )["amount"]
+    )
+    print(f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac} in {height}")
+
+    # verify tax split
+    precision = 10**18
+    expected = {}
+    for k in ["mca", "distribution"]:
+        tax_rate_int = int(mca_tax * precision)
+        if k == "mca":
+            rate = tax_rate_int
+        else:
+            rate = precision - tax_rate_int
+
+        exp = (block_mint * rate) // precision
+        # add fee_collector fractional: (frac * 4 * rate) / precision
+        if fee_frac > 0 and scale_factor > 1:
+            fee_frac_scaled = fee_frac * 4
+            frac_portion = (fee_frac_scaled * rate) // precision
+            exp += frac_portion
+
+        expected[k] = exp
+
+    tolerance = 1
+    increases = {
+        k: balances_af[k] - balances_bf[k] * scale_factor
+        for k in ["mca", "distribution"]
+    }
+    fee_inc = balances_af["fee_collector"] - balances_bf["fee_collector"] * scale_factor
+    assert fee_inc == 0
+    for mod, inc in increases.items():
+        diff = abs(inc - expected[mod])
+        assert diff <= tolerance, f"{mod} diff {diff}: exp={expected[mod]}, got={inc}"
+        msg = f"module {mod}: {inc}"
+        if scale_factor > 1:
+            fractional = inc - expected[mod]
+            msg += f" (mint={expected[mod]}+frac~{fractional})"
+        else:
+            msg += f" (exp={expected[mod]}, ±{diff})"
+        print(msg)
+
+
 def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
     cli = mantra.cosmos_cli()
     val = cli.address("validator", "val")

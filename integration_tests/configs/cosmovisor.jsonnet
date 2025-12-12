@@ -1,5 +1,8 @@
 local config = import 'default.jsonnet';
 local legacy_evm_denom = 'uom';
+local constant = import 'constant.jsonnet';
+local coins = constant.coins;
+local staked = constant.staked;
 
 config {
   'mantra-canary-net-1'+: {
@@ -16,8 +19,8 @@ config {
     },
     validators: [validator {
       'coin-type':: validator['coin-type'],
-      coins: '100000000000000000000' + legacy_evm_denom,
-      staked: '10000000000000000000' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
+      staked: staked + legacy_evm_denom,
       gas_prices: '0.01' + legacy_evm_denom,
       'app-config'+: {
         mempool: {
@@ -27,7 +30,7 @@ config {
     } for validator in super.validators],
     accounts: [account {
       'coin-type':: account['coin-type'],
-      coins: '100000000000000000000' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
     } for account in super.accounts],
     genesis+: {
       consensus_params: {

@@ -1,5 +1,9 @@
 local ibc = import 'ibc_evmd.jsonnet';
 local legacy_evm_denom = 'uom';
+local constant = import 'constant.jsonnet';
+local gas_price = constant.gas_price;
+local coins = constant.coins;
+local staked = constant.staked;
 
 ibc {
   'mantra-canary-net-1'+: {
@@ -11,9 +15,9 @@ ibc {
     },
     validators: [validator {
       'coin-type':: validator['coin-type'],
-      coins: '100000000000000000000' + legacy_evm_denom,
-      staked: '10000000000000000000' + legacy_evm_denom,
-      gas_prices: '0.01' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
+      staked: staked + legacy_evm_denom,
+      gas_prices: gas_price + legacy_evm_denom,
       'app-config'+: {
         mempool: {
           'max-txs': -1,  // TODO: wait fix sender release
@@ -22,7 +26,7 @@ ibc {
     } for validator in super.validators],
     accounts: [account {
       'coin-type':: account['coin-type'],
-      coins: '100000000000000000000' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
     } for account in super.accounts],
     genesis+: {
       consensus_params: {

@@ -11,6 +11,7 @@ from .utils import (
     assert_withdraw_rewards,
     find_fee,
     find_log_event_attrs,
+    verify_tax_distribution,
 )
 
 pytestmark = pytest.mark.slow
@@ -77,7 +78,16 @@ def test_withdraw_rewards(mantra):
 
     assert_withdraw_rewards(mantra, cb, gas=250_000)
     mantra.supervisorctl("start", "mantra-canary-net-1-node0")
-    wait_for_new_blocks(mantra.cosmos_cli(), 1)
+    cli = mantra.cosmos_cli()
+    wait_for_new_blocks(cli, 1)
+    blk = cli.block_height()
+
+    verify_tax_distribution(
+        cli,
+        blk,
+        denom=DEFAULT_DENOM,
+        scale_factor=1,
+    )
 
 
 @pytest.mark.connect
