@@ -8,21 +8,21 @@ config {
     },
     config+: {
       consensus+: {
-        timeout_commit: '100ms',
+        timeout_commit: '500ms',
       },
     },
     validators: [
       if i == 0 then
         validator {
           'coin-type':: validator['coin-type'],
-          coins: '100000000000000000000' + legacy_evm_denom,
-          staked: '10000000000000000000' + legacy_evm_denom,
+          coins: '100000000000000' + legacy_evm_denom,
+          staked: '10000000000000' + legacy_evm_denom,
           gas_prices: '0.01' + legacy_evm_denom,
         }
       else
         validator {
           'coin-type':: validator['coin-type'],
-          coins: '100000000000000000000' + legacy_evm_denom,
+          coins: '100000000000000' + legacy_evm_denom,
           gas_prices: '0.01' + legacy_evm_denom,
         }
       for i in std.range(0, std.length(super.validators) - 1)
@@ -30,7 +30,7 @@ config {
     ],
     accounts: [account {
       'coin-type':: account['coin-type'],
-      coins: '100000000000000000000' + legacy_evm_denom,
+      coins: '100000000000000' + legacy_evm_denom,
     } for account in super.accounts],
     genesis+: {
       consensus_params: {

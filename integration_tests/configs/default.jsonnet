@@ -154,7 +154,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
         },
         circuit: {
           disabled_type_urls: [
-            "/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool",
+            '/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool',
           ],
         },
         crisis: {

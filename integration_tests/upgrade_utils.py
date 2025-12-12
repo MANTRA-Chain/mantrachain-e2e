@@ -14,7 +14,6 @@ from pystarport.utils import wait_for_block, wait_for_port
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
     EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
@@ -31,7 +30,7 @@ def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, min_deposit=1):
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{denom}"
+    gas_prices = f"100000000{denom}"
 
     rsp = cli.software_upgrade(
         "community",

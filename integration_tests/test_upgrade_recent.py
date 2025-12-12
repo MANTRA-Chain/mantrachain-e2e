@@ -21,6 +21,7 @@ from .utils import (
     assert_withdraw_rewards,
     call_with_retry,
     update_node_cmd,
+    verify_tax_distribution,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
@@ -51,17 +52,28 @@ def exec(c):
     gas_prices = f"1{LEGACY_DENOM}"
 
     def cb(cli):
-        wait_for_new_blocks(cli, 10)
+        wait_for_new_blocks(cli, 2)
         c.supervisorctl("stop", f"{CHAIN_ID}-node1")
         update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
 
-        target_height0 = cli.block_height() + 150
+        target_height0 = cli.block_height() + 30
         cli = do_upgrade(c, "v7.0.0-rc4", target_height0, denom=LEGACY_DENOM)
         return cli, target_height0
 
     target_height0 = assert_withdraw_rewards(
         c, cb, denom=LEGACY_DENOM, scale=SCALE_FACTOR, gas_prices=gas_prices
     )
+
+    c.supervisorctl("start", "mantra-canary-net-1-node0")
+    wait_for_new_blocks(c.cosmos_cli(), 1)
+
+    verify_tax_distribution(
+        cli,
+        target_height0,
+        denom=LEGACY_DENOM,
+        scale_factor=SCALE_FACTOR,
+    )
+
     return
 
     target_height = cli.block_height() + 15
