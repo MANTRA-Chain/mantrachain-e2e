@@ -1233,8 +1233,7 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.distribution_rewards(signer1, height=target_height),
     ]
     diff = rewards[1] / (rewards[0] * scale)
-    print("mm-diff", diff)
-    # assert diff > 0.99 and diff < 2, "rewards should increase"
+    assert diff > 0.99 and diff < 2, "rewards should increase"
 
     height_bf = cli.block_height()
     rsp = cli.withdraw_rewards(val, from_=signer1)
