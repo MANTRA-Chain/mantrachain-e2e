@@ -301,9 +301,10 @@ def send_txs(w3, cli, to, keys, params):
 CONTRACTS = {}
 
 
-def build_contract(name, dir="contracts") -> dict:
-    if name in CONTRACTS:
-        return CONTRACTS[name]
+def build_contract(name, dir="contracts", contract=None) -> dict:
+    contract = contract or name
+    if contract in CONTRACTS:
+        return CONTRACTS[contract]
     cmd = [
         "solc",
         "--abi",
@@ -330,14 +331,14 @@ def build_contract(name, dir="contracts") -> dict:
     cmd.extend(remappings)
     print(*cmd)
     subprocess.run(cmd, check=True)
-    bytecode = Path(f"build/{name}.bin").read_text().strip()
-    code = Path(f"build/{name}.bin-runtime").read_text().strip()
+    bytecode = Path(f"build/{contract}.bin").read_text().strip()
+    code = Path(f"build/{contract}.bin-runtime").read_text().strip()
     result = {
-        "abi": json.loads(Path(f"build/{name}.abi").read_text()),
+        "abi": json.loads(Path(f"build/{contract}.abi").read_text()),
         "bytecode": f"0x{bytecode}",
         "code": f"0x{code}",
     }
-    CONTRACTS[name] = result
+    CONTRACTS[contract] = result
     return result
 
 
