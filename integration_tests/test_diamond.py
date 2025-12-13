@@ -2,7 +2,6 @@
 https://eips.ethereum.org/EIPS/eip-2535
 """
 
-import asyncio
 from enum import IntEnum
 from typing import NamedTuple
 
@@ -33,7 +32,8 @@ class Facet(NamedTuple):
 
 IDiamondCut = Contract.from_abi(
     [
-        "struct FacetCut { address facetAddress; uint8 action; bytes4[] functionSelectors; }",
+        "struct FacetCut { address facetAddress; uint8 action; "
+        "bytes4[] functionSelectors; }",
         "function diamondCut(FacetCut[] _diamondCut, address _init, bytes _calldata)",
     ]
 )
