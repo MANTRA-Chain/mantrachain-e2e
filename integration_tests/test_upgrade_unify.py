@@ -69,7 +69,8 @@ async def exec(c, tmp_path):
     res = cli.oracle_query_currency_pairs()
     assert len(res) > 0, res
 
-    target_height = cli.block_height() + 15
+    wait_height = 30
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v5.0", target_height, denom=LEGACY_DENOM)
 
     # check set contract tx works
@@ -148,7 +149,7 @@ async def exec(c, tmp_path):
         "0x0000000000000000000000000000000000000801",
         "0x0000000000000000000000000000000000000805",
     ]
-    target_height = cli.block_height() + 15
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v6.0.0", target_height, denom=LEGACY_DENOM)
     pair = cli.query_erc20_token_pair(denom)
     assert pair["contract_owner"] == "OWNER_MODULE"
@@ -182,7 +183,7 @@ async def exec(c, tmp_path):
         cli, tmp_path, coin, from_=community, gas_prices=gas_prices
     )
 
-    target_height = cli.block_height() + 15
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v6.1.0", target_height, denom=LEGACY_DENOM)
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
@@ -280,7 +281,7 @@ async def exec(c, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    target_height_rc2 = cli.block_height() + 15
+    target_height_rc2 = cli.block_height() + wait_height
     cli = do_upgrade(c, "v7.0.0-rc4", target_height_rc2, denom=LEGACY_DENOM)
     assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
 
