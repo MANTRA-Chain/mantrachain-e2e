@@ -386,8 +386,9 @@ async def build_and_deploy_contract_async(
     args=(),
     key=KEYS["community"],
     dir="contracts",
+    contract=None,
 ):
-    res = build_contract(name, dir=dir)
+    res = build_contract(name, dir=dir, contract=contract)
     tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])
