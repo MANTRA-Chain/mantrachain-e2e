@@ -8,7 +8,10 @@ from typing import NamedTuple
 import pytest
 from eth_contract.contract import Contract
 from eth_contract.create2 import create2_deploy
-from eth_contract.deploy_utils import ensure_create2_deployed
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_deployed_by_create2,
+)
 from eth_contract.utils import ZERO_ADDRESS, get_initcode
 from web3 import AsyncWeb3
 
@@ -78,15 +81,9 @@ contract_cache = {}
 
 
 async def deploy_greeter(w3: AsyncWeb3, deployer):
-    cache_key = "greeter_facet"
-    if cache_key in contract_cache:
-        return contract_cache[cache_key]
-
-    greeter_address = await create2_deploy(
+    return await ensure_deployed_by_create2(
         w3, deployer, get_initcode(GREETER_ARTIFACT["Greeter"])
     )
-    contract_cache[cache_key] = greeter_address
-    return greeter_address
 
 
 async def verify_facet_address(
@@ -108,21 +105,16 @@ async def set_and_verify_greeting(
 
 
 async def deploy_diamond(w3: AsyncWeb3, deployer, extra_facets=None):
-    cache_key = "diamond_facets"
-    if cache_key in contract_cache:
-        cut_address, loupe_address, ownership_address = contract_cache[cache_key]
-    else:
-        await ensure_create2_deployed(w3, deployer)
-        cut_address = await create2_deploy(
-            w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondCutFacet"])
-        )
-        loupe_address = await create2_deploy(
-            w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondLoupeFacet"])
-        )
-        ownership_address = await create2_deploy(
-            w3, deployer, get_initcode(DIAMOND_ARTIFACT["OwnershipFacet"])
-        )
-        contract_cache[cache_key] = (cut_address, loupe_address, ownership_address)
+    await ensure_create2_deployed(w3, deployer)
+    cut_address = await ensure_deployed_by_create2(
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondCutFacet"])
+    )
+    loupe_address = await ensure_deployed_by_create2(
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondLoupeFacet"])
+    )
+    ownership_address = await ensure_deployed_by_create2(
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["OwnershipFacet"])
+    )
     cut_cut = FacetCut(cut_address, FacetCutAction.ADD, DIAMOND_CUT_SELECTORS)
     loupe_cut = FacetCut(loupe_address, FacetCutAction.ADD, DIAMOND_LOUPE_SELECTORS)
     ownership_cut = FacetCut(ownership_address, FacetCutAction.ADD, OWNERSHIP_SELECTORS)
