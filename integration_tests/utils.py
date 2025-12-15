@@ -20,6 +20,7 @@ import eth_utils
 import jsonmerge
 import requests
 import rlp
+import solcx
 import web3
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
@@ -299,6 +300,43 @@ def send_txs(w3, cli, to, keys, params):
 
 # Global cache for built contracts
 CONTRACTS = {}
+
+
+def build_contract_solcx(name, dir="contracts"):
+    source = (Path(__file__).parent / f"contracts/{dir}/{name}.sol").read_text()
+    input_json = {
+        "language": "Solidity",
+        "sources": {"<stdin>": {"content": source}},
+        "settings": {
+            "outputSelection": {
+                "*": {
+                    "*": [
+                        "abi",
+                        "evm.bytecode",
+                        "evm.deployedBytecode",
+                        "evm.methodIdentifiers",
+                    ]
+                }
+            },
+            "optimizer": {"enabled": True, "runs": 200},
+            "evmVersion": "istanbul",
+        },
+    }
+    output = solcx.compile_standard(
+        input_json, solc_version="0.8.0", solc_binary="solc"
+    )
+    output = output["contracts"]["<stdin>"]
+
+    # collapse "evm" field for easier access
+    for name in output:
+        contract = output[name]
+        contract.update(contract.pop("evm"))
+
+    return output
+
+
+def selectors(artifact) -> list[bytes]:
+    return [HexBytes(sel) for sel in artifact["methodIdentifiers"].values()]
 
 
 def build_contract(name, dir="contracts", contract=None) -> dict:

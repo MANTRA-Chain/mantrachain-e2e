@@ -850,6 +850,7 @@ dependencies = [
     { name = "flake8-isort" },
     { name = "flaky" },
     { name = "py-ecc" },
+    { name = "py-solc-x" },
     { name = "pyrevm" },
     { name = "pystarport" },
     { name = "pytest" },
@@ -879,6 +880,7 @@ requires-dist = [
     { name = "flake8-isort", specifier = ">=6.1.2" },
     { name = "flaky", specifier = ">=3.8.1" },
     { name = "py-ecc", specifier = ">=8.0.0" },
+    { name = "py-solc-x", specifier = ">=2.0.5" },
     { name = "pyrevm", git = "https://github.com/yihuang/pyrevm.git?rev=master" },
     { name = "pystarport", git = "https://github.com/MANTRA-Chain/pystarport.git?rev=main" },
     { name = "pytest", specifier = ">=8.3.4" },
@@ -1233,6 +1235,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1c/96/e73075d5c885274efada2fbc5db6377022036c2f5b4b470dbcf4106e07d5/py_ecc-8.0.0.tar.gz", hash = "sha256:56aca19e5dc37294f60c1cc76666c03c2276e7666412b9a559fa0145d099933d", size = 51193, upload-time = "2025-04-14T16:14:03.29Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/58/383335eac96d2f1aba78741c6ce128c54e7eba2ea1dc47408257d751d35c/py_ecc-8.0.0-py3-none-any.whl", hash = "sha256:c0b2dfc4bde67a55122a392591a10e851a986d5128f680628c80b405f7663e13", size = 47814, upload-time = "2025-04-14T16:14:01.827Z" },
+]
+
+[[package]]
+name = "py-solc-x"
+version = "2.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/8d/f30778d5f08387cc3f7576aedf4a1e6841caeb8d6d600bb070aa9480b689/py_solc_x-2.0.5.tar.gz", hash = "sha256:2d8440d2be8a5577137fb2313ee211b5b35f36c4c922f274192d34f401616e83", size = 78761, upload-time = "2025-12-10T20:27:51.141Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/37/60ccc88d918d8f1cd218e413fb6263afcde350dc259fb2ba413d9f7d1051/py_solc_x-2.0.5-py3-none-any.whl", hash = "sha256:d6c24b699a7db8f7bf731f32dcfe8c43d7ea9d181191b2a3b7cb5e60395dd449", size = 18750, upload-time = "2025-12-10T20:27:50.033Z" },
 ]
 
 [[package]]

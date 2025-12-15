@@ -10,9 +10,10 @@ from eth_contract.contract import Contract
 from eth_contract.create2 import create2_deploy
 from eth_contract.deploy_utils import ensure_create2_deployed
 from eth_contract.utils import ZERO_ADDRESS, get_initcode
+from hexbytes import HexBytes
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS, build_contract
+from .utils import ACCOUNTS, build_contract, build_contract_solcx, selectors
 
 
 class FacetCutAction(IntEnum):
@@ -57,17 +58,11 @@ IERC173 = Contract.from_abi(
     ]
 )
 
-DIAMOND_CUT_SELECTORS = [IDiamondCut.fns.diamondCut.selector]
-DIAMOND_LOUPE_SELECTORS = [
-    IDiamondLoupe.fns.facets.selector,
-    IDiamondLoupe.fns.facetFunctionSelectors.selector,
-    IDiamondLoupe.fns.facetAddresses.selector,
-    IDiamondLoupe.fns.facetAddress.selector,
-]
-OWNERSHIP_SELECTORS = [
-    IERC173.fns.owner.selector,
-    IERC173.fns.transferOwnership.selector,
-]
+
+DIAMOND_ARTIFACT = build_contract_solcx("Diamond")
+DIAMOND_CUT_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondCut"])
+DIAMOND_LOUPE_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondLoupe"])
+OWNERSHIP_SELECTORS = selectors(DIAMOND_ARTIFACT["IERC173"])
 
 
 @pytest.mark.asyncio
@@ -76,15 +71,14 @@ async def test_diamond(mantra):
     deployer = ACCOUNTS["community"]
     await ensure_create2_deployed(w3, deployer)
 
-    diamond_artifact = build_contract("Diamond", contract="Diamond")
-    cut_artifact = build_contract("Diamond", contract="DiamondCutFacet")
-    loupe_artifact = build_contract("Diamond", contract="DiamondLoupeFacet")
-    ownership_artifact = build_contract("Diamond", contract="OwnershipFacet")
-
-    cut_address = await create2_deploy(w3, deployer, get_initcode(cut_artifact))
-    loupe_address = await create2_deploy(w3, deployer, get_initcode(loupe_artifact))
+    cut_address = await create2_deploy(
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondCutFacet"])
+    )
+    loupe_address = await create2_deploy(
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["DiamondLoupeFacet"])
+    )
     ownership_address = await create2_deploy(
-        w3, deployer, get_initcode(ownership_artifact)
+        w3, deployer, get_initcode(DIAMOND_ARTIFACT["OwnershipFacet"])
     )
 
     cut_cut = FacetCut(cut_address, FacetCutAction.ADD, DIAMOND_CUT_SELECTORS)
@@ -93,7 +87,9 @@ async def test_diamond(mantra):
 
     # register the very core facet in constructor
     diamond_address = await create2_deploy(
-        w3, deployer, get_initcode(diamond_artifact, [cut_cut], deployer.address)
+        w3,
+        deployer,
+        get_initcode(DIAMOND_ARTIFACT["Diamond"], [cut_cut], deployer.address),
     )
 
     # register extra facets using diamondCut

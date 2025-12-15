@@ -21,6 +21,7 @@ dependencies = [
     "pyrevm @ git+https://github.com/yihuang/pyrevm.git@master",
     "backoff>=2.2.1",
     "ujson>=5.11.0",
+    "py-solc-x>=2.0.5",
 ]
 
 [build-system]
