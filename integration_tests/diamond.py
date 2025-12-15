@@ -53,22 +53,20 @@ async def build_diamond_cut(
     old: str | None = None
 
     for sel in facet.function_selectors:
-        exiting = await IDiamondLoupe.fns.facetAddress(sel).call(w3, to=diamond)
-        if exiting == ZERO_ADDRESS:
+        existing = await IDiamondLoupe.fns.facetAddress(sel).call(w3, to=diamond)
+        if existing == ZERO_ADDRESS:
             add.append(sel)
-        elif exiting != facet.facet_address.lower():
+        elif existing.lower() != facet.facet_address.lower():
             replace.append(sel)
-            old = exiting
+            old = existing
 
     if old is not None:
         old_selectors = await IDiamondLoupe.fns.facetFunctionSelectors(old).call(
             w3, to=diamond
         )
+        new_selectors = set(facet.function_selectors)
         for old_sel in old_selectors:
-            for new_sel in facet.function_selectors:
-                if old_sel == new_sel:
-                    break
-            else:
+            if old_sel not in new_selectors:
                 remove.append(old_sel)
 
     cuts = []
