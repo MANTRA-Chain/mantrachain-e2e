@@ -10,10 +10,9 @@ from eth_contract.contract import Contract
 from eth_contract.create2 import create2_deploy
 from eth_contract.deploy_utils import ensure_create2_deployed
 from eth_contract.utils import ZERO_ADDRESS, get_initcode
-from hexbytes import HexBytes
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS, build_contract, build_contract_solcx, selectors
+from .utils import ACCOUNTS, build_contract_solcx, selectors
 
 
 class FacetCutAction(IntEnum):
