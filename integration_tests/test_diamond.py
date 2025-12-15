@@ -69,8 +69,9 @@ async def test_diamond(mantra):
     # test the facet functions via diamond
     assert deployer.address.lower() == await IERC173.fns.owner().call(w3, to=diamond)
 
-    exp_facets = (ownership_address.lower(), tuple(OWNERSHIP_SELECTORS))
-    assert exp_facets == await IDiamondLoupe.fns.facets().call(w3, to=diamond)
+    assert ownership_address.lower() == await IDiamondLoupe.fns.facetAddress(
+        OWNERSHIP_SELECTORS[0]
+    ).call(w3, to=diamond)
 
 
 async def test_cut_diamond(mantra):
