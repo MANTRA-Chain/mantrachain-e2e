@@ -47,6 +47,7 @@ GREETER_SELECTORS = selectors(GREETER_ARTIFACT["Greeter"])
 
 
 async def deploy_greeter(w3: AsyncWeb3, deployer):
+    await ensure_create2_deployed(w3, deployer)
     return await ensure_deployed_by_create2(
         w3, deployer, get_initcode(GREETER_ARTIFACT["Greeter"])
     )
