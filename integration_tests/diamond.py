@@ -1,3 +1,7 @@
+"""
+https://eips.ethereum.org/EIPS/eip-2535
+"""
+
 from enum import IntEnum
 from typing import NamedTuple
 
