@@ -194,7 +194,7 @@ async def test_replace(mantra):
     greeting_v1 = "Hello from v1"
     await set_and_verify_greeting(w3, deployer, diamond_address, greeting_v1)
 
-    greeter_v2_address = await create2_deploy(
+    greeter_v2_address = await ensure_deployed_by_create2(
         w3,
         deployer,
         get_initcode(GREETER_ARTIFACT["Greeter"]),
