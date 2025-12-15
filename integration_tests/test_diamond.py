@@ -7,7 +7,6 @@ from typing import NamedTuple
 
 import pytest
 from eth_contract.contract import Contract
-from eth_contract.create2 import create2_deploy
 from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_deployed_by_create2,
