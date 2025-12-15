@@ -12,7 +12,7 @@ from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_deployed_by_create2,
 )
-from eth_contract.utils import ZERO_ADDRESS, get_initcode
+from eth_contract.utils import ZERO_ADDRESS, get_initcode, send_transaction
 from web3 import AsyncWeb3
 
 from .utils import ACCOUNTS, build_contract_solcx, selectors
@@ -45,11 +45,6 @@ DIAMOND_CUT_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondCut"])
 DIAMOND_LOUPE_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondLoupe"])
 OWNERSHIP_SELECTORS = selectors(DIAMOND_ARTIFACT["IERC173"])
 GREETER_SELECTORS = selectors(GREETER_ARTIFACT["Greeter"])
-
-DIAMOND_SALT_BASE = 0
-V2_SALT = 2
-
-contract_cache = {}
 
 
 async def deploy_greeter(w3: AsyncWeb3, deployer):
@@ -96,18 +91,14 @@ async def deploy_diamond(w3: AsyncWeb3, deployer, extra_facets=None):
     if extra_facets:
         facets_in_constructor.extend(extra_facets)
 
-    instance_key = "diamond_instance_count"
-    instance_count = contract_cache.get(instance_key, 0)
-    contract_cache[instance_key] = instance_count + 1
-
-    diamond_address = await create2_deploy(
+    receipt = await send_transaction(
         w3,
         deployer,
-        get_initcode(
+        data=get_initcode(
             DIAMOND_ARTIFACT["Diamond"], facets_in_constructor, deployer.address
         ),
-        salt=DIAMOND_SALT_BASE + instance_count,
     )
+    diamond_address = receipt["contractAddress"]
 
     # register extra facets using diamondCut
     await IDiamondCut.fns.diamondCut(
@@ -166,12 +157,10 @@ async def test_replace(mantra):
     greeting_v1 = "Hello from v1"
     await set_and_verify_greeting(w3, deployer, diamond_address, greeting_v1)
 
-    greeter_v2_address = await ensure_deployed_by_create2(
-        w3,
-        deployer,
-        get_initcode(GREETER_ARTIFACT["Greeter"]),
-        salt=V2_SALT,
+    receipt = await send_transaction(
+        w3, deployer, data=get_initcode(GREETER_ARTIFACT["Greeter"])
     )
+    greeter_v2_address = receipt["contractAddress"]
     greeter_v2_cut = FacetCut(
         greeter_v2_address, FacetCutAction.REPLACE, GREETER_SELECTORS
     )
