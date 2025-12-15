@@ -12,12 +12,7 @@ from eth_contract.deploy_utils import ensure_create2_deployed
 from eth_contract.utils import ZERO_ADDRESS, get_initcode
 from web3 import AsyncWeb3
 
-from .utils import (
-    ACCOUNTS,
-    build_contract,
-    build_contract_solcx,
-    selectors,
-)
+from .utils import ACCOUNTS, build_contract_solcx, selectors
 
 
 class FacetCutAction(IntEnum):
@@ -73,10 +68,8 @@ DIAMOND_ARTIFACT = build_contract_solcx("Diamond")
 DIAMOND_CUT_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondCut"])
 DIAMOND_LOUPE_SELECTORS = selectors(DIAMOND_ARTIFACT["IDiamondLoupe"])
 OWNERSHIP_SELECTORS = selectors(DIAMOND_ARTIFACT["IERC173"])
-GREETER_SELECTORS = [
-    IGreeter.fns.greet.selector,
-    IGreeter.fns.setGreeting.selector,
-]
+GREETER_ARTIFACT = build_contract_solcx("Greeter")
+GREETER_SELECTORS = selectors(GREETER_ARTIFACT["Greeter"])
 
 DIAMOND_SALT_BASE = 0
 V2_SALT = 2
@@ -90,7 +83,7 @@ async def deploy_greeter(w3: AsyncWeb3, deployer):
         return contract_cache[cache_key]
 
     greeter_address = await create2_deploy(
-        w3, deployer, get_initcode(build_contract("Greeter"))
+        w3, deployer, get_initcode(GREETER_ARTIFACT["Greeter"])
     )
     contract_cache[cache_key] = greeter_address
     return greeter_address
@@ -212,7 +205,7 @@ async def test_replace(mantra):
     greeter_v2_address = await create2_deploy(
         w3,
         deployer,
-        get_initcode(build_contract("Greeter")),
+        get_initcode(GREETER_ARTIFACT["Greeter"]),
         salt=V2_SALT,
     )
     greeter_v2_cut = FacetCut(
