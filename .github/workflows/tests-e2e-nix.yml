@@ -1,9 +1,9 @@
 name: E2E Nix Tests
 on:
   push:
-    branches: [ main, develop, release/** ]
+    branches: [ main, develop, release/**, ci/** ]
   pull_request:
-    branches: [ main, develop, release/** ]
+    branches: [ main, develop, release/**, ci/** ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
