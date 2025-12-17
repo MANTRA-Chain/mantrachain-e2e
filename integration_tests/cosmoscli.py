@@ -429,3 +429,29 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def query_doc_records(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "document",
+                "records",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def add_registry(self, registry_name, registry_description, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "document",
+                "add-registry",
+                registry_name,
+                registry_description,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
