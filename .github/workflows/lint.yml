@@ -14,7 +14,7 @@ concurrency:
 jobs:
   lint-python:
     name: Lint python
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-x64-xlarge
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +36,13 @@ jobs:
       - name: Add uv to PATH
         if: steps.changed-files.outputs.any_changed == 'true'
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            make \
+            build-essential \
+            python3-dev
       - name: Run flake8
         if: steps.changed-files.outputs.any_changed == 'true'
         run: make lint-py
