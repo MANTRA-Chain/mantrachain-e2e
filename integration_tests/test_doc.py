@@ -61,6 +61,7 @@ PRECOMPILE = Contract.from_abi(
 )
 DOCUMENT = "0x0000000000000000000000000000000000000A00"
 REGISTRY_ID = 1
+REGISTRY_DENOM = "test-registry"
 
 
 def _admin():
@@ -254,3 +255,53 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
 
     await _revoke(w3, REGISTRY_ID, doc1_checksum, user, admin)
     await _revoke(w3, REGISTRY_ID, doc2_checksum, user, admin)
+
+
+async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
+    doc = {
+        "name": name,
+        "denom": REGISTRY_DENOM,
+        "uri": f"ipfs://{checksum}",
+        "checksum": checksum,
+        "checksumAlgo": "sha256",
+        "timestamp": "",
+        "figi": "",
+        "individualId": "",
+    }
+    receipt = await PRECOMPILE.fns.addDocument(doc).transact(w3, admin, to=DOCUMENT)
+    assert receipt.status == 1, f"addDocument({checksum}) failed"
+    return receipt
+
+
+async def test_add_and_query_documents(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    await _add_document(w3, admin, "abc123", "Document 1")
+    # same checksum
+    await _add_document(w3, admin, "abc123", "Document 1 v2")
+    await _add_document(w3, admin, "def456", "Document 2")
+    result = await PRECOMPILE.fns.documents(
+        REGISTRY_DENOM,
+        0,
+        {"key": b"", "offset": 0, "limit": 10, "countTotal": True, "reverse": False},
+    ).call(w3, to=DOCUMENT)
+    docs, _ = result
+    assert len(docs) >= 3, f"Expected ≥3 docs, got {len(docs)}"
+
+
+async def test_add_document_same_checksum_maintains_record_id(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    checksum = "test_checksum_123"
+    await _add_document(w3, admin, checksum, "Version 1")
+    await _add_document(w3, admin, checksum, "Version 2")
+
+
+async def test_remove_document(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    await _add_document(w3, admin, "remove_test_123", "To Remove")
+    receipt = await PRECOMPILE.fns.removeDocument(REGISTRY_DENOM, 1).transact(
+        w3, admin, to=DOCUMENT
+    )
+    assert receipt.status == 1
