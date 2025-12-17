@@ -88,6 +88,8 @@
             pkgs.hermes
             pkgs.go-ethereum
             pkgs.cosmovisor
+            pkgs.rustc
+            pkgs.cargo
             scripts.start-scripts
           ];
 
