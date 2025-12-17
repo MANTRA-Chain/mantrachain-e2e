@@ -45,6 +45,17 @@ jobs:
       - name: Free disk space
         if: steps.set-run-tests.outputs.run_tests == 'true'
         run: sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY" || true
+      - name: Install dependencies
+        if: steps.set-run-tests.outputs.run_tests == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            xz-utils \
+            curl \
+            git \
+            jq \
+            zip \
+            unzip \
+            && sudo rm -rf /var/lib/apt/lists/*
       - name: Install Nix
         if: steps.set-run-tests.outputs.run_tests == 'true'
         uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
@@ -56,6 +67,8 @@ jobs:
       - name: Enable Cachix
         if: steps.set-run-tests.outputs.run_tests == 'true'
         uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        env:
+          USER: runner
         with:
           name: mantrachain-e2e
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
@@ -78,6 +91,17 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            xz-utils \
+            curl \
+            git \
+            jq \
+            zip \
+            unzip \
+            make \
+            && sudo rm -rf /var/lib/apt/lists/*
       - name: Install Nix
         uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
         with:
@@ -87,6 +111,8 @@ jobs:
             sandbox = false
       - name: Enable Cachix
         uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        env:
+          USER: runner
         with:
           name: mantrachain-e2e
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
