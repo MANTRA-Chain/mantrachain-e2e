@@ -100,6 +100,7 @@ jobs:
             jq \
             zip \
             unzip \
+            make \
             && sudo rm -rf /var/lib/apt/lists/*
       - name: Install Nix
         uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
