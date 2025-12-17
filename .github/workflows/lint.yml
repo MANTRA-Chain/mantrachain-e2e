@@ -30,12 +30,6 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         with:
           python-version: '3.12'
-      - name: Install uv
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Add uv to PATH
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Install dependencies
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
@@ -43,6 +37,15 @@ jobs:
             make \
             build-essential \
             python3-dev
+      - name: Install Rust
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install uv
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Add uv to PATH
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Run flake8
         if: steps.changed-files.outputs.any_changed == 'true'
         run: make lint-py
