@@ -258,16 +258,16 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
 
 
 async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
-    doc = {
-        "name": name,
-        "denom": REGISTRY_DENOM,
-        "uri": f"ipfs://{checksum}",
-        "checksum": checksum,
-        "checksumAlgo": "sha256",
-        "timestamp": "",
-        "figi": "",
-        "individualId": "",
-    }
+    doc = (
+        name,
+        REGISTRY_DENOM,
+        f"ipfs://{checksum}",
+        checksum,
+        "sha256",
+        "",
+        "",
+        "",
+    )
     receipt = await PRECOMPILE.fns.addDocument(doc).transact(w3, admin, to=DOCUMENT)
     assert receipt.status == 1, f"addDocument({checksum}) failed"
     return receipt
@@ -276,17 +276,21 @@ async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
 async def test_add_and_query_documents(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     admin = _admin()
-    await _add_document(w3, admin, "abc123", "Document 1")
-    # same checksum
-    await _add_document(w3, admin, "abc123", "Document 1 v2")
-    await _add_document(w3, admin, "def456", "Document 2")
-    result = await PRECOMPILE.fns.documents(
-        REGISTRY_DENOM,
-        0,
-        {"key": b"", "offset": 0, "limit": 10, "countTotal": True, "reverse": False},
+
+    for checksum, name in [
+        ("abc123", "Document 1"),
+        ("abc123", "Document 1 v2"),
+        ("def456", "Document 2"),
+    ]:
+        await _add_document(w3, admin, checksum, name)
+
+    docs, _ = await PRECOMPILE.fns.documents(
+        REGISTRY_DENOM, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT)
-    docs, _ = result
-    assert len(docs) >= 3, f"Expected ≥3 docs, got {len(docs)}"
+
+    assert len(docs) == 2, f"Expected 2 unique documents, got {len(docs)}"
+    abc_doc = next((d for d in docs if d[3] == "abc123"), None)
+    assert abc_doc[0] == "Document 1 v2"
 
 
 async def test_add_document_same_checksum_maintains_record_id(mantra):
