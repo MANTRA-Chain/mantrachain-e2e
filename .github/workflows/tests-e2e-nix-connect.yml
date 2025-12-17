@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build-env:
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: self-hosted
     outputs:
       run_tests: ${{ steps.set-run-tests.outputs.run_tests }}
     steps:
@@ -72,7 +72,7 @@ jobs:
   connect_tests:
     needs: build-env
     if: needs.build-env.outputs.run_tests == 'true'
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: self-hosted
     timeout-minutes: 240
     environment:
       name: ${{ github.event.inputs.environment }}
