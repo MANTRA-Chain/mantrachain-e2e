@@ -1,8 +1,13 @@
+import shutil
+
 import pytest
 from eth_contract.contract import Contract
 from web3 import AsyncWeb3
 
 from .utils import ACCOUNTS, build_contract
+
+if shutil.which("inveniamd") is None:
+    pytest.skip("inveniamd not enabled", allow_module_level=True)
 
 PRECOMPILE = Contract(build_contract("DocumentI")["abi"])
 DOCUMENT = "0x0000000000000000000000000000000000000A00"
@@ -26,9 +31,6 @@ def _editor2():
     ["", "abc123def456"],
 )
 async def test_grant_and_revoke_role_as_admin(mantra, checksum):
-    cli = mantra.cosmos_cli()
-    if not cli.has_module("document"):
-        pytest.skip("document module not enabled")
     w3: AsyncWeb3 = mantra.async_w3
     admin = _admin()
     editor = _editor1()
@@ -52,9 +54,6 @@ async def test_grant_and_revoke_role_as_admin(mantra, checksum):
     ],
 )
 async def test_grant_role_permissions(mantra, grantor, should_succeed):
-    cli = mantra.cosmos_cli()
-    if not cli.has_module("document"):
-        pytest.skip("document module not enabled")
     w3: AsyncWeb3 = mantra.async_w3
     sender = grantor()
     target = _editor1()
@@ -78,9 +77,6 @@ async def test_grant_role_permissions(mantra, grantor, should_succeed):
     ],
 )
 async def test_revoke_role_permissions(mantra, revoker, should_succeed):
-    cli = mantra.cosmos_cli()
-    if not cli.has_module("document"):
-        pytest.skip("document module not enabled")
     w3: AsyncWeb3 = mantra.async_w3
     admin = _admin()
     editor = _editor1()
@@ -104,9 +100,6 @@ async def test_revoke_role_permissions(mantra, revoker, should_succeed):
 
 
 async def test_multiple_roles_management(mantra):
-    cli = mantra.cosmos_cli()
-    if not cli.has_module("document"):
-        pytest.skip("document module not enabled")
     w3: AsyncWeb3 = mantra.async_w3
     admin = _admin()
     editor1 = _editor1()
