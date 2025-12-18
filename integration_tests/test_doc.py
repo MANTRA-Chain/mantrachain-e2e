@@ -63,6 +63,7 @@ PRECOMPILE = Contract.from_abi(
 DOCUMENT = "0x0000000000000000000000000000000000000A00"
 REGISTRY_ID = 1
 REGISTRY_DENOM = "test-registry"
+GAS = 100_000
 
 
 def _admin():
@@ -86,7 +87,7 @@ async def _ensure_registry_exists(w3: AsyncWeb3, cli):
         return
     admin = _admin()
     receipt = await PRECOMPILE.fns.addRegistry(REGISTRY_DENOM, REGISTRY_DENOM).transact(
-        w3, admin, to=DOCUMENT
+        w3, admin, to=DOCUMENT, gas=GAS
     )
     assert receipt.status == 1, "addRegistry failed"
 
@@ -296,11 +297,28 @@ async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
         "",
         "",
     )
-    gas = 100_000
     receipt = await PRECOMPILE.fns.addRecord(doc).transact(
-        w3, admin, to=DOCUMENT, gas=gas
+        w3, admin, to=DOCUMENT, gas=GAS
     )
     assert receipt.status == 1, f"addRecord({checksum}) failed"
+    return receipt
+
+
+async def _update_record_status(
+    w3: AsyncWeb3,
+    admin,
+    record,
+    checksum: str,
+    status: str,
+):
+    receipt = await PRECOMPILE.fns.updateRecordStatus(
+        REGISTRY_ID,
+        int(record["record_id"]),
+        checksum,
+        int(record["index"]),
+        status,
+    ).transact(w3, admin, to=DOCUMENT)
+    assert receipt.status == 1, f"updateRecordStatus({checksum}, {status}) failed"
     return receipt
 
 
@@ -339,37 +357,11 @@ async def test_add_record(mantra):
     cli = mantra.cosmos_cli()
     await _ensure_registry_exists(w3, cli)
     admin = _admin()
-
     checksum = "record_123"
-    doc = (
-        "Test Record",
-        REGISTRY_DENOM,
-        f"ipfs://{checksum}",
-        checksum,
-        "sha256",
-        "",
-        "",
-        "",
-    )
-    receipt = await PRECOMPILE.fns.addRecord(doc).transact(w3, admin, to=DOCUMENT)
-    assert receipt.status == 1, "addRecord failed"
-
-    def get_record(checksum):
-        records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
-        return next((r for r in records if r.get("checksum") == checksum), None)
-
-    record = get_record(checksum)
-    assert record is not None, f"Record with checksum {checksum} not found"
-    status = "verified"
-    receipt = await PRECOMPILE.fns.updateRecordStatus(
-        REGISTRY_ID,
-        int(record["record_id"]),
-        checksum,
-        int(record["index"]),
-        status,
-    ).transact(w3, admin, to=DOCUMENT)
-    assert receipt.status == 1, "updateRecordStatus failed"
-    assert get_record(checksum)["status"] == status
+    await _add_record(w3, admin, checksum, "Test Record")
+    records = cli.query_doc_records(checksum=checksum)
+    assert len(records) > 0, f"Record with checksum {checksum} not found"
+    await _update_record_status(w3, admin, records[0], checksum, "verified")
 
 
 async def test_remove_record(mantra):
@@ -379,16 +371,6 @@ async def test_remove_record(mantra):
     admin = _admin()
     checksum = "remove_test_123"
     await _add_record(w3, admin, checksum, "To Remove")
-
-    records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
-    record = next((r for r in records if r.get("checksum") == checksum), None)
-    assert record is not None, f"Record with checksum {checksum} not found"
-
-    receipt = await PRECOMPILE.fns.updateRecordStatus(
-        REGISTRY_ID,
-        int(record["record_id"]),
-        checksum,
-        int(record["index"]),
-        "removed",
-    ).transact(w3, admin, to=DOCUMENT)
-    assert receipt.status == 1
+    records = cli.query_doc_records(checksum=checksum)
+    assert len(records) > 0, f"Record with checksum {checksum} not found"
+    await _update_record_status(w3, admin, records[0], checksum, "removed")

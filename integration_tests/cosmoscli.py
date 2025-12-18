@@ -431,7 +431,7 @@ class CosmosCLI(PystarportCosmosCLI):
         return rsp
 
     def query_doc_records(self, **kwargs):
-        return json.loads(
+        res = json.loads(
             self.raw(
                 "q",
                 "document",
@@ -439,6 +439,7 @@ class CosmosCLI(PystarportCosmosCLI):
                 **(self.get_base_kwargs() | kwargs),
             )
         )
+        return res.get("records", [])
 
     def query_registry(self, **kwargs):
         return json.loads(
