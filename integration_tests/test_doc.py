@@ -237,14 +237,14 @@ async def test_role_idempotency(mantra, role):
 
 
 @pytest.mark.parametrize(
-    "registry_role,document_role",
+    "registry_role,record_role",
     [
         (Role.VIEWER, Role.EDITOR),
         (Role.EDITOR, Role.VIEWER),
     ],
 )
-async def test_document_level_overrides_registry_level(
-    mantra, registry_role, document_role
+async def test_record_level_overrides_registry_level(
+    mantra, registry_role, record_role
 ):
     w3: AsyncWeb3 = mantra.async_w3
     await _ensure_registry_exists(w3, mantra.cosmos_cli())
@@ -255,8 +255,8 @@ async def test_document_level_overrides_registry_level(
 
     # registry-level role
     await _grant(w3, REGISTRY_ID, reg_checksum, user, registry_role, admin)
-    # document-level role (should override)
-    await _grant(w3, REGISTRY_ID, doc_checksum, user, document_role, admin)
+    # record-level role (should override)
+    await _grant(w3, REGISTRY_ID, doc_checksum, user, record_role, admin)
     # cleanup
     await _revoke(w3, REGISTRY_ID, reg_checksum, user, admin)
     await _revoke(w3, REGISTRY_ID, doc_checksum, user, admin)
@@ -285,7 +285,7 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
     await _revoke(w3, REGISTRY_ID, doc2_checksum, user, admin)
 
 
-async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
+async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
     doc = (
         name,
         REGISTRY_DENOM,
@@ -301,34 +301,34 @@ async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
     return receipt
 
 
-async def test_add_and_query_documents(mantra):
+async def test_add_and_query_records(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
 
     for checksum, name in [
-        ("abc123", "Document 1"),
-        ("abc123", "Document 1 v2"),
-        ("def456", "Document 2"),
+        ("abc123", "Record 1"),
+        ("abc123", "Record 1 v2"),
+        ("def456", "Record 2"),
     ]:
-        await _add_document(w3, admin, checksum, name)
+        await _add_record(w3, admin, checksum, name)
 
-    docs, _ = await PRECOMPILE.fns.documents(
+    docs, _ = await PRECOMPILE.fns.records(
         REGISTRY_DENOM, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT)
 
-    assert len(docs) == 2, f"Expected 2 unique documents, got {len(docs)}"
+    assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
     abc_doc = next((d for d in docs if d[3] == "abc123"), None)
-    assert abc_doc[0] == "Document 1 v2"
+    assert abc_doc[0] == "Record 1 v2"
 
 
-async def test_add_document_same_checksum_maintains_record_id(mantra):
+async def test_add_record_same_checksum_maintains_record_id(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     checksum = "test_checksum_123"
-    await _add_document(w3, admin, checksum, "Version 1")
-    await _add_document(w3, admin, checksum, "Version 2")
+    await _add_record(w3, admin, checksum, "Version 1")
+    await _add_record(w3, admin, checksum, "Version 2")
 
 
 async def test_add_record(mantra):
@@ -369,13 +369,13 @@ async def test_add_record(mantra):
     assert get_record(checksum)["status"] == status
 
 
-async def test_remove_document(mantra):
+async def test_remove_record(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     cli = mantra.cosmos_cli()
     await _ensure_registry_exists(w3, cli)
     admin = _admin()
     checksum = "remove_test_123"
-    await _add_document(w3, admin, checksum, "To Remove")
+    await _add_record(w3, admin, checksum, "To Remove")
 
     records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
     record = next((r for r in records if r.get("checksum") == checksum), None)
