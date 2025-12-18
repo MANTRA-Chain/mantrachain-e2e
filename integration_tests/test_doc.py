@@ -42,8 +42,8 @@ PRECOMPILE = Contract.from_abi(
         """,
         "struct PageResponse { bytes nextKey; uint64 total; }",
         "function addRegistry(string name, string description) returns (uint64 registryId)",
-        "function addDocument(Document document) returns ()",
-        "function removeDocument(string denom, uint64 index) returns ()",
+        "function addRecord(Document document) returns ()",
+        "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",
         """
         function documents(
             string denom, uint64 index, PageRequest pagination
@@ -297,8 +297,8 @@ async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
         "",
         "",
     )
-    receipt = await PRECOMPILE.fns.addDocument(doc).transact(w3, admin, to=DOCUMENT)
-    assert receipt.status == 1, f"addDocument({checksum}) failed"
+    receipt = await PRECOMPILE.fns.addRecord(doc).transact(w3, admin, to=DOCUMENT)
+    assert receipt.status == 1, f"addRecord({checksum}) failed"
     return receipt
 
 
@@ -334,12 +334,23 @@ async def test_add_document_same_checksum_maintains_record_id(mantra):
 
 async def test_remove_document(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    await _ensure_registry_exists(w3, mantra.cosmos_cli())
+    cli = mantra.cosmos_cli()
+    await _ensure_registry_exists(w3, cli)
     admin = _admin()
-    await _add_document(w3, admin, "remove_test_123", "To Remove")
-    receipt = await PRECOMPILE.fns.removeDocument(REGISTRY_DENOM, 1).transact(
-        w3, admin, to=DOCUMENT
-    )
+    checksum = "remove_test_123"
+    await _add_document(w3, admin, checksum, "To Remove")
+
+    records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
+    record = next((r for r in records if r.get("checksum") == checksum), None)
+    assert record is not None, f"Record with checksum {checksum} not found"
+
+    receipt = await PRECOMPILE.fns.updateRecordStatus(
+        REGISTRY_ID,
+        int(record["record_id"]),
+        checksum,
+        int(record["index"]),
+        "removed",
+    ).transact(w3, admin, to=DOCUMENT)
     assert receipt.status == 1
 
 
