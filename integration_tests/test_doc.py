@@ -40,6 +40,7 @@ PRECOMPILE = Contract.from_abi(
         }
         """,
         "struct PageResponse { bytes nextKey; uint64 total; }",
+        "function addRegistry(string name, string description) returns (uint64 registryId)",
         "function addDocument(Document document) returns ()",
         "function removeDocument(string denom, uint64 index) returns ()",
         """
@@ -76,24 +77,24 @@ def _editor2():
     return ACCOUNTS["signer2"]
 
 
-def _ensure_registry_exists(cli):
+async def _ensure_registry_exists(w3: AsyncWeb3, cli):
     try:
         registry = cli.query_registry(name=REGISTRY_DENOM)
     except Exception:
         registry = None
     if registry:
         return
-    rsp = cli.add_registry(
-        name=REGISTRY_DENOM,
-        description=REGISTRY_DENOM,
-        _from="community",
+    admin = _admin()
+    receipt = await PRECOMPILE.fns.addRegistry(REGISTRY_DENOM, REGISTRY_DENOM).transact(
+        w3, admin, to=DOCUMENT
     )
-    assert rsp["code"] == 0, rsp["raw_log"]
+    assert receipt.status == 1, "addRegistry failed"
 
 
 async def test_add_registry(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
     cli = mantra.cosmos_cli()
-    _ensure_registry_exists(cli)
+    await _ensure_registry_exists(w3, cli)
 
 
 @pytest.mark.parametrize(
@@ -101,8 +102,8 @@ async def test_add_registry(mantra):
     ["", "abc123def456"],
 )
 async def test_grant_and_revoke_role_as_admin(mantra, checksum):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     editor = _editor1()
 
@@ -125,8 +126,8 @@ async def test_grant_and_revoke_role_as_admin(mantra, checksum):
     ],
 )
 async def test_grant_role_permissions(mantra, grantor, should_succeed):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     sender = grantor()
     target = _editor1()
     checksum = ""
@@ -149,8 +150,8 @@ async def test_grant_role_permissions(mantra, grantor, should_succeed):
     ],
 )
 async def test_revoke_role_permissions(mantra, revoker, should_succeed):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     editor = _editor1()
     sender = revoker()
@@ -173,8 +174,8 @@ async def test_revoke_role_permissions(mantra, revoker, should_succeed):
 
 
 async def test_multiple_roles_management(mantra):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     editor1 = _editor1()
     editor2 = _editor2()
@@ -224,8 +225,8 @@ async def _revoke(w3: AsyncWeb3, registry_id, checksum, user, sender):
 
 @pytest.mark.parametrize("role", [Role.EDITOR, Role.VIEWER])
 async def test_role_idempotency(mantra, role):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     editor = _editor1()
     checksum = ""
@@ -245,8 +246,8 @@ async def test_role_idempotency(mantra, role):
 async def test_document_level_overrides_registry_level(
     mantra, registry_role, document_role
 ):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     user = _editor1()
     reg_checksum = ""
@@ -270,8 +271,8 @@ async def test_document_level_overrides_registry_level(
     ],
 )
 async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     user = _editor1()
     doc1_checksum = "doc1"
@@ -301,8 +302,8 @@ async def _add_document(w3: AsyncWeb3, admin, checksum, name="Test Document"):
 
 
 async def test_add_and_query_documents(mantra):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
 
     for checksum, name in [
@@ -322,8 +323,8 @@ async def test_add_and_query_documents(mantra):
 
 
 async def test_add_document_same_checksum_maintains_record_id(mantra):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     checksum = "test_checksum_123"
     await _add_document(w3, admin, checksum, "Version 1")
@@ -331,8 +332,8 @@ async def test_add_document_same_checksum_maintains_record_id(mantra):
 
 
 async def test_remove_document(mantra):
-    _ensure_registry_exists(mantra.cosmos_cli())
     w3: AsyncWeb3 = mantra.async_w3
+    await _ensure_registry_exists(w3, mantra.cosmos_cli())
     admin = _admin()
     await _add_document(w3, admin, "remove_test_123", "To Remove")
     receipt = await PRECOMPILE.fns.removeDocument(REGISTRY_DENOM, 1).transact(
