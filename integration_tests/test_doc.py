@@ -296,7 +296,10 @@ async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
         "",
         "",
     )
-    receipt = await PRECOMPILE.fns.addRecord(doc).transact(w3, admin, to=DOCUMENT)
+    gas = 100_000
+    receipt = await PRECOMPILE.fns.addRecord(doc).transact(
+        w3, admin, to=DOCUMENT, gas=gas
+    )
     assert receipt.status == 1, f"addRecord({checksum}) failed"
     return receipt
 
