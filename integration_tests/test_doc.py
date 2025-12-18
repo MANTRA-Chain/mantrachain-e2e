@@ -19,7 +19,7 @@ class Role(str, Enum):
 PRECOMPILE = Contract.from_abi(
     [
         """
-        struct Document {
+        struct Record {
             string name;
             string denom;
             string uri;
@@ -41,12 +41,12 @@ PRECOMPILE = Contract.from_abi(
         """,
         "struct PageResponse { bytes nextKey; uint64 total; }",
         "function addRegistry(string name, string description) returns (uint64 registryId)",
-        "function addRecord(Document document) returns ()",
+        "function addRecord(Record record) returns ()",
         "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",
         """
-        function documents(
+        function records(
             string denom, uint64 index, PageRequest pagination
-        ) returns (Document[] documents, PageResponse pagination)
+        ) returns (Record[] records, PageResponse pagination)
         """,
         """
         function grantRole(
