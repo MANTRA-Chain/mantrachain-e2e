@@ -78,16 +78,17 @@ def _editor2():
 
 def _ensure_registry_exists(cli):
     try:
-        rsp = cli.add_registry(
-            name=REGISTRY_DENOM,
-            description=REGISTRY_DENOM,
-            _from="community",
-        )
-        if rsp.get("code") not in (0, 2100, None):
-            raise Exception(f"Failed to add registry: {rsp}")
-    except Exception as e:
-        if "registry" not in str(e).lower():
-            raise
+        registry = cli.query_registry(name=REGISTRY_DENOM)
+    except Exception:
+        registry = None
+    if registry:
+        return
+    rsp = cli.add_registry(
+        name=REGISTRY_DENOM,
+        description=REGISTRY_DENOM,
+        _from="community",
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
 
 
 async def test_add_registry(mantra):
