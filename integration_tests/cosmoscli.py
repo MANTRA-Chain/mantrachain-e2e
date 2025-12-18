@@ -440,14 +440,12 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
 
-    def add_registry(self, registry_name, registry_description, **kwargs):
+    def add_registry(self, **kwargs):
         rsp = json.loads(
             self.raw(
                 "tx",
                 "document",
                 "add-registry",
-                registry_name,
-                registry_description,
                 "-y",
                 **(self.get_kwargs_with_gas() | kwargs),
             )

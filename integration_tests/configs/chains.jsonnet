@@ -103,15 +103,6 @@
       params: {
         admin: 'inveniam1x7x9pkfxf33l87ftspk5aetwnkr0lvlvyde8p7',
       },
-      registries: {
-        '1': {
-          id: 1,
-          name: 'test-registry',
-          description: 'Test registry for integration tests',
-          creator: 'inveniam1x7x9pkfxf33l87ftspk5aetwnkr0lvlvyde8p7',
-          created_at: '2024-01-01T00:00:00Z',
-        },
-      },
     },
     feemarket: {
       params: {
