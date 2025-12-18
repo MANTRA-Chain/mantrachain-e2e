@@ -1,4 +1,5 @@
 import shutil
+from dataclasses import astuple, dataclass
 from enum import Enum
 
 import pytest
@@ -16,18 +17,42 @@ class Role(str, Enum):
     VIEWER = "viewer"
 
 
+@dataclass
+class Record:
+    document: str
+    registry: str
+    uri: str
+    checksum: str
+    checksumAlgo: str
+    timestamp: str
+    figi: str
+    individualId: str
+    status: str
+    recordId: int
+    index: int
+    isLatest: bool
+
+    @classmethod
+    def from_tuple(cls, t):
+        return cls(*t)
+
+
 PRECOMPILE = Contract.from_abi(
     [
         """
         struct Record {
-            string name;
-            string denom;
+            string document;
+            string registry;
             string uri;
             string checksum;
             string checksumAlgo;
             string timestamp;
             string figi;
             string individualId;
+            string status;
+            uint64 recordId;
+            uint64 index;
+            bool isLatest;
         }
         """,
         """
@@ -54,7 +79,7 @@ PRECOMPILE = Contract.from_abi(
         "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",
         """
         function records(
-            string denom, uint64 index, PageRequest pagination
+            string registry, string checksum, uint64 recordId, uint64 index, PageRequest pagination
         ) returns (Record[] records, PageResponse pagination)
         """,
         """
@@ -303,17 +328,17 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
 
 
 async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
-    doc = (
-        name,
-        REGISTRY_DENOM,
-        f"ipfs://{checksum}",
-        checksum,
-        "sha256",
-        "",
-        "",
-        "",
+    doc = Record(
+        document=name,
+        registry=REGISTRY_DENOM,
+        uri=f"ipfs://{checksum}",
+        checksum=checksum,
+        checksumAlgo="sha256",
+        recordId=0,
+        index=0,
+        isLatest=False,
     )
-    receipt = await PRECOMPILE.fns.addRecord(doc).transact(
+    receipt = await PRECOMPILE.fns.addRecord(astuple(doc)).transact(
         w3, admin, to=DOCUMENT, gas=GAS
     )
     assert receipt.status == 1, f"addRecord({checksum}) failed"
@@ -323,15 +348,15 @@ async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
 async def _update_record_status(
     w3: AsyncWeb3,
     admin,
-    record,
+    record: Record,
     checksum,
     status: str,
 ):
     receipt = await PRECOMPILE.fns.updateRecordStatus(
         REGISTRY_ID,
-        int(record["record_id"]),
+        record.recordId,
         checksum,
-        int(record["index"]),
+        record.index,
         status,
     ).transact(w3, admin, to=DOCUMENT)
     assert receipt.status == 1, f"updateRecordStatus({checksum}, {status}) failed"
@@ -350,13 +375,13 @@ async def test_add_and_query_records(mantra):
     ]:
         await _add_record(w3, admin, checksum, name)
 
-    docs, _ = await PRECOMPILE.fns.records(
-        REGISTRY_DENOM, 0, (b"", 0, 10, True, False)
+    records, _ = await PRECOMPILE.fns.records(
+        REGISTRY_DENOM, "", 0, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT)
-
+    docs = [Record.from_tuple(d) for d in records]
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
-    abc_doc = next((d for d in docs if d[3] == "abc123"), None)
-    assert abc_doc[0] == "Record 1 v2"
+    abc_doc = next((d for d in docs if d.checksum == "abc123"), None)
+    assert abc_doc.document == "Record 1 v2"
 
 
 async def test_add_record_same_checksum_maintains_record_id(mantra):
@@ -370,23 +395,27 @@ async def test_add_record_same_checksum_maintains_record_id(mantra):
 
 async def test_add_record(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    cli = mantra.cosmos_cli()
     await _ensure_registry_exists(w3)
     admin = _admin()
     checksum = "record_123"
     await _add_record(w3, admin, checksum, "Test Record")
-    records = cli.query_doc_records(checksum=checksum)
+    records, _ = await PRECOMPILE.fns.records(
+        REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
     await _update_record_status(w3, admin, records[0], checksum, "verified")
 
 
 async def test_remove_record(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    cli = mantra.cosmos_cli()
     await _ensure_registry_exists(w3)
     admin = _admin()
     checksum = "remove_test_123"
     await _add_record(w3, admin, checksum, "To Remove")
-    records = cli.query_doc_records(checksum=checksum)
+    records, _ = await PRECOMPILE.fns.records(
+        REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
     await _update_record_status(w3, admin, records[0], checksum, "removed")
