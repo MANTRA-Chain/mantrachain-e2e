@@ -1,4 +1,3 @@
-import json
 import shutil
 from enum import Enum
 
@@ -332,6 +331,44 @@ async def test_add_document_same_checksum_maintains_record_id(mantra):
     await _add_document(w3, admin, checksum, "Version 2")
 
 
+async def test_add_record(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    cli = mantra.cosmos_cli()
+    await _ensure_registry_exists(w3, cli)
+    admin = _admin()
+
+    checksum = "record_123"
+    doc = (
+        "Test Record",
+        REGISTRY_DENOM,
+        f"ipfs://{checksum}",
+        checksum,
+        "sha256",
+        "",
+        "",
+        "",
+    )
+    receipt = await PRECOMPILE.fns.addRecord(doc).transact(w3, admin, to=DOCUMENT)
+    assert receipt.status == 1, "addRecord failed"
+
+    def get_record(checksum):
+        records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
+        return next((r for r in records if r.get("checksum") == checksum), None)
+
+    record = get_record(checksum)
+    assert record is not None, f"Record with checksum {checksum} not found"
+    status = "verified"
+    receipt = await PRECOMPILE.fns.updateRecordStatus(
+        REGISTRY_ID,
+        int(record["record_id"]),
+        checksum,
+        int(record["index"]),
+        status,
+    ).transact(w3, admin, to=DOCUMENT)
+    assert receipt.status == 1, "updateRecordStatus failed"
+    assert get_record(checksum)["status"] == status
+
+
 async def test_remove_document(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     cli = mantra.cosmos_cli()
@@ -352,36 +389,3 @@ async def test_remove_document(mantra):
         "removed",
     ).transact(w3, admin, to=DOCUMENT)
     assert receipt.status == 1
-
-
-async def test_add_record(mantra):
-    w3: AsyncWeb3 = mantra.async_w3
-    cli = mantra.cosmos_cli()
-    await _ensure_registry_exists(w3, cli)
-
-    checksum = "record_123"
-    record_json = {
-        "registry": REGISTRY_DENOM,
-        "uri": f"ipfs://{checksum}",
-        "checksum": checksum,
-        "checksum_algo": "sha256",
-    }
-    rsp = cli.add_record(record=json.dumps(record_json), from_="community")
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    def get_record(checksum):
-        records = cli.query_doc_records(registry_id=REGISTRY_ID).get("records", [])
-        return next((r for r in records if r.get("checksum") == checksum), None)
-
-    record = get_record(checksum)
-    assert record is not None, f"Record with checksum {checksum} not found"
-    status = "verified"
-    rsp = cli.update_record_status(
-        registry_id=REGISTRY_ID,
-        record_id=record["record_id"],
-        index=record["index"],
-        status=status,
-        from_="community",
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    assert get_record(checksum)["status"] == status

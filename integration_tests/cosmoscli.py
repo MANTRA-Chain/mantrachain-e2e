@@ -459,31 +459,3 @@ class CosmosCLI(PystarportCosmosCLI):
                 **(self.get_base_kwargs() | kwargs),
             )
         )
-
-    def add_record(self, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "document",
-                "add-record",
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
-
-    def update_record_status(self, **kwargs):
-        rsp = json.loads(
-            self.raw(
-                "tx",
-                "document",
-                "update-record-status",
-                "-y",
-                **(self.get_kwargs_with_gas() | kwargs),
-            )
-        )
-        if rsp.get("code") == 0:
-            rsp = self.event_query_tx_for(rsp["txhash"])
-        return rsp
