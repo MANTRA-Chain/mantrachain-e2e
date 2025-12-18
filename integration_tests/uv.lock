@@ -534,7 +534,7 @@ wheels = [
 [[package]]
 name = "eth-contract"
 version = "0.3.0"
-source = { git = "https://github.com/mmsqe/eth-contract.git?rev=event#c87903f1544e4174db6c8080ac4bcfd622a799b7" }
+source = { git = "https://github.com/mmsqe/eth-contract.git?rev=event#0867e968689b361be2075d2fe268aa42c01e2d29" }
 dependencies = [
     { name = "web3" },
 ]
@@ -1375,7 +1375,7 @@ source = { git = "https://github.com/yihuang/pyrevm.git?rev=master#ef0903ad7ca3d
 [[package]]
 name = "pystarport"
 version = "0.2.5"
-source = { git = "https://github.com/MANTRA-Chain/pystarport.git?rev=main#5079688fd4e3c810f26baf11f9957e36893b6d62" }
+source = { git = "https://github.com/MANTRA-Chain/pystarport.git?rev=main#1168ac4043e785c038502523b919f4a1670b8623" }
 dependencies = [
     { name = "bech32" },
     { name = "docker" },
