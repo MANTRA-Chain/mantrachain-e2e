@@ -84,7 +84,7 @@ PRECOMPILE = Contract.from_abi(
         """,
         """
         function registries(
-            PageRequest pagination
+            uint64 registryId, string name, PageRequest pagination
         ) returns (Registry[] registries, PageResponse pagination)
         """,
         """
@@ -120,7 +120,7 @@ def _editor2():
 async def _ensure_registry_exists(w3: AsyncWeb3):
     try:
         registries, _ = await PRECOMPILE.fns.registries(
-            (b"", 0, 10, False, False)
+            0, REGISTRY_DENOM, (b"", 0, 10, False, False)
         ).call(w3, to=DOCUMENT)
         exist = any(reg[1] == REGISTRY_DENOM for reg in registries)
     except Exception:
