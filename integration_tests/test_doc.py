@@ -1,3 +1,4 @@
+import json
 import shutil
 from dataclasses import astuple, dataclass
 from enum import Enum
@@ -19,14 +20,12 @@ class Role(str, Enum):
 
 @dataclass
 class Record:
-    document: str
     registry: str
     uri: str
     checksum: str
     checksumAlgo: str
+    metadata: str
     timestamp: str
-    figi: str
-    individualId: str
     status: str
     recordId: int
     index: int
@@ -41,14 +40,12 @@ PRECOMPILE = Contract.from_abi(
     [
         """
         struct Record {
-            string document;
             string registry;
             string uri;
             string checksum;
             string checksumAlgo;
+            string metadata;
             string timestamp;
-            string figi;
-            string individualId;
             string status;
             uint64 recordId;
             uint64 index;
@@ -74,12 +71,16 @@ PRECOMPILE = Contract.from_abi(
         }
         """,
         "struct PageResponse { bytes nextKey; uint64 total; }",
-        "function addRegistry(string name, string description) returns (uint64 registryId)",
+        "function addRegistry(string name, string description) returns (uint64 registryId)",  # noqa: E501
         "function addRecord(Record record) returns ()",
-        "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",
+        "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",  # noqa: E501
         """
         function records(
-            string registry, string checksum, uint64 recordId, uint64 index, PageRequest pagination
+            string registry,
+            string checksum,
+            uint64 recordId,
+            uint64 index,
+            PageRequest pagination,
         ) returns (Record[] records, PageResponse pagination)
         """,
         """
@@ -328,15 +329,14 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
 
 
 async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
+    metadata = json.dumps({"document": name, "figi": "", "individualId": ""})
     doc = Record(
-        document=name,
         registry=REGISTRY_DENOM,
         uri=f"ipfs://{checksum}",
         checksum=checksum,
         checksumAlgo="sha256",
+        metadata=metadata,
         timestamp="",
-        figi="",
-        individualId="",
         status="",
         recordId=0,
         index=0,
@@ -377,15 +377,18 @@ async def test_add_and_query_records(mantra):
         ("abc123", "Record 1 v2"),
         ("def456", "Record 2"),
     ]:
-        await _add_record(w3, admin, checksum, name)
+        await _add_record(w3, admin, checksum, name=name)
 
     records, _ = await PRECOMPILE.fns.records(
         REGISTRY_DENOM, "", 0, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT)
     docs = [Record.from_tuple(d) for d in records]
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
+
     abc_doc = next((d for d in docs if d.checksum == "abc123"), None)
-    assert abc_doc.document == "Record 1 v2"
+    assert abc_doc is not None
+    metadata = json.loads(abc_doc.metadata)
+    assert metadata["document"] == "Record 1 v2"
 
 
 async def test_add_record_same_checksum_maintains_record_id(mantra):
@@ -393,8 +396,8 @@ async def test_add_record_same_checksum_maintains_record_id(mantra):
     await _ensure_registry_exists(w3)
     admin = _admin()
     checksum = "test_checksum_123"
-    await _add_record(w3, admin, checksum, "Version 1")
-    await _add_record(w3, admin, checksum, "Version 2")
+    await _add_record(w3, admin, checksum, name="Version 1")
+    await _add_record(w3, admin, checksum, name="Version 2")
 
 
 async def test_add_record(mantra):
@@ -402,7 +405,7 @@ async def test_add_record(mantra):
     await _ensure_registry_exists(w3)
     admin = _admin()
     checksum = "record_123"
-    await _add_record(w3, admin, checksum, "Test Record")
+    await _add_record(w3, admin, checksum, name="Test Record")
     records, _ = await PRECOMPILE.fns.records(
         REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT)
@@ -416,7 +419,7 @@ async def test_remove_record(mantra):
     await _ensure_registry_exists(w3)
     admin = _admin()
     checksum = "remove_test_123"
-    await _add_record(w3, admin, checksum, "To Remove")
+    await _add_record(w3, admin, checksum, name="To Remove")
     records, _ = await PRECOMPILE.fns.records(
         REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT)
