@@ -99,7 +99,7 @@
         ],
       },
     },
-    document: {
+    anchoring: {
       params: {
         admin: 'inveniam1x7x9pkfxf33l87ftspk5aetwnkr0lvlvyde8p7',
       },
