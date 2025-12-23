@@ -118,21 +118,21 @@ def _editor2():
     return ACCOUNTS["signer2"]
 
 
-async def _ensure_registry_exists(w3: AsyncWeb3):
+async def _ensure_registry_exists(w3: AsyncWeb3, name=REGISTRY_DENOM):
     try:
         registries, _ = await PRECOMPILE.fns.registries(
-            0, REGISTRY_DENOM, (b"", 0, 10, False, False)
+            0, name, (b"", 0, 10, False, False)
         ).call(w3, to=DOCUMENT)
-        exist = any(reg[1] == REGISTRY_DENOM for reg in registries)
+        exist = any(reg[1] == name for reg in registries)
     except Exception:
         exist = False
     if exist:
         return
     admin = _admin()
-    receipt = await PRECOMPILE.fns.addRegistry(REGISTRY_DENOM, REGISTRY_DENOM).transact(
+    receipt = await PRECOMPILE.fns.addRegistry(name, name).transact(
         w3, admin, to=DOCUMENT, gas=GAS
     )
-    assert receipt.status == 1, "addRegistry failed"
+    assert receipt.status == 1, f"failed to create registry {name}"
 
 
 async def test_add_registry(mantra):
@@ -328,10 +328,12 @@ async def test_role_with_different_checksums(mantra, doc1_role, doc2_role):
     await _revoke(w3, REGISTRY_ID, doc2_checksum, user, doc2_role, admin)
 
 
-async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
+async def _add_record(
+    w3: AsyncWeb3, admin, checksum, name="Test Record", registry=REGISTRY_DENOM
+):
     metadata = json.dumps({"document": name, "figi": "", "individualId": ""})
     doc = Record(
-        registry=REGISTRY_DENOM,
+        registry=registry,
         uri=f"ipfs://{checksum}",
         checksum=checksum,
         checksumAlgo="sha256",
@@ -345,7 +347,9 @@ async def _add_record(w3: AsyncWeb3, admin, checksum, name="Test Record"):
     receipt = await PRECOMPILE.fns.addRecord(astuple(doc)).transact(
         w3, admin, to=DOCUMENT, gas=GAS
     )
-    assert receipt.status == 1, f"addRecord({checksum}) failed"
+    assert (
+        receipt.status == 1
+    ), f"failed to add record {checksum} to registry {registry}"
     return receipt
 
 
@@ -426,3 +430,141 @@ async def test_remove_record(mantra):
     records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
     await _update_record_status(w3, admin, records[0], checksum, "removed")
+
+
+async def test_shared_checksum_in_multi_registries(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    registries = [
+        ("multi1", "doc1", "figi1", "ind001"),
+        ("multi2", "doc2", "figi2", "ind002"),
+    ]
+    checksum = "shared_checksum_abc123"
+    for name, document, figi, individual_id in registries:
+        await _ensure_registry_exists(w3, name=name)
+        metadata = json.dumps(
+            {"document": document, "figi": figi, "individualId": individual_id}
+        )
+        record = Record(
+            registry=name,
+            uri=f"ipfs://{checksum}",
+            checksum=checksum,
+            checksumAlgo="sha256",
+            metadata=metadata,
+            timestamp="",
+            status="active",
+            recordId=0,
+            index=0,
+            isLatest=False,
+        )
+        receipt = await PRECOMPILE.fns.addRecord(astuple(record)).transact(
+            w3, admin, to=DOCUMENT, gas=GAS
+        )
+        assert receipt.status == 1, f"failed to add record to {name}"
+    records, _ = await PRECOMPILE.fns.records(
+        "", checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
+
+    assert len(records) == 2
+    registries_found = {r.registry for r in records}
+    assert all(name in registries_found for name, *_ in registries)
+
+    metadata_values = {json.loads(r.metadata)["document"] for r in records}
+    assert metadata_values == {"doc1", "doc2"}
+
+
+async def test_query_by_registry_and_checksum(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    registry_name = "query-specific-reg"
+    await _ensure_registry_exists(w3, name=registry_name)
+
+    registries, _ = await PRECOMPILE.fns.registries(
+        0, registry_name, (b"", 0, 10, False, False)
+    ).call(w3, to=DOCUMENT)
+    assert registries
+
+    checksum = "query_test_checksum"
+    await _add_record(
+        w3, admin, checksum, name="Query Test Record", registry=registry_name
+    )
+    records, _ = await PRECOMPILE.fns.records(
+        registry_name, checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
+
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.checksum == checksum
+    assert rec.registry == registry_name
+
+
+async def test_same_checksum_different_record_ids_per_registry(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    registries = ["recordid-test-1", "recordid-test-2"]
+    checksum = "recordid_checksum_xyz"
+
+    for name in registries:
+        await _ensure_registry_exists(w3, name=name)
+        await _add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
+
+    records, _ = await PRECOMPILE.fns.records(
+        "", checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
+
+    assert len(records) == 2
+    for r in records:
+        assert r.index == 1
+        assert r.isLatest
+        assert r.checksum == checksum
+
+
+async def test_multiple_versions_same_checksum_across_registries(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    registries = ["version-test-1", "version-test-2"]
+    checksum = "multi_version_checksum"
+
+    for name in registries:
+        await _ensure_registry_exists(w3, name=name)
+
+    for version in ["v1.0", "v2.0"]:
+        for reg in registries:
+            await _add_record(w3, admin, checksum, name=version, registry=reg)
+
+    records, _ = await PRECOMPILE.fns.records(
+        "", checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
+
+    assert len(records) == 2
+    for r in records:
+        meta = json.loads(r.metadata)
+        assert meta["document"] == "v2.0"
+        assert r.isLatest
+        assert r.index == 2
+
+
+async def test_query_all_registries_for_checksum(mantra):
+    w3: AsyncWeb3 = mantra.async_w3
+    admin = _admin()
+    registries = ["query-all-1", "query-all-2", "query-all-3"]
+    checksum = "query_all_checksum"
+
+    for name in registries:
+        await _ensure_registry_exists(w3, name=name)
+
+    for name in registries[:2]:
+        await _add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
+
+    records, _ = await PRECOMPILE.fns.records(
+        "", checksum, 0, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT)
+    records = [Record.from_tuple(r) for r in records]
+
+    assert len(records) == 2
+    found = {r.registry for r in records}
+    assert found == set(registries[:2])
