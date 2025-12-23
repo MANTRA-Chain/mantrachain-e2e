@@ -53,8 +53,8 @@ async def exec(c, tmp_path):
     assert_set_tokenfactory_denom(
         cli, tmp_path, denom, _from=addr_a, gas_prices=gas_prices
     )
-
-    target_height = cli.block_height() + 15
+    wait_height = 30
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v5.0", target_height)
 
     # check set contract tx works
@@ -110,7 +110,7 @@ async def exec(c, tmp_path):
         "0x0000000000000000000000000000000000000801",
         "0x0000000000000000000000000000000000000805",
     ]
-    target_height = cli.block_height() + 15
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v6.0.0", target_height)
     pair = cli.query_erc20_token_pair(denom)
     assert pair["contract_owner"] == "OWNER_MODULE"
@@ -138,7 +138,7 @@ async def exec(c, tmp_path):
     )
     assert evm_params["active_static_precompiles"] == active_precompiles
 
-    target_height = cli.block_height() + 15
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v6.1.0", target_height)
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
@@ -149,7 +149,7 @@ async def exec(c, tmp_path):
         == transfer_amt - transfer_amt2 * 3
     )
 
-    target_height = cli.block_height() + 15
+    target_height = cli.block_height() + wait_height
     cli = do_upgrade(c, "v7.0.0-rc0", target_height)
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
