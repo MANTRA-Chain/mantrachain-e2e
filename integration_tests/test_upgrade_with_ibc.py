@@ -19,6 +19,7 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_AMT,
+    SCALE_FACTOR,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
@@ -69,6 +70,7 @@ async def exec(c):
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
     )
+    cli = do_upgrade(c.ibc1, "v7.0.0-rc5", cli.block_height() + 15, scale=SCALE_FACTOR)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

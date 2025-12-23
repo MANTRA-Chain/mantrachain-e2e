@@ -25,12 +25,14 @@ LEGACY_DENOM = "uom"
 LEGACY_EXTENDED_DENOM = "aom"
 
 
-def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, min_deposit=1):
+def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, scale=1):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
-    gas_prices = f"100000000{denom}"
+    price = 100000000 * scale
+    min_deposit = 1 * scale
+    gas_prices = f"{price}{denom}"
 
     rsp = cli.software_upgrade(
         "community",

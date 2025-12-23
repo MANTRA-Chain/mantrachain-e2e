@@ -10,7 +10,8 @@ let
     "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
     "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
     "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
-    "v7.0.0-rc4" = if useLiteMode
+    "v7.0.0-rc4" = pkgs.callPackage ../../nix/v7.0.0-rc4/default.nix {};
+    "v7.0.0-rc5" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };

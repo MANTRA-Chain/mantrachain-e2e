@@ -31,7 +31,12 @@ config {
     accounts: [account {
       'coin-type':: account['coin-type'],
       coins: '100000000000000' + legacy_evm_denom,
-    } for account in super.accounts],
+    } for account in super.accounts] + [{
+      name: 'scammer',
+      coins: '946791000000' + legacy_evm_denom,
+      mnemonic: '${SCAMMER_MNEMONIC}',
+      vesting: '31449600s',
+    }],
     genesis+: {
       consensus_params: {
         block: {
