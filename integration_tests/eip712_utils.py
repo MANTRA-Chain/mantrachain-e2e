@@ -3,7 +3,14 @@ import json
 from pathlib import Path
 
 from cprotobuf import Field, ProtoEntity
+from eth_abi import encode as abi_encode
+from eth_account._utils.encode_typed_data.encoding_and_hashing import (
+    encode_data,
+    get_primary_type,
+    hash_type,
+)
 from eth_hash.auto import keccak
+from eth_utils import keccak as eth_keccak
 
 
 class PubKey(ProtoEntity):
@@ -225,6 +232,48 @@ def create_eip712(
         },
         "message": message,
     }
+
+
+def encode_eip712_for_signing(eip712_data):
+    # manually hash the domain with custom encoding to allow "cosmos" as string
+    # https://github.com/cosmos/evm/blob/8f242bfec51ae3b80e9473312f84935b2a34d94b/ethereum/eip712/domain.go#L14
+    domain_data = eip712_data["domain"]
+    types = eip712_data["types"]
+    domain_types = {
+        "EIP712Domain": [
+            {"name": "name", "type": "string"},
+            {"name": "version", "type": "string"},
+            {"name": "chainId", "type": "uint256"},
+            {
+                "name": "verifyingContract",
+                "type": "string",
+            },  # string instead of address
+            {"name": "salt", "type": "string"},
+        ]
+    }
+
+    domain_type_hash = hash_type("EIP712Domain", domain_types)
+    domain_values = [
+        eth_keccak(text=domain_data["name"]),  # name
+        eth_keccak(text=domain_data["version"]),  # version
+        domain_data["chainId"],  # chainId as uint256
+        eth_keccak(
+            text=domain_data["verifyingContract"]
+        ),  # verifyingContract as string
+        eth_keccak(text=domain_data["salt"]),  # salt as string
+    ]
+    encoded_domain = abi_encode(
+        ["bytes32", "bytes32", "bytes32", "uint256", "bytes32", "bytes32"],
+        [domain_type_hash] + domain_values,
+    )
+    domain_separator = eth_keccak(encoded_domain)
+    message_types = {k: v for k, v in types.items() if k != "EIP712Domain"}
+    primary_type = eip712_data.get("primaryType") or get_primary_type(message_types)
+    message_hash = eth_keccak(
+        encode_data(primary_type, message_types, eip712_data["message"])
+    )
+    signable = b"\x19\x01" + domain_separator + message_hash
+    return eth_keccak(signable)
 
 
 def create_transaction(

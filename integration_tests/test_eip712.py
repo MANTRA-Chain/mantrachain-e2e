@@ -4,12 +4,12 @@ import json
 import pytest
 import requests
 from eth_account import Account
-from eth_account.messages import encode_typed_data
 from pystarport import ports
 
 from .eip712_utils import (
     create_message_send,
     create_tx_raw_eip712,
+    encode_eip712_for_signing,
     signature_to_web3_extension,
 )
 from .utils import ADDRS, CHAIN_ID, DEFAULT_DENOM, KEYS
@@ -49,8 +49,9 @@ def test_native_tx(mantra):
         "denom": DEFAULT_DENOM,
     }
     tx = create_message_send(chain, sender, fee, "", params)
-    structured_msg = encode_typed_data(full_message=tx["eipToSign"])
-    signed = Account.sign_message(structured_msg, KEYS[src])
+    # use custom encoding to allow "cosmos" as verifyingContract string
+    message_hash = encode_eip712_for_signing(tx["eipToSign"])
+    signed = Account.unsafe_sign_hash(message_hash, KEYS[src])
     extension = signature_to_web3_extension(
         chain,
         sender,
