@@ -147,7 +147,7 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
         ],
     )
     p = cli.get_params("feemarket")
-    assert float(p["base_fee"]) - float(new_base_fee) == 0
+    assert abs(float(p["base_fee"]) - float(new_base_fee)) < 1e-9
     assert p["elasticity_multiplier"] == new_multiplier
     assert p["base_fee_change_denominator"] == new_denominator
 

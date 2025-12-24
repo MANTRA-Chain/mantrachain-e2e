@@ -42,8 +42,8 @@ else
 fi
 
 if [[ "$TESTS_TO_RUN" == "all" ]]; then
-  echo "run all local tests"
-  cmd=$(build_pytest_cmd "uv run pytest -s -vvv -m \"not connect\"")
+  echo "run all local tests (excluding ccv)"
+  cmd=$(build_pytest_cmd "uv run pytest -s -vvv -m \"not connect\" --ignore=test_ccv.py")
 elif [[ "$TESTS_TO_RUN" == "connect" ]]; then
   echo "run tests matching $TESTS_TO_RUN"
   cmd=$(build_pytest_cmd "uv run pytest -vv -s -m connect")

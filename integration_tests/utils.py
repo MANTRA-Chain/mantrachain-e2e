@@ -20,6 +20,7 @@ import eth_utils
 import jsonmerge
 import requests
 import rlp
+import solcx
 import web3
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
@@ -301,9 +302,47 @@ def send_txs(w3, cli, to, keys, params):
 CONTRACTS = {}
 
 
-def build_contract(name, dir="contracts") -> dict:
-    if name in CONTRACTS:
-        return CONTRACTS[name]
+def build_contract_solcx(name, dir="contracts"):
+    source = (Path(__file__).parent / f"contracts/{dir}/{name}.sol").read_text()
+    input_json = {
+        "language": "Solidity",
+        "sources": {"<stdin>": {"content": source}},
+        "settings": {
+            "outputSelection": {
+                "*": {
+                    "*": [
+                        "abi",
+                        "evm.bytecode",
+                        "evm.deployedBytecode",
+                        "evm.methodIdentifiers",
+                    ]
+                }
+            },
+            "optimizer": {"enabled": True, "runs": 200},
+            "evmVersion": "istanbul",
+        },
+    }
+    output = solcx.compile_standard(
+        input_json, solc_version="0.8.0", solc_binary="solc"
+    )
+    output = output["contracts"]["<stdin>"]
+
+    # collapse "evm" field for easier access
+    for name in output:
+        contract = output[name]
+        contract.update(contract.pop("evm"))
+
+    return output
+
+
+def selectors(artifact) -> list[bytes]:
+    return [HexBytes(sel) for sel in artifact["methodIdentifiers"].values()]
+
+
+def build_contract(name, dir="contracts", contract=None) -> dict:
+    contract = contract or name
+    if contract in CONTRACTS:
+        return CONTRACTS[contract]
     cmd = [
         "solc",
         "--abi",
@@ -330,14 +369,14 @@ def build_contract(name, dir="contracts") -> dict:
     cmd.extend(remappings)
     print(*cmd)
     subprocess.run(cmd, check=True)
-    bytecode = Path(f"build/{name}.bin").read_text().strip()
-    code = Path(f"build/{name}.bin-runtime").read_text().strip()
+    bytecode = Path(f"build/{contract}.bin").read_text().strip()
+    code = Path(f"build/{contract}.bin-runtime").read_text().strip()
     result = {
-        "abi": json.loads(Path(f"build/{name}.abi").read_text()),
+        "abi": json.loads(Path(f"build/{contract}.abi").read_text()),
         "bytecode": f"0x{bytecode}",
         "code": f"0x{code}",
     }
-    CONTRACTS[name] = result
+    CONTRACTS[contract] = result
     return result
 
 
@@ -347,8 +386,9 @@ async def build_and_deploy_contract_async(
     args=(),
     key=KEYS["community"],
     dir="contracts",
+    contract=None,
 ):
-    res = build_contract(name, dir=dir)
+    res = build_contract(name, dir=dir, contract=contract)
     tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])

@@ -23,4 +23,21 @@ contract Greeter {
     function intValue() public view returns (uint) {
         return n;
     }
+
+    function toRemove() pure public returns (string memory) {
+        return "toRemove";
+    }
+}
+
+contract GreeterV2 {
+    // replace
+    function greet() public pure returns (string memory) {
+        return "hello from v2";
+    }
+
+    // add
+    function newMethod() public pure returns (string memory) {
+        return "newMethod";
+    }
+
 }

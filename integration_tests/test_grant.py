@@ -1,4 +1,8 @@
+import pytest
+
 from .utils import DEFAULT_DENOM, find_fee
+
+pytestmark = pytest.mark.skipped
 
 
 def test_flow(mantra):

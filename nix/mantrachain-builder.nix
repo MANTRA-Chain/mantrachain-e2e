@@ -1,7 +1,7 @@
 {
   lib,
   stdenv,
-  buildGo123Module,
+  buildGo125Module,
   fetchFromGitHub,
   fetchurl,
   pkgsStatic,
@@ -19,9 +19,9 @@
 }:
 let
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo123Module; };
+  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module; };
   buildStdenv = buildPackages.stdenv;
-  buildGo123Module' = if stdenv.isLinux then buildPackages.buildGo123Module else buildGo123Module;
+  buildGo125Module' = if stdenv.isLinux then buildPackages.buildGo125Module else buildGo125Module;
 
   # Download wasmvm libraries as fixed-output derivations
   wasmvmLibs = {
@@ -79,7 +79,7 @@ let
     ];
 
 in
-buildGo123Module' rec {
+buildGo125Module' rec {
   inherit
     pname
     version

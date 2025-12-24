@@ -11,6 +11,9 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
       mempool: {
         version: 'v1',
       },
+      consensus: {
+        timeout_commit: '500ms',
+      },
     },
     'app-config': {
       evm: {
@@ -98,7 +101,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
             max_gas: '81500000',
           },
           abci: {
-            vote_extensions_enable_height: '1',
+            vote_extensions_enable_height: '0',
           },
         },
       },
@@ -107,11 +110,15 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
           params+: {
             evm_denom: chain.evm_denom,
             active_static_precompiles: [
+              '0x0000000000000000000000000000000000000100',
+              '0x0000000000000000000000000000000000000400',
               '0x0000000000000000000000000000000000000800',
               '0x0000000000000000000000000000000000000801',
+              '0x0000000000000000000000000000000000000802',
+              '0x0000000000000000000000000000000000000804',
               '0x0000000000000000000000000000000000000805',
               '0x0000000000000000000000000000000000000807',
-            ],
+            ] + (if std.objectHas(chain.evm, 'params') && std.objectHas(chain.evm.params, 'active_static_precompiles') then chain.evm.params.active_static_precompiles else []),
           },
         },
         erc20: {
@@ -151,7 +158,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
         },
         circuit: {
           disabled_type_urls: [
-            "/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool",
+            '/cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool',
           ],
         },
         crisis: {
@@ -188,7 +195,11 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
             symbol: 'ATOKEN',
           }],
         },
-      },
+      } + (
+        if std.objectHas(chain, 'anchoring') then {
+          anchoring: chain.anchoring,
+        } else {}
+      ),
     },
   },
 }
