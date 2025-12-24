@@ -16,6 +16,7 @@ from .upgrade_utils import (
 from .utils import (
     ADDRS,
     CHAIN_ID,
+    DEFAULT_DENOM,
     SCALE_FACTOR,
     AsyncGreeter,
     approve_proposal,
@@ -58,27 +59,34 @@ async def exec(c, tmp_path):
     wait_height = 30
 
     scam_addr = cli.address("scammer")
-    delegated_vesting_amt = 814_388_000_000
+    delegated_vesting_amts = [100000, 70000]
+    UOM_PER_OM = 1_000_000
+    transfer_amt = 1
 
     rsp = cli.transfer(
         cli.address("community"),
         scam_addr,
-        f"{delegated_vesting_amt}{LEGACY_DENOM}",
+        f"{transfer_amt * UOM_PER_OM}{LEGACY_DENOM}",
         gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
     validators = cli.validators()
     val_ops = [v["operator_address"] for v in validators[:2]]
-    rsp = cli.delegate_amount(
-        val_ops[0],
-        f"{delegated_vesting_amt}{LEGACY_DENOM}",
-        _from="scammer",
-        gas_prices=gas_prices,
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    delegations_bf = cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]
-    assert int(delegations_bf) == delegated_vesting_amt
+    total_delegated = 0
+    for amt in delegated_vesting_amts:
+        delegated_vesting_amt = amt * UOM_PER_OM
+        rsp = cli.delegate_amount(
+            val_ops[0],
+            f"{delegated_vesting_amt}{LEGACY_DENOM}",
+            _from="scammer",
+            gas=220000,
+            gas_prices=gas_prices,
+        )
+        assert rsp["code"] == 0, rsp["raw_log"]
+        total_delegated += delegated_vesting_amt
+        delegations_bf = cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]
+        assert int(delegations_bf) == total_delegated
 
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
@@ -124,14 +132,24 @@ async def exec(c, tmp_path):
         scale_factor=SCALE_FACTOR,
     )
 
-    cli = do_upgrade(
-        c, "v7.0.0-rc5", cli.block_height() + wait_height, scale=SCALE_FACTOR
+    scam_balance_bf = int(cli.balance(scam_addr, DEFAULT_DENOM))
+    wait_for_new_blocks(cli, 5)
+    target_height2 = cli.block_height() + wait_height
+    cli = do_upgrade(c, "v7.0.0-rc5", target_height2, scale=SCALE_FACTOR)
+    pending_rewards = int(
+        cli.distribution_rewards(scam_addr, height=target_height2 - 1)
     )
     assert int(cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]) == 0
     unbonding = cli.undelegation(scam_addr, val_ops[0])
     assert unbonding.get("entries")
-    total_unbonding = sum(int(entry["balance"]) for entry in unbonding["entries"])
-    assert total_unbonding == delegated_vesting_amt * SCALE_FACTOR
+    assert (
+        sum(int(entry["balance"]) for entry in unbonding["entries"])
+        == sum(delegated_vesting_amts) * UOM_PER_OM * SCALE_FACTOR
+    )
+    scam_balance_af = int(cli.balance(scam_addr, DEFAULT_DENOM))
+    balance_diff = scam_balance_af - scam_balance_bf
+    assert balance_diff >= pending_rewards
+    assert balance_diff / SCALE_FACTOR == pending_rewards / SCALE_FACTOR
 
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
