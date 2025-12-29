@@ -1,6 +1,8 @@
 import json
+import time
 
 import pytest
+from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_fn_async
 from web3 import AsyncWeb3
@@ -12,6 +14,7 @@ from .ibc_utils import (
     run_hermes_transfer,
 )
 from .utils import (
+    ACCOUNTS,
     ADDRESS_PREFIX,
     ADDRS,
     DEFAULT_DENOM,
@@ -24,14 +27,20 @@ from .utils import (
     assert_tf_flow,
     assert_transfer_tokenfactory_denom,
     build_and_deploy_contract_async,
+    build_contract,
     denom_to_erc20_address,
     derive_new_account,
     escrow_address,
     eth_to_bech32,
     generate_isolated_address,
+    wait_for_balance_change,
 )
 
 pytestmark = pytest.mark.slow
+
+PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
+ICS20 = "0x0000000000000000000000000000000000000802"
+gas = 400_000
 
 
 @pytest.fixture(scope="module")
@@ -128,6 +137,7 @@ async def test_ibc_transfer(ibc):
         denom=tf_denom,
     )
 
+    print("mm-signer2_balance", signer2_balance)
     print(f"chain2 signer2 -> chain1 signer1 {transfer_amt}{dst_denom}")
     balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance_bf == cli.balance(addr_signer1, tf_denom)
@@ -148,6 +158,36 @@ async def test_ibc_transfer(ibc):
         balance_af == cli.balance(addr_signer1, tf_denom) == balance_bf + transfer_amt
     )
     assert cli2.balance(addr_signer2, dst_denom) == 0
+
+    print(f"ibc precompile: chain1 signer1 -> chain2 signer2 {transfer_amt}{tf_denom}")
+    timeout_height = (0, 0)
+    # timeout in nanoseconds - current time + 10 minutes
+    timeout_timestamp = int((time.time() + 600) * 10**9)
+    balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
+    signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
+    res = await PRECOMPILE.fns.transfer(
+        "transfer",
+        "channel-0",
+        tf_denom,
+        transfer_amt,
+        signer1,
+        addr_signer2,
+        timeout_height,
+        timeout_timestamp,
+        "",
+    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
+    assert res.status == 1
+    sequence = int.from_bytes(res.logs[0].data, "big")
+    assert sequence > 0
+
+    balance_af = await wait_for_balance_change_async(
+        w3, signer1, tf_erc20_addr, balance_bf
+    )
+    assert balance_af == balance_bf - transfer_amt
+    dst_balance = wait_for_balance_change(
+        cli2, addr_signer2, dst_denom, signer2_balance_bf
+    )
+    assert dst_balance == signer2_balance_bf + transfer_amt
 
 
 async def prepare_dest_callback(w3, sender, amt):

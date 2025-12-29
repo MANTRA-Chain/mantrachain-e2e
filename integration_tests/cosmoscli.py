@@ -512,3 +512,34 @@ class CosmosCLI(PystarportCosmosCLI):
             )
         )
         return int(res.get("fractional_balance", {}).get("amount", "0"))
+
+    def query_doc_records(self, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "document",
+                "records",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("records", [])
+
+    def query_registry(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "document",
+                "registry",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def query_registries(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "document",
+                "registries",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )

@@ -93,7 +93,18 @@
         symbol: 'NVNM',
       }],
     },
-    evm: {},
+    evm: {
+      params: {
+        active_static_precompiles: [
+          '0x0000000000000000000000000000000000000A00',
+        ],
+      },
+    },
+    anchoring: {
+      params: {
+        admin: 'inveniam1x7x9pkfxf33l87ftspk5aetwnkr0lvlvyde8p7',
+      },
+    },
     feemarket: {
       params: {
         base_fee: '1000000000',

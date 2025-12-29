@@ -22,6 +22,7 @@ dependencies = [
     "backoff>=2.2.1",
     "ujson>=5.11.0",
     "py-solc-x>=2.0.5",
+    "cryptography>=46.0.3",
 ]
 
 [build-system]
