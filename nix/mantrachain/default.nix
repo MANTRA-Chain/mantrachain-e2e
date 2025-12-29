@@ -14,7 +14,7 @@ in
 builder {
   version = "v7";
   owner = "MANTRA-Chain";
-  rev = "6834ea655c426adda0937bcc0e18f8bbc5dad23f";
-  hash = "sha256-uySwsARGMSMaRkDSP7COjamoEashYQ83CBsMb7M8uTg=";
-  vendorHash = "sha256-EdUU6EfniAs/wPuVGXTfuVgCgpABrQZAWs/5XejsJuw=";
+  rev = "99e926740282a341f6e3c3553f5d941a1f3a15aa";
+  hash = "sha256-9iNb/q3QwVRyE65SiIvqnksdZbCAmvHJ7YL+m50VChk=";
+  vendorHash = "sha256-T2kHD+NBRYoFHzcsUGEjqfWFelhEQKzyKBXrKRfgAKQ=";
 }

@@ -16,13 +16,10 @@ from .upgrade_utils import (
 from .utils import (
     ADDRS,
     CHAIN_ID,
-    DEFAULT_DENOM,
     SCALE_FACTOR,
     AsyncGreeter,
-    approve_proposal,
     assert_withdraw_rewards,
     call_with_retry_async,
-    module_address,
     update_node_cmd,
     verify_tax_distribution,
 )
@@ -43,7 +40,7 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-async def exec(c, tmp_path):
+async def exec(c):
     cli = c.cosmos_cli()
     w3 = c.async_w3
     grpc_cmd = cli.raw.cmd
@@ -58,63 +55,13 @@ async def exec(c, tmp_path):
     balance_bf = await w3.eth.get_balance(community, block_identifier=old_height)
     wait_height = 30
 
-    scam_addr = cli.address("scammer")
-    delegated_vesting_amts = [100000, 70000]
-    UOM_PER_OM = 1_000_000
-    transfer_amt = 1
-
-    rsp = cli.transfer(
-        cli.address("community"),
-        scam_addr,
-        f"{transfer_amt * UOM_PER_OM}{LEGACY_DENOM}",
-        gas_prices=gas_prices,
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    validators = cli.validators()
-    val_ops = [v["operator_address"] for v in validators[:2]]
-    total_delegated = 0
-    for amt in delegated_vesting_amts:
-        delegated_vesting_amt = amt * UOM_PER_OM
-        rsp = cli.delegate_amount(
-            val_ops[0],
-            f"{delegated_vesting_amt}{LEGACY_DENOM}",
-            _from="scammer",
-            gas=220000,
-            gas_prices=gas_prices,
-        )
-        assert rsp["code"] == 0, rsp["raw_log"]
-        total_delegated += delegated_vesting_amt
-        delegations_bf = cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]
-        assert int(delegations_bf) == total_delegated
-
-    msg = {
-        "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
-        "authority": module_address("gov"),
-        "blacklist_accounts": [scam_addr],
-    }
-    proposal_src = {
-        "title": "Blacklist scam address",
-        "summary": "Add scam vesting account to blacklist",
-        "deposit": f"1{LEGACY_DENOM}",
-        "messages": [msg],
-    }
-    proposal_file = tmp_path / "blacklist_proposal_recent.json"
-    proposal_file.write_text(json.dumps(proposal_src))
-    gov_rsp = cli.submit_gov_proposal(
-        proposal_file, from_="community", gas_prices=gas_prices
-    )
-    assert gov_rsp["code"] == 0, gov_rsp["raw_log"]
-    approve_proposal(c, gov_rsp["events"], gas_prices=gas_prices)
-    assert scam_addr in cli.query_blacklist()
-
     def cb(cli):
         wait_for_new_blocks(cli, 2)
         stop_height = cli.block_height()
         c.supervisorctl("stop", f"{CHAIN_ID}-node1")
         update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
         target_height = stop_height + wait_height
-        cli = do_upgrade(c, "v7.0.0-rc4", target_height, denom=LEGACY_DENOM)
+        cli = do_upgrade(c, "v7.0.0", target_height, denom=LEGACY_DENOM)
         return cli, target_height
 
     target_height = assert_withdraw_rewards(
@@ -132,24 +79,8 @@ async def exec(c, tmp_path):
         scale_factor=SCALE_FACTOR,
     )
 
-    scam_balance_bf = int(cli.balance(scam_addr, DEFAULT_DENOM))
-    wait_for_new_blocks(cli, 5)
-    target_height2 = cli.block_height() + wait_height
-    cli = do_upgrade(c, "v7.0.0-rc5", target_height2, scale=SCALE_FACTOR)
-    pending_rewards = int(
-        cli.distribution_rewards(scam_addr, height=target_height2 - 1)
-    )
-    assert int(cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]) == 0
-    unbonding = cli.undelegation(scam_addr, val_ops[0])
-    assert unbonding.get("entries")
-    assert (
-        sum(int(entry["balance"]) for entry in unbonding["entries"])
-        == sum(delegated_vesting_amts) * UOM_PER_OM * SCALE_FACTOR
-    )
-    scam_balance_af = int(cli.balance(scam_addr, DEFAULT_DENOM))
-    balance_diff = scam_balance_af - scam_balance_bf
-    assert balance_diff >= pending_rewards
-    assert balance_diff / SCALE_FACTOR == pending_rewards / SCALE_FACTOR
+    c.supervisorctl("start", "mantra-canary-net-1-node0")
+    wait_for_new_blocks(c.cosmos_cli(), 1)
 
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
@@ -221,6 +152,6 @@ async def exec(c, tmp_path):
                 proc.wait()
 
 
-async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
-    await exec(custom_mantra, tmp_path)
+async def test_cosmovisor_upgrade(custom_mantra: Mantra):
+    await exec(custom_mantra)
     cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)

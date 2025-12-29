@@ -282,7 +282,7 @@ async def exec(c, tmp_path):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     target_height_rc2 = cli.block_height() + wait_height
-    cli = do_upgrade(c, "v7.0.0-rc4", target_height_rc2, denom=LEGACY_DENOM)
+    cli = do_upgrade(c, "v7.0.0", target_height_rc2, denom=LEGACY_DENOM)
     assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
 
     # delegate after migration
@@ -374,9 +374,6 @@ async def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
 
     assert len(get_block_events()) == 0
-    cli = do_upgrade(
-        c, "v7.0.0-rc5", cli.block_height() + wait_height, scale=SCALE_FACTOR
-    )
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
