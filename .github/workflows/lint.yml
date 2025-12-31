@@ -14,7 +14,7 @@ concurrency:
 jobs:
   lint-python:
     name: Lint python
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,16 +30,6 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            make \
-            build-essential \
-            python3-dev
-      - name: Install Rust
-        if: steps.changed-files.outputs.any_changed == 'true'
-        uses: dtolnay/rust-toolchain@stable
       - name: Install uv
         if: steps.changed-files.outputs.any_changed == 'true'
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
