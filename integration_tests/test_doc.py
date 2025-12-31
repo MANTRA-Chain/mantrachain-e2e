@@ -70,33 +70,61 @@ PRECOMPILE = Contract.from_abi(
             bool reverse;
         }
         """,
-        "struct PageResponse { bytes nextKey; uint64 total; }",
-        "function addRegistry(string name, string description) returns (uint64 registryId)",  # noqa: E501
-        "function addRecord(Record record) returns ()",
-        "function updateRecordStatus(uint64 registryId, uint64 recordId, string checksum, uint64 index, string status) returns ()",  # noqa: E501
+        """
+        struct PageResponse {
+            bytes nextKey;
+            uint64 total;
+        }
+        """,
+        """
+        function addRegistry(
+            string memory name,
+            string memory description
+        ) returns (uint64 registryId)
+        """,
+        """
+        function addRecord(Record memory record)
+        """,
+        """
+        function updateRecordStatus(
+            uint64 registryId,
+            uint64 recordId,
+            string memory checksum,
+            uint64 index,
+            string memory status
+        )
+        """,
         """
         function records(
-            string registry,
-            string checksum,
+            string memory registry,
+            string memory checksum,
             uint64 recordId,
             uint64 index,
-            PageRequest pagination,
-        ) returns (Record[] records, PageResponse pagination)
+            PageRequest memory pagination
+        ) returns (Record[] memory, PageResponse memory)
         """,
         """
         function registries(
-            uint64 registryId, string name, PageRequest pagination
-        ) returns (Registry[] registries, PageResponse pagination)
+            uint64 registryId,
+            string memory name,
+            PageRequest memory pagination
+        ) returns (Registry[] memory, PageResponse memory)
         """,
         """
         function grantRole(
-            uint64 registryId, string checksum, address account, string role
-        ) returns ()
+            uint64 registryId,
+            string memory checksum,
+            address account,
+            string memory role
+        )
         """,
         """
         function revokeRole(
-            uint64 registryId, string checksum, address account, string role
-        ) returns ()
+            uint64 registryId,
+            string memory checksum,
+            address account,
+            string memory role
+        )
         """,
     ]
 )

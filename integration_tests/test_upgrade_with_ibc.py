@@ -19,6 +19,7 @@ from .utils import (
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_AMT,
+    SCALE_FACTOR,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
@@ -68,6 +69,9 @@ async def exec(c):
         c,
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
+    )
+    cli = do_upgrade(
+        c.ibc1, "v8.0.0-provider-rc0", cli.block_height() + 15, scale=SCALE_FACTOR
     )
 
 

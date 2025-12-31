@@ -79,8 +79,9 @@ async def exec(c):
         scale_factor=SCALE_FACTOR,
     )
 
-    c.supervisorctl("start", "mantra-canary-net-1-node0")
-    wait_for_new_blocks(c.cosmos_cli(), 1)
+    cli = do_upgrade(
+        c, "v8.0.0-provider-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
+    )
 
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
