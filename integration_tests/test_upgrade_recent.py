@@ -80,7 +80,7 @@ async def exec(c):
     )
 
     cli = do_upgrade(
-        c, "v8.0.0-provider-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
+        c, "v8.0.0-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
     )
 
     grpc_node = 1

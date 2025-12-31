@@ -375,7 +375,7 @@ async def exec(c, tmp_path):
 
     assert len(get_block_events()) == 0
     cli = do_upgrade(
-        c, "v8.0.0-provider-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
+        c, "v8.0.0-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
     )
 
 

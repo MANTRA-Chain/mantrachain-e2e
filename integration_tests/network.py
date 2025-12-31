@@ -210,7 +210,7 @@ def setup_custom_mantra(
     if relayer == cluster.Relayer.RLY.value:
         cmd = cmd + ["--relayer", str(relayer)]
     if chain_binary is not None:
-        cmd = cmd[:1] + ["--cmd", chain_binary] + cmd[1:]
+        cmd = cmd[:1] + ["--cmd", f'"{chain_binary}"'] + cmd[1:]
     print(*cmd)
     subprocess.run(cmd, check=True)
     if post_init is not None:
