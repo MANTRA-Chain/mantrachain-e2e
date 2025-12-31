@@ -2,6 +2,7 @@ import asyncio
 import base64
 import binascii
 import configparser
+import datetime
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1338,3 +1340,103 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
     stake, end = get_reward_ratio(height_af)
     assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
     return target_height
+
+
+def create_consumer_chain(
+    cli,
+    chain_id,
+    dummy_hash="2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE",
+    **kwargs,
+):
+    spawn_time = datetime.datetime.now(datetime.UTC)
+    top_n = 0
+    consumer_msg = {
+        "chain_id": chain_id,
+        "metadata": {
+            "name": "name",
+            "description": "description",
+            "metadata": "metadata",
+        },
+        "initialization_parameters": {
+            "initial_height": {"revision_number": 1, "revision_height": 1},
+            "genesis_hash": dummy_hash,
+            "binary_hash": dummy_hash,
+            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
+            "ccv_timeout_period": 2419200000000000,
+            "unbonding_period": 80000000000,
+            "transfer_timeout_period": 60000000000,
+            "consumer_redistribution_fraction": "0.75",
+            "blocks_per_distribution_transmission": 10,
+            "historical_entries": 1000,
+            "distribution_transmission_channel": "",
+        },
+        "power_shaping_parameters": {"top_N": top_n},
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(consumer_msg, f)
+        msg_path = Path(f.name)
+
+    rsp = cli.provider_create_consumer(msg_path, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    data = find_log_event_attrs(
+        rsp["events"], "create_consumer", lambda attrs: "consumer_id" in attrs
+    )
+    consumer_id = data["consumer_id"]
+    assert consumer_id is not None
+    return consumer_id
+
+
+def update_consumer_chain(
+    cli,
+    consumer_id,
+    path,
+    owner_address,
+    new_owner_address,
+    allowlisted_reward_denoms=None,
+    dummy_hash="2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE",
+    **kwargs,
+):
+    spawn_time = datetime.datetime.now(datetime.UTC)
+    update_msg = {
+        "consumer_id": consumer_id,
+        "owner_address": owner_address,
+        "new_owner_address": new_owner_address,
+        "metadata": {
+            "name": "name",
+            "description": "description",
+            "metadata": "metadata",
+        },
+        "initialization_parameters": {
+            "initial_height": {"revision_number": 1, "revision_height": 1},
+            "genesis_hash": dummy_hash,
+            "binary_hash": dummy_hash,
+            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
+            "ccv_timeout_period": 2419200000000000,
+            "unbonding_period": 80000000000,
+            "transfer_timeout_period": 60000000000,
+            "consumer_redistribution_fraction": "0.75",
+            "blocks_per_distribution_transmission": 10,
+            "historical_entries": 1000,
+            "distribution_transmission_channel": "",
+        },
+        "power_shaping_parameters": {
+            "top_N": 0,
+            "validators_power_cap": 0,
+            "validator_set_cap": 50,
+            "allowlist": [],
+            "denylist": [],
+            "min_stake": 1000,
+            "allow_inactive_vals": True,
+            "prioritylist": [],
+        },
+    }
+
+    if allowlisted_reward_denoms is not None:
+        update_msg["allowlisted_reward_denoms"] = allowlisted_reward_denoms
+
+    msg_path = path / "update_consumer_msg.json"
+    msg_path.write_text(json.dumps(update_msg))
+    rsp = cli.provider_update_consumer(msg_path, **kwargs)
+    assert rsp["code"] == 0, f"Failed to update consumer: {rsp.get('raw_log', '')}"
+    return rsp

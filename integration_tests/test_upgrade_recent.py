@@ -16,10 +16,13 @@ from .upgrade_utils import (
 from .utils import (
     ADDRS,
     CHAIN_ID,
+    DEFAULT_DENOM,
     SCALE_FACTOR,
     AsyncGreeter,
     assert_withdraw_rewards,
     call_with_retry_async,
+    create_consumer_chain,
+    update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
 )
@@ -82,6 +85,8 @@ async def exec(c):
     cli = do_upgrade(
         c, "v8.0.0-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
     )
+
+    await verify_provider(cli)
 
     grpc_node = 1
     api_port = ports.api_port(c.base_port(grpc_node))
@@ -151,6 +156,32 @@ async def exec(c):
             if proc.poll() is None:
                 proc.terminate()
                 proc.wait()
+
+
+async def verify_provider(cli):
+    params = cli.get_params("provider")
+    assert params["blocks_per_epoch"] == "10"
+    assert params["number_of_epochs_to_start_receiving_rewards"] == "2"
+    fee = params.get("consumer_reward_denom_registration_fee")
+    assert fee == {"denom": DEFAULT_DENOM, "amount": "4000000000000000000"}
+    assert int(params.get("max_provider_consensus_validators")) > 0
+    consumer_id = create_consumer_chain(cli, "test-consumer-1", from_="validator")
+    rsp = cli.provider_opt_in(consumer_id, from_="validator")
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    authority = cli.get_params("marketmap").get("admin")
+    owner_address = cli.address("validator")
+    update_consumer_chain(
+        cli,
+        consumer_id,
+        cli.data_dir.parent,
+        owner_address,
+        authority,
+        from_="validator",
+    )
+
+    wait_for_new_blocks(cli, 1)
+    assert cli.provider_consumer_genesis(consumer_id) is not None
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
