@@ -52,8 +52,7 @@ def ibc(request, tmp_path_factory):
         wait_for_port(ports.grpc_port(ibc1.base_port(0)))
         wait_for_new_blocks(cli, 1)
 
-        dummy_hash = "2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE"
-        consumer_id = create_consumer_chain(cli, b_chain, dummy_hash, from_="validator")
+        consumer_id = create_consumer_chain(cli, b_chain, from_="validator")
 
         for i in range(num_nodes):
             rsp = ibc1.cosmos_cli(i=i).provider_opt_in(consumer_id, from_="validator")
@@ -73,7 +72,6 @@ def ibc(request, tmp_path_factory):
             owner_address,
             authority,
             allowlisted_reward_denoms={"denoms": [f"ibc/{denom_hash}"]},
-            dummy_hash=dummy_hash,
             from_="validator",
         )
 

@@ -1394,9 +1394,9 @@ def update_consumer_chain(
     owner_address,
     new_owner_address,
     allowlisted_reward_denoms=None,
-    dummy_hash="2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE",
     **kwargs,
 ):
+    dummy_hash = "2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE"
     spawn_time = datetime.datetime.now(datetime.UTC)
     update_msg = {
         "consumer_id": consumer_id,
