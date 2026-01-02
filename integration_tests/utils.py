@@ -817,11 +817,14 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
     assert (
         int(res["yes_count"]) == cli.staking_pool()
     ), "all validators should have voted yes"
-    print("wait for proposal to be activated")
     proposal = cli.query_proposal(proposal_id)
-    wait_for_block_time(cli, isoparse(proposal["voting_end_time"]))
+    end = isoparse(proposal["voting_end_time"])
+    print(f"wait for proposal to be activated after {end}")
+    wait_for_block_time(cli, end, sleep=0.01)
+    height = cli.block_height()
     proposal = cli.query_proposal(proposal_id)
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
+    return height
 
 
 def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwargs):
@@ -835,9 +838,9 @@ def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwarg
     proposal.write_text(json.dumps(proposal_src))
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
-    print("check params have been updated now")
-    return rsp
+    height = approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
+    print(f"check params have been updated now after {height}")
+    return height
 
 
 def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):
