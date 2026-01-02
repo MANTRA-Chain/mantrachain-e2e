@@ -811,7 +811,7 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
             **kwargs,
         )
         assert rsp["code"] == 0, rsp["raw_log"]
-    wait_for_new_blocks(cli, 1, sleep=0.01)
+    wait_for_new_blocks(cli, 1)
     res = cli.query_tally(proposal_id)
     res = res.get("tally") or res
     assert (
@@ -820,8 +820,10 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
     print("wait for proposal to be activated")
     proposal = cli.query_proposal(proposal_id)
     wait_for_block_time(cli, isoparse(proposal["voting_end_time"]))
+    height = cli.block_height()
     proposal = cli.query_proposal(proposal_id)
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
+    return height
 
 
 def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwargs):
@@ -835,9 +837,9 @@ def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwarg
     proposal.write_text(json.dumps(proposal_src))
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
-    print("check params have been updated now")
-    return rsp
+    height = approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
+    print(f"check params have been updated now after {height}")
+    return height
 
 
 def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):
