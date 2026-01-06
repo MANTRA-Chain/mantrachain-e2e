@@ -1,3 +1,4 @@
+local constant = import 'constant.jsonnet';
 {
   max_gas: 2500000,
   gas_multiplier: 1.1,
@@ -8,10 +9,10 @@
     },
   },
   gas_price: {
-    price: 0.1,
+    price: constant.gas_price,
   },
   event_source: {
-    batch_delay: '250ms',
+    batch_delay: '50ms',
   },
   extension_options: [{
     type: 'cosmos_evm_dynamic_fee_v1',

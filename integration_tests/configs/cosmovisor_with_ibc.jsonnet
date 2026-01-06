@@ -1,16 +1,12 @@
-local config = import 'default.jsonnet';
+local ibc = import 'ibc_evmd.jsonnet';
 local legacy_evm_denom = 'uom';
 local constant = import 'constant.jsonnet';
+local gas_price = constant.gas_price;
 local coins = constant.coins;
 local staked = constant.staked;
 
-config {
+ibc {
   'mantra-canary-net-1'+: {
-    config: {
-      consensus: {
-        timeout_commit: '500ms',
-      },
-    },
     'app-config'+: {
       evm+: {
         'evm-chain-id': 5887,
@@ -21,7 +17,7 @@ config {
       'coin-type':: validator['coin-type'],
       coins: coins + legacy_evm_denom,
       staked: staked + legacy_evm_denom,
-      gas_prices: '0.01' + legacy_evm_denom,
+      gas_prices: gas_price + legacy_evm_denom,
       'app-config'+: {
         mempool: {
           'max-txs': -1,  // TODO: wait fix sender release
@@ -40,29 +36,23 @@ config {
         },
       },
       app_state+: {
-        oracle+: {
-          currency_pair_genesis: [
-            {
-              currency_pair: {
-                Base: 'OM',
-                Quote: 'USD',
-              },
-              nonce: 0,
-              id: 1,
-            },
-            {
-              currency_pair: {
-                Base: 'USD',
-                Quote: 'OM',
-              },
-              nonce: 0,
-              id: 2,
-            },
-          ],
-          next_id: 3,
-        },
         bank+: {
-          denom_metadata:: super.bank.denom_metadata,
+          denom_metadata: [{
+            description: 'The native staking token of the Mantrachain.',
+            denom_units: [
+              {
+                denom: legacy_evm_denom,
+              },
+              {
+                denom: 'om',
+                exponent: 6,
+              },
+            ],
+            base: legacy_evm_denom,
+            display: 'om',
+            name: 'om',
+            symbol: 'OM',
+          }],
         },
         crisis+: {
           constant_fee+: {
@@ -95,25 +85,41 @@ config {
             ],
           },
         },
-        evm:: super.evm,
-        erc20:: super.erc20,
+        erc20+: {
+          token_pairs: [
+            {
+              contract_owner: 1,
+              denom: legacy_evm_denom,
+              enabled: true,
+              erc20_address: '0x4200000000000000000000000000000000000006',
+            },
+          ],
+        },
+        evm+: {
+          params+: {
+            evm_denom: legacy_evm_denom,
+            extended_denom_options: {
+              extended_denom: 'aom',
+            },
+          },
+        },
         feemarket: {
           params: {
-            alpha: '0.000000000000000000',
-            beta: '1.000000000000000000',
-            gamma: '0.000000000000000000',
-            delta: '0.000000000000000000',
-            min_base_gas_price: '0.010000000000000000',
-            min_learning_rate: '0.125000000000000000',
-            max_learning_rate: '0.125000000000000000',
-            max_block_utilization: '75000000',
-            window: '1',
-            fee_denom: legacy_evm_denom,
-            enabled: true,
-            distribute_fees: false,
+            base_fee: '0.010000000000000000',
+            min_gas_price: '0.010000000000000000',
           },
         },
       },
     },
+  },
+  relayer+: {
+    chains: [
+      super.chains[0] {
+        gas_price+: {
+          denom: legacy_evm_denom,
+          price: 0.1,
+        },
+      },
+    ] + super.chains[1:],
   },
 }

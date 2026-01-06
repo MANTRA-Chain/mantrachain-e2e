@@ -6,16 +6,13 @@ let
   common = import ./mantrachain-common.nix { inherit pkgs; };
   platform = common.platform;
   releases = {
-    genesis = common.mkMantrachain { version = "v4.0.1"; };
-    "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
-    "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
-    "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
+    genesis = pkgs.callPackage ../../nix/v6.1.3/default.nix {};
     "v7.0.0" = pkgs.callPackage ../../nix/v7.0.0/default.nix {};
     "v8.0.0-rc0" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };
-  packageName = "upgrade-test-package" + (if useLiteMode then "-lite" else "-full");
+  packageName = "upgrade-test-package-ibc" + (if useLiteMode then "-lite" else "-full");
 in
 pkgs.linkFarm packageName (
   pkgs.lib.mapAttrsToList (name: path: { inherit name path; }) releases

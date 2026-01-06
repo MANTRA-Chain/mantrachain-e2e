@@ -50,6 +50,7 @@ config {
             extended_denom_options+: {
               extended_denom: inveniamd_chain.evm_denom,
             },
+            active_static_precompiles: basic.genesis.app_state.evm.params.active_static_precompiles + inveniamd_chain.evm.params.active_static_precompiles,
           },
         },
         erc20: {},

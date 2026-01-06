@@ -14,7 +14,6 @@ from pystarport.utils import wait_for_block, wait_for_port
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
     EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
@@ -22,13 +21,18 @@ from .utils import (
     send_transaction,
 )
 
+LEGACY_DENOM = "uom"
+LEGACY_EXTENDED_DENOM = "aom"
 
-def do_upgrade(c, plan_name, target):
+
+def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, scale=1):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+    price = 100000000 * scale
+    min_deposit = 1 * scale
+    gas_prices = f"{price}{denom}"
 
     rsp = cli.software_upgrade(
         "community",
@@ -38,7 +42,7 @@ def do_upgrade(c, plan_name, target):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": f"1{DEFAULT_DENOM}",
+            "deposit": f"{min_deposit}{denom}",
         },
         gas=300000,
         gas_prices=gas_prices,
@@ -51,7 +55,7 @@ def do_upgrade(c, plan_name, target):
         Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
     )
     # block should pass the target height
-    wait_for_block(c.cosmos_cli(), target + 2, timeout=480)
+    wait_for_block(c.cosmos_cli(), target + 1)
     wait_for_port(ports.rpc_port(base_port))
     return c.cosmos_cli()
 

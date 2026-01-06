@@ -13,7 +13,15 @@ import eth_abi
 import ujson
 from hexbytes import HexBytes
 
-from . import cosmostx
+from ..cosmostx_utils import (
+    AuthInfo,
+    Coin,
+    Fee,
+    MsgEthereumTx,
+    TxBody,
+    TxRaw,
+    build_any,
+)
 from .erc20 import CONTRACT_ADDRESS
 from .utils import (
     DEFAULT_DENOM,
@@ -78,9 +86,9 @@ TX_TYPES = {
 
 
 def build_evm_msg(tx: EthTx):
-    return cosmostx.build_any(
-        cosmostx.MsgEthereumTx.MSG_URL,
-        cosmostx.MsgEthereumTx(
+    return build_any(
+        MsgEthereumTx.MSG_URL,
+        MsgEthereumTx(
             from_=tx.sender,
             raw=tx.raw,
         ),
@@ -176,20 +184,18 @@ def build_cosmos_tx(*txs: EthTx, denom=DEFAULT_EXTENDED_DENOM) -> str:
     msgs = [build_evm_msg(tx) for tx in txs]
     fee = sum(tx.tx["gas"] * tx.tx["gasPrice"] for tx in txs)
     gas = sum(tx.tx["gas"] for tx in txs)
-    body = cosmostx.TxBody(
+    body = TxBody(
         messages=msgs,
-        extension_options=[
-            cosmostx.build_any("/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx")
-        ],
+        extension_options=[build_any("/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx")],
     )
-    auth_info = cosmostx.AuthInfo(
-        fee=cosmostx.Fee(
-            amount=[cosmostx.Coin(denom=denom, amount=str(fee))],
+    auth_info = AuthInfo(
+        fee=Fee(
+            amount=[Coin(denom=denom, amount=str(fee))],
             gas_limit=gas,
         )
     )
     return base64.b64encode(
-        cosmostx.TxRaw(
+        TxRaw(
             body=body.SerializeToString(), auth_info=auth_info.SerializeToString()
         ).SerializeToString()
     ).decode()

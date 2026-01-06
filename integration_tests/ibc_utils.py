@@ -21,6 +21,8 @@ from .utils import (
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
+    DEFAULT_GAS_PRICE,
+    SCALE_FACTOR,
     escrow_address,
     find_duplicate,
     find_fee,
@@ -138,7 +140,16 @@ def create_channel(hermes, chain_id, a_port, b_port):
     )
 
 
-def prepare_network(tmp_path, name, chain, b_chain="mantra-canary-net-2", cmd=CMD):
+def prepare_network(
+    tmp_path,
+    name,
+    chain,
+    b_chain="mantra-canary-net-2",
+    cmd=CMD,
+    post_init=None,
+    chain_binary=None,
+    genesis=None,
+):
     name = f"configs/{name}.jsonnet"
     with contextmanager(setup_custom_mantra)(
         tmp_path,
@@ -146,6 +157,9 @@ def prepare_network(tmp_path, name, chain, b_chain="mantra-canary-net-2", cmd=CM
         Path(__file__).parent / name,
         relayer=cluster.Relayer.HERMES.value,
         chain=chain,
+        post_init=post_init,
+        chain_binary=chain_binary,
+        genesis=genesis,
     ) as ibc1:
         cli = ibc1.cosmos_cli()
         ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary=cmd)
@@ -207,6 +221,7 @@ def assert_hermes_transfer(
     port="transfer",
     channel="channel-0",
     skip_src_balance_check=False,
+    migrate_denom=None,
 ) -> tuple[str, str]:
     escrow_addr = escrow_address(port, channel, prefix=prefix)
     src_balance_bf = src_cli.balance(src_addr, denom)
@@ -226,7 +241,9 @@ def assert_hermes_transfer(
     fee = 0
     send_ibc_token = denom.startswith("ibc/")
     if send_ibc_token:
-        dst_denom = src_cli.ibc_denom(denom).get("base")
+        dst_denom = (
+            migrate_denom if migrate_denom else src_cli.ibc_denom(denom).get("base")
+        )
     else:
         path = f"{port}/{channel}/{denom}"
         denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
@@ -235,7 +252,9 @@ def assert_hermes_transfer(
             fee = find_transfer_fee(src_cli)
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
-    assert dst_balance == dst_balance_bf + src_amt
+    assert dst_balance == dst_balance_bf + (
+        src_amt * SCALE_FACTOR if migrate_denom else src_amt
+    )
     if not send_ibc_token:
         assert dst_cli.ibc_denom_hash(path) == denom_hash
         assert src_cli.balance(escrow_addr, denom) == escrow_balance_bf + src_amt
@@ -262,6 +281,7 @@ def assert_ibc_transfer(
     dst_denom: str,
     denom=DEFAULT_DENOM,
     channel="channel-0",
+    migrate_denom=None,
     **kwargs,
 ) -> None:
     src_balance_bf = src_cli.balance(src_addr, denom=denom)
@@ -271,9 +291,12 @@ def assert_ibc_transfer(
     assert rsp["code"] == 0, rsp["raw_log"]
     fee = find_fee(rsp) if should_deduct_fee(hermes, src_cli.chain_id, denom) else 0
     dst_addr = dst_cli.debug_addr(dst_eth_addr, bech="acc")
+    dst_denom = migrate_denom if migrate_denom else dst_denom
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
-    assert dst_balance == dst_balance_bf + amt
+    assert dst_balance == dst_balance_bf + (
+        amt * SCALE_FACTOR if migrate_denom else amt
+    )
     assert src_cli.balance(src_addr, denom=denom) == src_balance_bf - amt - fee
 
 
@@ -305,7 +328,7 @@ def assert_dynamic_fee(cli):
     criteria = "message.action='/ibc.core.channel.v1.MsgChannelOpenInit'"
     tx = cli.tx_search(criteria)["txs"][0]
     events = parse_events_rpc(tx["events"])
-    fee = int(events["tx"]["fee"].removesuffix(DEFAULT_DENOM))
+    fee = int(parse_amount(events["tx"]["fee"]))
     gas = int(tx["gas_wanted"])
     # the effective fee is decided by the max_priority_fee (base fee is zero)
     # rather than the normal gas price
@@ -328,6 +351,7 @@ async def assert_ibc_transfer_flow(
     chain2_denom="atest",
     chain2_prefix="cosmos",
     return_ratio=1,
+    upgrade_cb=None,
 ) -> str:
     w3 = ibc.ibc1.async_w3
     cli1 = ibc.ibc1.cosmos_cli()
@@ -354,7 +378,9 @@ async def assert_ibc_transfer_flow(
         denom=chain2_denom,
         prefix=chain2_prefix,
     )
-    assert_dynamic_fee(cli1)
+    # skip check when upgrade since extension_options changed
+    if not upgrade_cb:
+        assert_dynamic_fee(cli1)
     assert_dup_events(cli1)
     ibc_erc20_addr = ibc_denom_address(dst_denom)
     assert (await ERC20.fns.decimals().call(w3, to=ibc_erc20_addr)) == 0
@@ -374,6 +400,7 @@ async def assert_ibc_transfer_flow(
     print(f"chain1 community -> chain2 eth_community {amt3}{denom}")
     denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
     dst_denom3 = f"ibc/{denom_hash}"
+    gas_prices = f"1{denom}" if upgrade_cb else DEFAULT_GAS_PRICE
     assert_ibc_transfer(
         ibc.hermes,
         cli1,
@@ -383,6 +410,7 @@ async def assert_ibc_transfer_flow(
         amt3,
         dst_denom3,
         denom=denom,
+        gas_prices=gas_prices,
     )
     assert_receiver_events(cli1, cli2, eth_community)
 
@@ -401,6 +429,11 @@ async def assert_ibc_transfer_flow(
         gas_prices=chain2_gas_prices,
     )
     assert_receiver_events(cli2, cli1, eth_community)
+
+    migrate_denom = None
+    if upgrade_cb:
+        upgrade_cb()
+        migrate_denom = DEFAULT_DENOM
 
     amt = int(amt * return_ratio)
     print(f"chain1 signer1 -> chain2 signer2 back {amt}{dst_denom}")
@@ -425,6 +458,7 @@ async def assert_ibc_transfer_flow(
         cli1.address("signer1"),
         denom=dst_denom2,
         prefix=chain2_prefix,
+        migrate_denom=migrate_denom,
     )
 
     amt3 = int(amt3 * return_ratio)
@@ -438,6 +472,7 @@ async def assert_ibc_transfer_flow(
         amt3,
         denom,
         denom=dst_denom3,
+        migrate_denom=migrate_denom,
         gas_prices=chain2_gas_prices,
     )
     assert_receiver_events(cli2, cli1, eth_community)

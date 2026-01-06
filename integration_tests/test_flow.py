@@ -26,7 +26,7 @@ def test_connect_flow(connect_mantra, tmp_path):
 def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
     community = "community"
     recover = "recover"
-    amt = 4_000_000_000_000_000 // WEI_PER_DENOM
+    amt = 16_000_000_000_000_000 // WEI_PER_DENOM
     # recover cosmos addr outside from node
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.w3
@@ -61,7 +61,7 @@ def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
     # send [1, 10**12] wei from test1 to test2 for tolerance check
     acc_test2 = derive_new_account(n=102)
     addr_test2 = eth_to_bech32(acc_test2.address)
-    gas_price = 11250000000
+    gas_price = 45000000000
     gas = 21000
     balance2_evm = w3.eth.get_balance(acc_test2.address)
     for value in [1, 10**12]:

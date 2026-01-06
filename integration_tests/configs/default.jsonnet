@@ -1,5 +1,8 @@
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
-local gas_price = 0.01;
+local constant = import 'constant.jsonnet';
+local gas_price = constant.gas_price;
+local coins = constant.coins;
+local staked = constant.staked;
 local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != null then chain['coin-type'] else 60;
 
 {
@@ -10,9 +13,6 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
     config: {
       mempool: {
         version: 'v1',
-      },
-      consensus: {
-        timeout_commit: '500ms',
       },
     },
     'app-config': {
@@ -42,14 +42,14 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
     },
     validators: [{
       'coin-type': coin_type,
-      coins: '100000000000000000000' + chain.evm_denom,
-      staked: '10000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
+      staked: staked + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
       mnemonic: '${VALIDATOR1_MNEMONIC}',
     }, {
       'coin-type': coin_type,
-      coins: '100000000000000000000' + chain.evm_denom,
-      staked: '10000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
+      staked: staked + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
       mnemonic: '${VALIDATOR2_MNEMONIC}',
       config: {
@@ -60,8 +60,8 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
       },
     }, {
       'coin-type': coin_type,
-      coins: '100000000000000000000' + chain.evm_denom,
-      staked: '10000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
+      staked: staked + chain.evm_denom,
       gas_prices: gas_price + chain.evm_denom,
       mnemonic: '${VALIDATOR3_MNEMONIC}',
       config: {
@@ -74,22 +74,22 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
     accounts: [{
       'coin-type': coin_type,
       name: 'community',
-      coins: '100000000000000000000' + chain.evm_denom + ',1000000000000atoken',
+      coins: coins + chain.evm_denom + ',1000000000000atoken',
       mnemonic: '${COMMUNITY_MNEMONIC}',
     }, {
       'coin-type': coin_type,
       name: 'signer1',
-      coins: '100000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
       mnemonic: '${SIGNER1_MNEMONIC}',
     }, {
       'coin-type': coin_type,
       name: 'signer2',
-      coins: '100000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
       mnemonic: '${SIGNER2_MNEMONIC}',
     }, {
       'coin-type': coin_type,
       name: 'reserve',
-      coins: '100000000000000000000' + chain.evm_denom,
+      coins: coins + chain.evm_denom,
       mnemonic: '${RESERVE_MNEMONIC}',
       vesting: '60s',
     }],

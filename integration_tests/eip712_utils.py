@@ -2,7 +2,6 @@ import base64
 import json
 from pathlib import Path
 
-from cprotobuf import Field, ProtoEntity
 from eth_abi import encode as abi_encode
 from eth_account._utils.encode_typed_data.encoding_and_hashing import (
     encode_data,
@@ -12,88 +11,24 @@ from eth_account._utils.encode_typed_data.encoding_and_hashing import (
 from eth_hash.auto import keccak
 from eth_utils import keccak as eth_keccak
 
-
-class PubKey(ProtoEntity):
-    key = Field("bytes", 1)
-
-
-class EPubKey(ProtoEntity):
-    key = Field("bytes", 1)
-
-
-class ExtensionOptionsWeb3Tx(ProtoEntity):
-    typed_data_chain_id = Field("uint64", 1)
-    fee_payer = Field("string", 2)
-    fee_payer_sig = Field("bytes", 3)
-
-
-class Coin(ProtoEntity):
-    denom = Field("string", 1)
-    amount = Field("string", 2)
-
-
-class AuthInfo(ProtoEntity):
-    signer_infos = Field("bytes", 1, repeated=True)
-    fee = Field("bytes", 2)
-    tip = Field("bytes", 3)
-
-
-class Fee(ProtoEntity):
-    amount = Field(Coin, 1, repeated=True)
-    gas_limit = Field("uint64", 2)
-    payer = Field("string", 3)
-    granter = Field("string", 4)
-
-
-class ModeInfo(ProtoEntity):
-    single = Field("bytes", 1)
-    multi = Field("bytes", 2)
-
-
-class SignDoc(ProtoEntity):
-    body_bytes = Field("bytes", 1)
-    auth_info_bytes = Field("bytes", 2)
-    chain_id = Field("string", 3)
-    account_number = Field("uint64", 4)
-
-
-class SignerInfo(ProtoEntity):
-    public_key = Field("bytes", 1)
-    mode_info = Field("bytes", 2)
-    sequence = Field("uint64", 3)
-
-
-class TxBody(ProtoEntity):
-    messages = Field("bytes", 1, repeated=True)
-    memo = Field("string", 2)
-    timeout_height = Field("uint64", 3)
-    extension_options = Field("bytes", 1023, repeated=True)
-    non_critical_extension_options = Field("bytes", 2047, repeated=True)
-
-
-class TxRaw(ProtoEntity):
-    body_bytes = Field("bytes", 1)
-    auth_info_bytes = Field("bytes", 2)
-    signatures = Field("bytes", 3, repeated=True)
-
-
-class MsgSend(ProtoEntity):
-    from_address = Field("string", 1)
-    to_address = Field("string", 2)
-    amount = Field(Coin, 3, repeated=True)
-
-
-class ProtoAny(ProtoEntity):
-    type_url = Field("string", 1)
-    value = Field("bytes", 2)
-
-
-class ModeInfoSingle(ProtoEntity):
-    mode = Field("int32", 1)
-
-
-LEGACY_AMINO = 127
-SIGN_DIRECT = 1
+from .cosmostx_utils import (
+    LEGACY_AMINO,
+    SIGN_DIRECT,
+    AuthInfo,
+    Coin,
+    EPubKey,
+    ExtensionOptionsWeb3Tx,
+    Fee,
+    ModeInfo,
+    ModeInfoSingle,
+    MsgSend,
+    ProtoAny,
+    PubKey,
+    SignDoc,
+    SignerInfo,
+    TxBody,
+    TxRaw,
+)
 
 
 def create_message_send(

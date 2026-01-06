@@ -2,6 +2,7 @@ import asyncio
 import base64
 import binascii
 import configparser
+import datetime
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -64,19 +66,19 @@ ACCOUNTS = {
 KEYS = {name: account.key for name, account in ACCOUNTS.items()}
 ADDRS = {name: account.address for name, account in ACCOUNTS.items()}
 
-DEFAULT_DENOM = os.getenv("EVM_DENOM", "uom")
-DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "aom")
+DEFAULT_DENOM = os.getenv("EVM_DENOM", "amantra")
+DEFAULT_EXTENDED_DENOM = os.getenv("EVM_EXTENDED_DENOM", "amantra")
 CHAIN_ID = os.getenv("CHAIN_ID", "mantra-canary-net-1")
 EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests
-DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 0.01))
+DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 40000000000))
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
 DEFAULT_GAS = 200000
-DEFAULT_FEE = int(DEFAULT_GAS_AMT * DEFAULT_GAS)
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
-WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 10**12))  # 10^12 wei == 1 uom
+WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
 ADDRESS_PREFIX = os.getenv("ADDRESS_PREFIX", "mantra")
 CMD = os.getenv("CMD", "mantrachaind")
+SCALE_FACTOR = 4_000_000_000_000
 
 
 WETH_SALT = 999
@@ -115,9 +117,11 @@ class AsyncGreeter(AsyncContract):
     def __init__(self, key=KEYS["community"]):
         super().__init__("Greeter", key)
 
-    async def greet(self):
+    async def greet(self, block_identifier=None):
         self._check_deployed()
-        return await self.contract.fns.greet().call(self.w3, to=self.address)
+        return await self.contract.fns.greet().call(
+            self.w3, to=self.address, block_identifier=block_identifier
+        )
 
     async def int_value(self):
         self._check_deployed()
@@ -461,8 +465,7 @@ def get_balance(cli, name):
         if "key not found" not in str(e):
             raise
         addr = name
-    uom = cli.balance(addr)
-    return uom
+    return cli.balance(addr)
 
 
 def assert_balance(cli, w3, name, evm=False):
@@ -472,13 +475,13 @@ def assert_balance(cli, w3, name, evm=False):
         if "key not found" not in str(e):
             raise
         addr = name
-    uom = get_balance(cli, name)
+    balance = get_balance(cli, name)
     wei = w3.eth.get_balance(bech32_to_eth(addr))
-    assert uom == wei // WEI_PER_DENOM
+    assert balance == wei // WEI_PER_DENOM
     print(
         f"wei: {wei}, ether: {wei // WEI_PER_ETH}.",
     )
-    return wei if evm else uom
+    return wei if evm else balance
 
 
 def find_fee(rsp):
@@ -486,14 +489,14 @@ def find_fee(rsp):
     return int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
 
 
-def assert_transfer(cli, addr_a, addr_b, amt=1):
-    balance_a = cli.balance(addr_a)
-    balance_b = cli.balance(addr_b)
-    rsp = cli.transfer(addr_a, addr_b, f"{amt}{DEFAULT_DENOM}")
+def assert_transfer(cli, addr_a, addr_b, amt=1, denom=DEFAULT_DENOM, **kwargs):
+    balance_a = cli.balance(addr_a, denom=denom)
+    balance_b = cli.balance(addr_b, denom=denom)
+    rsp = cli.transfer(addr_a, addr_b, f"{amt}{denom}", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     fee = find_fee(rsp)
-    assert cli.balance(addr_a) == balance_a - amt - fee
-    assert cli.balance(addr_b) == balance_b + amt
+    assert cli.balance(addr_a, denom=denom) == balance_a - amt - fee
+    assert cli.balance(addr_b, denom=denom) == balance_b + amt
 
 
 def denom_to_erc20_address(denom):
@@ -576,6 +579,29 @@ def call_with_retry(fn, expect_error=False, max_retries=3, retry_delay=0.1):
     return False
 
 
+async def call_with_retry_async(fn, expect_error=False, max_retries=3, retry_delay=0.1):
+    for attempt in range(1, max_retries + 1):
+        try:
+            await fn()
+            if expect_error:
+                print(f"no error but query succeeded on attempt {attempt}")
+                return False
+            print(f"query successful on attempt {attempt}")
+            return True
+        except web3.exceptions.Web3RPCError as e:
+            error_str = str(e)
+            if "Error while dialing" in error_str or "connection refused" in error_str:
+                if expect_error:
+                    return True
+                if attempt == max_retries:
+                    print(f"failed after {max_retries} attempts")
+                    return False
+                await asyncio.sleep(retry_delay)
+            else:
+                raise
+    return False
+
+
 def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     # check create tokenfactory denom
     rsp = retry_on_seq_mismatch(cli.create_tokenfactory_denom, subdenom, **kwargs)
@@ -638,7 +664,7 @@ def assert_transfer_tokenfactory_denom(cli, denom, receiver, amt, **kwargs):
     # check transfer tokenfactory denom
     sender = kwargs.get("_from")
     balance = cli.balance(sender, denom)
-    rsp = cli.transfer(sender, receiver, f"{amt}{denom}")
+    rsp = cli.transfer(sender, receiver, f"{amt}{denom}", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     current = cli.balance(sender, denom)
     assert current == balance - amt
@@ -793,11 +819,15 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
     assert (
         int(res["yes_count"]) == cli.staking_pool()
     ), "all validators should have voted yes"
-    print("wait for proposal to be activated")
     proposal = cli.query_proposal(proposal_id)
-    wait_for_block_time(cli, isoparse(proposal["voting_end_time"]))
+    end = isoparse(proposal["voting_end_time"])
+    print(f"wait for proposal to be activated after {end}")
+    height_bf = cli.block_height()
+    wait_for_block_time(cli, end, sleep=0.01)
+    height_af = cli.block_height()
     proposal = cli.query_proposal(proposal_id)
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
+    return [height_bf, height_af]
 
 
 def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwargs):
@@ -811,9 +841,9 @@ def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwarg
     proposal.write_text(json.dumps(proposal_src))
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
-    print("check params have been updated now")
-    return rsp
+    heights = approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
+    print(f"check params have been updated now after {heights}")
+    return heights
 
 
 def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):
@@ -898,17 +928,17 @@ def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
     signer2 = cli.address(signer2_name)
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    amt = 4_000_000_000_000_000 // WEI_PER_DENOM
+    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
     rsp = cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
     assert rsp["code"] == 0, rsp["raw_log"]
     acc = cli.account(multi_addr)
     res = cli.account_by_num(acc["account"]["value"]["account_number"])
     assert res["account_address"] == multi_addr
 
-    m_txt = tmp_path / "m.txt"
-    p1_txt = tmp_path / "p1.txt"
-    p2_txt = tmp_path / "p2.txt"
-    tx_txt = tmp_path / "tx.txt"
+    m_txt = tmp_path / "m.json"
+    p1_txt = tmp_path / "p1.json"
+    p2_txt = tmp_path / "p2.json"
+    tx_txt = tmp_path / "tx.json"
     amt = 1
     multi_tx = cli.transfer(
         multi_addr,
@@ -1176,3 +1206,241 @@ def grpc_eth_call(
             break
         time.sleep(sleep)
     assert success, str(rsp)
+
+
+def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
+    tax_params = cli.get_params("tax")
+    mca_tax = float(tax_params.get("mca_tax", "0")) / 1e18
+    if mca_tax == 0:
+        return None
+
+    mca_addr = tax_params["mca_address"]
+    modules = ["distribution", "fee_collector", "precisebank"]
+    addrs = [module_address(m) for m in modules]
+    height_bf = height - 1
+    denom_af = DEFAULT_DENOM if scale_factor > 1 else denom
+
+    balances_bf = {
+        name: cli.balance(addr, denom=denom, height=height_bf)
+        for name, addr in zip(modules, addrs)
+    }
+    balances_bf["mca"] = cli.balance(mca_addr, denom=denom, height=height_bf)
+
+    balances_af = {
+        name: cli.balance(addr, denom=denom_af, height=height)
+        for name, addr in zip(modules, addrs)
+    }
+    balances_af["mca"] = cli.balance(mca_addr, denom=denom_af, height=height)
+    assert balances_af["fee_collector"] == balances_af["precisebank"] == 0
+
+    fee_collector = addrs[1]
+    fee_frac = cli.query_precisebank_fraction(fee_collector, height=height_bf)
+
+    rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
+    block_mint = int(
+        find_log_event_attrs(
+            rsp["result"]["finalize_block_events"], "mint", lambda a: "amount" in a
+        )["amount"]
+    )
+    print(f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac} in {height}")
+
+    # verify tax split
+    precision = 10**18
+    expected = {}
+    for k in ["mca", "distribution"]:
+        tax_rate_int = int(mca_tax * precision)
+        if k == "mca":
+            rate = tax_rate_int
+        else:
+            rate = precision - tax_rate_int
+
+        exp = (block_mint * rate) // precision
+        # add fee_collector fractional: (frac * 4 * rate) / precision
+        if fee_frac > 0 and scale_factor > 1:
+            fee_frac_scaled = fee_frac * 4
+            frac_portion = (fee_frac_scaled * rate) // precision
+            exp += frac_portion
+
+        expected[k] = exp
+
+    tolerance = 1
+    increases = {
+        k: balances_af[k] - balances_bf[k] * scale_factor
+        for k in ["mca", "distribution"]
+    }
+    fee_inc = balances_af["fee_collector"] - balances_bf["fee_collector"] * scale_factor
+    assert fee_inc == 0
+    for mod, inc in increases.items():
+        diff = abs(inc - expected[mod])
+        assert diff <= tolerance, f"{mod} diff {diff}: exp={expected[mod]}, got={inc}"
+        msg = f"module {mod}: {inc}"
+        if scale_factor > 1:
+            fractional = inc - expected[mod]
+            msg += f" (mint={expected[mod]}+frac~{fractional})"
+        else:
+            msg += f" (exp={expected[mod]}, ±{diff})"
+        print(msg)
+
+
+def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+    cli = mantra.cosmos_cli()
+    val = cli.address("validator", "val")
+    validator = cli.address("validator")
+    signer1 = cli.address("signer1")
+    signer2 = cli.address("signer2")
+    amt = 20_000_000
+    coin = f"{amt}{denom}"
+
+    rsp = cli.set_withdraw_addr(signer2, from_=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=signer1, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.delegate_amount(val, coin, _from=validator, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    cli, target_height = cb(cli)
+    rewards = [
+        cli.distribution_rewards(signer1, height=target_height - 1),
+        cli.distribution_rewards(signer1, height=target_height),
+    ]
+    diff = rewards[1] / (rewards[0] * scale)
+    assert diff > 0.99 and diff < 2, "rewards should increase"
+
+    height_bf = cli.block_height()
+    rsp = cli.withdraw_rewards(val, from_=signer1)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    height_af = int(rsp["height"])
+    balances = [
+        cli.balance(signer2, height=height_af - 1),
+        cli.balance(signer2, height=height_af),
+    ]
+    mantra.supervisorctl("stop", "mantra-canary-net-1-node0")
+
+    def get_reward_ratio(height):
+        dis = cli.export(
+            modules_to_export="distribution",
+            height=height,
+        )[
+            "app_state"
+        ]["distribution"]
+        data = dis["delegator_starting_infos"]
+        info = [
+            r
+            for r in data
+            if r["validator_address"] == val and r["delegator_address"] == signer1
+        ][0]["starting_info"]
+        period = info["previous_period"]
+        stake = float(info["stake"]) / scale
+        data = dis["validator_historical_rewards"]
+        rewards = [
+            r for r in data if r["validator_address"] == val and r["period"] == period
+        ]
+        assert len(rewards) == 1, rewards
+        return stake, float(
+            rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"]
+        )
+
+    _, start = get_reward_ratio(height_bf)
+    stake, end = get_reward_ratio(height_af)
+    assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
+    return target_height
+
+
+def create_consumer_chain(
+    cli,
+    chain_id,
+    dummy_hash="2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE",
+    **kwargs,
+):
+    spawn_time = datetime.datetime.now(datetime.UTC)
+    top_n = 0
+    consumer_msg = {
+        "chain_id": chain_id,
+        "metadata": {
+            "name": "name",
+            "description": "description",
+            "metadata": "metadata",
+        },
+        "initialization_parameters": {
+            "initial_height": {"revision_number": 1, "revision_height": 1},
+            "genesis_hash": dummy_hash,
+            "binary_hash": dummy_hash,
+            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
+            "ccv_timeout_period": 2419200000000000,
+            "unbonding_period": 80000000000,
+            "transfer_timeout_period": 60000000000,
+            "consumer_redistribution_fraction": "0.75",
+            "blocks_per_distribution_transmission": 10,
+            "historical_entries": 1000,
+            "distribution_transmission_channel": "",
+        },
+        "power_shaping_parameters": {"top_N": top_n},
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(consumer_msg, f)
+        msg_path = Path(f.name)
+
+    rsp = cli.provider_create_consumer(msg_path, **kwargs)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    data = find_log_event_attrs(
+        rsp["events"], "create_consumer", lambda attrs: "consumer_id" in attrs
+    )
+    consumer_id = data["consumer_id"]
+    assert consumer_id is not None
+    return consumer_id
+
+
+def update_consumer_chain(
+    cli,
+    consumer_id,
+    path,
+    owner_address,
+    new_owner_address,
+    allowlisted_reward_denoms=None,
+    **kwargs,
+):
+    dummy_hash = "2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE"
+    spawn_time = datetime.datetime.now(datetime.UTC)
+    update_msg = {
+        "consumer_id": consumer_id,
+        "owner_address": owner_address,
+        "new_owner_address": new_owner_address,
+        "metadata": {
+            "name": "name",
+            "description": "description",
+            "metadata": "metadata",
+        },
+        "initialization_parameters": {
+            "initial_height": {"revision_number": 1, "revision_height": 1},
+            "genesis_hash": dummy_hash,
+            "binary_hash": dummy_hash,
+            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
+            "ccv_timeout_period": 2419200000000000,
+            "unbonding_period": 80000000000,
+            "transfer_timeout_period": 60000000000,
+            "consumer_redistribution_fraction": "0.75",
+            "blocks_per_distribution_transmission": 10,
+            "historical_entries": 1000,
+            "distribution_transmission_channel": "",
+        },
+        "power_shaping_parameters": {
+            "top_N": 0,
+            "validators_power_cap": 0,
+            "validator_set_cap": 50,
+            "allowlist": [],
+            "denylist": [],
+            "min_stake": 1000,
+            "allow_inactive_vals": True,
+            "prioritylist": [],
+        },
+    }
+
+    if allowlisted_reward_denoms is not None:
+        update_msg["allowlisted_reward_denoms"] = allowlisted_reward_denoms
+
+    msg_path = path / "update_consumer_msg.json"
+    msg_path.write_text(json.dumps(update_msg))
+    rsp = cli.provider_update_consumer(msg_path, **kwargs)
+    assert rsp["code"] == 0, f"Failed to update consumer: {rsp.get('raw_log', '')}"
+    return rsp
