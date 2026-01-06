@@ -479,8 +479,8 @@ async def test_storage_layout(mantra):
     assert int.from_bytes(allowance, "big") == 500
 
 
-async def test_selfdestruct(mantra):
-    w3 = mantra.async_w3
+async def test_selfdestruct(geth):
+    w3 = geth.async_w3
     deployer = ACCOUNTS["community"]
 
     # deploy exploit
@@ -503,3 +503,6 @@ async def test_selfdestruct(mantra):
 
     # check the contract balance is zero
     assert await w3.eth.get_balance(address) == 0
+
+    code = await w3.eth.get_code(address)
+    assert code == HexBytes("0x"), f"contract code should be deleted, got {code.hex()}"
