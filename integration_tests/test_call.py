@@ -6,7 +6,6 @@ from typing import Iterable, Unpack
 
 import pyrevm
 import pytest
-from cprotobuf import Field, ProtoEntity
 from eth_contract.erc20 import ERC20
 from eth_contract.slots import parse_balance_slot, parse_supply_slot
 from eth_contract.utils import ZERO_ADDRESS
@@ -15,6 +14,7 @@ from web3 import Web3
 from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
 
+from .cosmostx_utils import Metadata
 from .utils import (
     ADDRS,
     Contract,
@@ -148,34 +148,6 @@ async def test_override_erc20_state(mantra):
         else:
             assert await call(name_fn, state_type) == ""
             assert await call(symbol_fn, state_type) == ""
-
-
-class StateEntry(ProtoEntity):
-    key = Field("bytes", 1)
-    value = Field("bytes", 2)
-    delete = Field("bool", 3)
-
-
-class StoreStateDiff(ProtoEntity):
-    name = Field("string", 1)
-    entries = Field(StateEntry, 2, repeated=True)
-
-
-class DenomUnit(ProtoEntity):
-    denom = Field("string", 1)
-    exponent = Field("uint32", 2)
-    aliases = Field("string", 3, repeated=True)
-
-
-class Metadata(ProtoEntity):
-    description = Field("string", 1)
-    denom_units = Field(DenomUnit, 2, repeated=True)
-    base = Field("string", 3)
-    display = Field("string", 4)
-    name = Field("string", 5)
-    symbol = Field("string", 6)
-    uri = Field("string", 7)
-    uri_hash = Field("string", 8)
 
 
 def encode_key(prefix_byte, addr_bytes=None, denom=""):
