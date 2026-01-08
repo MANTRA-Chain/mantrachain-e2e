@@ -1,11 +1,13 @@
 import json
+import subprocess
+import time
 from dataclasses import astuple, dataclass
 from enum import Enum
 
 from eth_contract.contract import Contract as ContractAsync
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS
+from .utils import ACCOUNTS, KEYS
 
 # allow overriding accounts for different chain contexts
 _ACCOUNTS_OVERRIDE = None
@@ -146,6 +148,197 @@ DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
 
 
+def _get_private_key(account_name: str) -> str:
+    accounts = get_accounts()
+    return KEYS[
+        next(k for k, v in ACCOUNTS.items() if v == accounts[account_name])
+    ].hex()
+
+
+def _timestamp_suffix() -> str:
+    return str(int(time.time() * 1000))[-6:]
+
+
+def _unique_test_names(prefix: str, count: int) -> tuple[list[str], str]:
+    ts = _timestamp_suffix()
+    registries = [f"{prefix}-{i + 1}-{ts}" for i in range(count)]
+    checksum = f"{prefix}_chk_{ts}"
+    return registries, checksum
+
+
+class CastBackend:
+    def __init__(self, rpc_url: str):
+        self.rpc_url = rpc_url
+        self._sender_key = _get_private_key("community")
+
+    def set_sender(self, account_name: str) -> None:
+        self._sender_key = _get_private_key(account_name)
+
+    def get_account_address(self, account_name: str) -> str:
+        accounts = get_accounts()
+        return accounts[account_name].address
+
+    def _cast_send(self, sig: str, *args) -> subprocess.CompletedProcess:
+        cmd = [
+            "cast",
+            "send",
+            DOCUMENT_ADDRESS,
+            sig,
+            *[str(a) for a in args],
+            "--rpc-url",
+            self.rpc_url,
+            "--private-key",
+            self._sender_key,
+            "--gas-limit",
+            str(DOCUMENT_GAS),
+        ]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def _cast_call(self, sig: str, *args) -> subprocess.CompletedProcess:
+        cmd = [
+            "cast",
+            "call",
+            DOCUMENT_ADDRESS,
+            sig,
+            *[str(a) for a in args],
+            "--rpc-url",
+            self.rpc_url,
+        ]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def ensure_registry_exists(self, name: str = DOCUMENT_REGISTRY_DENOM) -> None:
+        result = self._cast_call(
+            "registries(uint64,string,(bytes,uint64,uint64,bool,bool))"
+            "((uint64,string,string,string,string)[],(bytes,uint64))",
+            "0",
+            name,
+            "(0x,0,10,false,false)",
+        )
+        if result.returncode == 0 and name in result.stdout:
+            return
+        self.add_registry(name, name)
+
+    def add_registry(self, name: str, description: str) -> None:
+        result = self._cast_send(
+            "addRegistry(string,string)(uint64)",
+            name,
+            description,
+        )
+        assert (
+            result.returncode == 0
+        ), f"failed to create registry {name}: {result.stderr}"
+
+    def add_record(
+        self,
+        checksum: str,
+        name: str = "Test Record",
+        registry: str = DOCUMENT_REGISTRY_DENOM,
+        status: str = "",
+        metadata_dict: dict | None = None,
+    ) -> None:
+        if metadata_dict:
+            metadata = ",".join(f"{k}:{v}" for k, v in metadata_dict.items())
+        else:
+            metadata = f"document:{name}"
+        status_val = f'"{status}"' if status else '""'
+        record_tuple = (
+            f'("{registry}","ipfs://{checksum}","{checksum}","sha256",'
+            f'"{metadata}","",{status_val},0,0,false)'
+        )
+        result = self._cast_send(
+            "addRecord((string,string,string,string,string,string,string,"
+            "uint64,uint64,bool))",
+            record_tuple,
+        )
+        assert (
+            result.returncode == 0
+        ), f"failed to add record {checksum} to registry {registry}: {result.stderr}"
+
+    def grant_role(
+        self,
+        registry_id: int,
+        checksum: str,
+        user_address: str,
+        role: str,
+        expect_fail: bool = False,
+    ) -> bool:
+        result = self._cast_send(
+            "grantRole(uint64,string,address,string)",
+            registry_id,
+            checksum,
+            user_address,
+            role,
+        )
+        failed = result.returncode != 0 or (
+            "status" in result.stdout and "0 (failed)" in result.stdout.lower()
+        )
+        if expect_fail:
+            return failed
+        assert not failed, (
+            f"grantRole({registry_id}, {checksum}, {user_address}, {role}) "
+            f"failed: {result.stderr}"
+        )
+        return False
+
+    def revoke_role(
+        self,
+        registry_id: int,
+        checksum: str,
+        user_address: str,
+        role: str,
+        expect_fail: bool = False,
+    ) -> bool:
+        result = self._cast_send(
+            "revokeRole(uint64,string,address,string)",
+            registry_id,
+            checksum,
+            user_address,
+            role,
+        )
+        failed = result.returncode != 0 or (
+            "status" in result.stdout and "0 (failed)" in result.stdout.lower()
+        )
+        if expect_fail:
+            return failed
+        assert not failed, (
+            f"revokeRole({registry_id}, {checksum}, {user_address}, {role}) "
+            f"failed: {result.stderr}"
+        )
+        return False
+
+    def query_records(self, registry: str = "", checksum: str = "") -> list[Record]:
+        result = self._cast_call(
+            "records(string,string,uint64,uint64,(bytes,uint64,uint64,bool,bool))"
+            "((string,string,string,string,string,string,string,uint64,uint64,bool)[],"
+            "(bytes,uint64))",
+            registry,
+            checksum,
+            "0",
+            "0",
+            "(0x,0,100,false,false)",
+        )
+        assert result.returncode == 0, f"cast call records failed: {result.stderr}"
+        self._last_query_output = result.stdout
+        return []
+
+    def query_registries(self, name: str) -> list:
+        result = self._cast_call(
+            "registries(uint64,string,(bytes,uint64,uint64,bool,bool))"
+            "((uint64,string,string,string,string)[],(bytes,uint64))",
+            "0",
+            name,
+            "(0x,0,10,false,false)",
+        )
+        assert result.returncode == 0, f"cast call registries failed: {result.stderr}"
+        self._last_query_output = result.stdout
+        return []
+
+    def assert_in_last_output(self, value: str) -> None:
+        assert (
+            value in self._last_query_output
+        ), f"'{value}' not found in output: {self._last_query_output}"
+
+
 async def ensure_registry_exists(w3: AsyncWeb3, name=DOCUMENT_REGISTRY_DENOM):
     try:
         registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
@@ -229,6 +422,7 @@ async def update_record_status(
 
 async def do_test_add_registry(w3: AsyncWeb3):
     await ensure_registry_exists(w3)
+    do_test_add_registry_cast(w3.provider.endpoint_uri)
 
 
 async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
@@ -246,6 +440,7 @@ async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
         DOCUMENT_REGISTRY_ID, checksum, editor.address, Role.EDITOR
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
     assert receipt.status == 1, "RevokeRole transaction failed"
+    do_test_grant_and_revoke_role_as_admin_cast(w3.provider.endpoint_uri, checksum)
 
 
 async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
@@ -271,6 +466,7 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
             assert False, "Expected grant by non-admin to fail"
         except Exception:
             pass  # Expected to fail
+    do_test_grant_role_permissions_cast(w3.provider.endpoint_uri, is_admin)
 
 
 async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
@@ -302,6 +498,8 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
         except Exception:
             pass  # Expected to fail
 
+    do_test_revoke_role_permissions_cast(w3.provider.endpoint_uri, is_admin)
+
 
 async def do_test_multiple_roles_management(w3: AsyncWeb3):
     await ensure_registry_exists(w3)
@@ -332,6 +530,8 @@ async def do_test_multiple_roles_management(w3: AsyncWeb3):
         ).transact(w3, admin, to=DOCUMENT_ADDRESS)
         assert receipt.status == 1, f"Failed to revoke role from {user_address}"
 
+    do_test_multiple_roles_management_cast(w3.provider.endpoint_uri)
+
 
 async def do_test_role_idempotency(w3: AsyncWeb3, role: Role):
     await ensure_registry_exists(w3)
@@ -343,6 +543,8 @@ async def do_test_role_idempotency(w3: AsyncWeb3, role: Role):
     await grant_role(w3, DOCUMENT_REGISTRY_ID, checksum, editor, role, admin)
     # second grant should be idempotent
     await grant_role(w3, DOCUMENT_REGISTRY_ID, checksum, editor, role, admin)
+
+    do_test_role_idempotency_cast(w3.provider.endpoint_uri, role)
 
 
 async def do_test_record_level_overrides_registry_level(
@@ -365,6 +567,10 @@ async def do_test_record_level_overrides_registry_level(
     )
     await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc_checksum, user, record_role, admin)
 
+    do_test_record_level_overrides_registry_level_cast(
+        w3.provider.endpoint_uri, registry_role, record_role
+    )
+
 
 async def do_test_role_with_different_checksums(
     w3: AsyncWeb3, doc1_role: Role, doc2_role: Role
@@ -381,6 +587,10 @@ async def do_test_role_with_different_checksums(
 
     await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc1_checksum, user, doc1_role, admin)
     await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc2_checksum, user, doc2_role, admin)
+
+    do_test_role_with_different_checksums_cast(
+        w3.provider.endpoint_uri, doc1_role, doc2_role
+    )
 
 
 async def do_test_add_and_query_records(w3: AsyncWeb3):
@@ -405,6 +615,7 @@ async def do_test_add_and_query_records(w3: AsyncWeb3):
     assert abc_doc is not None
     metadata = json.loads(abc_doc.metadata)
     assert metadata["document"] == "Record 1 v2"
+    do_test_add_and_query_records_cast(w3.provider.endpoint_uri)
 
 
 async def do_test_add_record_same_checksum_maintains_record_id(w3: AsyncWeb3):
@@ -414,6 +625,7 @@ async def do_test_add_record_same_checksum_maintains_record_id(w3: AsyncWeb3):
     checksum = "test_checksum_123"
     await add_record(w3, admin, checksum, name="Version 1")
     await add_record(w3, admin, checksum, name="Version 2")
+    do_test_add_record_same_checksum_maintains_record_id_cast(w3.provider.endpoint_uri)
 
 
 async def do_test_add_record(w3: AsyncWeb3):
@@ -428,6 +640,7 @@ async def do_test_add_record(w3: AsyncWeb3):
     records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
     await update_record_status(w3, admin, records[0], checksum, "verified")
+    do_test_add_record_cast(w3.provider.endpoint_uri)
 
 
 async def do_test_remove_record(w3: AsyncWeb3):
@@ -442,6 +655,8 @@ async def do_test_remove_record(w3: AsyncWeb3):
     records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
     await update_record_status(w3, admin, records[0], checksum, "removed")
+
+    do_test_remove_record_cast(w3.provider.endpoint_uri)
 
 
 async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
@@ -484,6 +699,8 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
     metadata_values = {json.loads(r.metadata)["document"] for r in records}
     assert metadata_values == {"doc1", "doc2"}
 
+    do_test_shared_checksum_in_multi_registries_cast(w3.provider.endpoint_uri)
+
 
 async def do_test_query_by_registry_and_checksum(w3: AsyncWeb3):
     accounts = get_accounts()
@@ -510,6 +727,8 @@ async def do_test_query_by_registry_and_checksum(w3: AsyncWeb3):
     assert rec.checksum == checksum
     assert rec.registry == registry_name
 
+    do_test_query_by_registry_and_checksum_cast(w3.provider.endpoint_uri)
+
 
 async def do_test_same_checksum_different_record_ids_per_registry(w3: AsyncWeb3):
     accounts = get_accounts()
@@ -531,6 +750,10 @@ async def do_test_same_checksum_different_record_ids_per_registry(w3: AsyncWeb3)
         assert r.index == 1
         assert r.isLatest
         assert r.checksum == checksum
+
+    do_test_same_checksum_different_record_ids_per_registry_cast(
+        w3.provider.endpoint_uri
+    )
 
 
 async def do_test_multiple_versions_same_checksum_across_registries(w3: AsyncWeb3):
@@ -558,6 +781,10 @@ async def do_test_multiple_versions_same_checksum_across_registries(w3: AsyncWeb
         assert r.isLatest
         assert r.index == 2
 
+    do_test_multiple_versions_same_checksum_across_registries_cast(
+        w3.provider.endpoint_uri
+    )
+
 
 async def do_test_query_all_registries_for_checksum(w3: AsyncWeb3):
     accounts = get_accounts()
@@ -579,3 +806,277 @@ async def do_test_query_all_registries_for_checksum(w3: AsyncWeb3):
     assert len(records) == 2
     found = {r.registry for r in records}
     assert found == set(registries[:2])
+
+    do_test_query_all_registries_for_checksum_cast(w3.provider.endpoint_uri)
+
+
+def do_test_add_registry_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    registry_name = "unified-test-registry"
+    backend.add_registry(registry_name, registry_name)
+    backend.query_registries(registry_name)
+    backend.assert_in_last_output(registry_name)
+
+
+def do_test_grant_and_revoke_role_as_admin_cast(rpc_url: str, checksum: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    editor_address = backend.get_account_address("signer1")
+    backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, editor_address, Role.EDITOR)
+    backend.revoke_role(DOCUMENT_REGISTRY_ID, checksum, editor_address, Role.EDITOR)
+
+
+def do_test_grant_role_permissions_cast(rpc_url: str, is_admin: bool):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    target_address = backend.get_account_address("signer1")
+    checksum = ""
+
+    if is_admin:
+        backend.set_sender("community")
+        backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, target_address, Role.EDITOR)
+    else:
+        backend.set_sender("signer2")
+        failed = backend.grant_role(
+            DOCUMENT_REGISTRY_ID,
+            checksum,
+            target_address,
+            Role.EDITOR,
+            expect_fail=True,
+        )
+        assert failed, "Expected grant by non-admin to fail"
+
+
+def do_test_revoke_role_permissions_cast(rpc_url: str, is_admin: bool):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    editor1_address = backend.get_account_address("signer1")
+    checksum = ""
+
+    # ensure role granted first (as admin)
+    backend.set_sender("community")
+    backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, editor1_address, Role.EDITOR)
+
+    if is_admin:
+        backend.revoke_role(
+            DOCUMENT_REGISTRY_ID, checksum, editor1_address, Role.EDITOR
+        )
+    else:
+        backend.set_sender("signer2")
+        failed = backend.revoke_role(
+            DOCUMENT_REGISTRY_ID,
+            checksum,
+            editor1_address,
+            Role.EDITOR,
+            expect_fail=True,
+        )
+        assert failed, "Expected revoke by non-admin to fail"
+
+
+def do_test_multiple_roles_management_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    checksum = ""
+
+    users_and_roles = [
+        (backend.get_account_address("signer1"), Role.EDITOR),
+        (backend.get_account_address("signer2"), Role.EDITOR),
+        (backend.get_account_address("validator"), Role.VIEWER),
+    ]
+
+    for user_address, role in users_and_roles:
+        backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, user_address, role)
+
+    for user_address, role in users_and_roles:
+        backend.revoke_role(DOCUMENT_REGISTRY_ID, checksum, user_address, role)
+
+
+def do_test_role_idempotency_cast(rpc_url: str, role: Role):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    editor_address = backend.get_account_address("signer1")
+    checksum = ""
+
+    backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, editor_address, role)
+    # second grant should be idempotent
+    backend.grant_role(DOCUMENT_REGISTRY_ID, checksum, editor_address, role)
+
+
+def do_test_record_level_overrides_registry_level_cast(
+    rpc_url: str, registry_role: Role, record_role: Role
+):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    user_address = backend.get_account_address("signer1")
+    reg_checksum = ""
+    doc_checksum = "doc123"
+
+    backend.grant_role(DOCUMENT_REGISTRY_ID, reg_checksum, user_address, registry_role)
+    backend.grant_role(DOCUMENT_REGISTRY_ID, doc_checksum, user_address, record_role)
+    backend.revoke_role(DOCUMENT_REGISTRY_ID, reg_checksum, user_address, registry_role)
+    backend.revoke_role(DOCUMENT_REGISTRY_ID, doc_checksum, user_address, record_role)
+
+
+def do_test_role_with_different_checksums_cast(
+    rpc_url: str, doc1_role: Role, doc2_role: Role
+):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    user_address = backend.get_account_address("signer1")
+    doc1_checksum = "doc1"
+    doc2_checksum = "doc2"
+
+    backend.grant_role(DOCUMENT_REGISTRY_ID, doc1_checksum, user_address, doc1_role)
+    backend.grant_role(DOCUMENT_REGISTRY_ID, doc2_checksum, user_address, doc2_role)
+    backend.revoke_role(DOCUMENT_REGISTRY_ID, doc1_checksum, user_address, doc1_role)
+    backend.revoke_role(DOCUMENT_REGISTRY_ID, doc2_checksum, user_address, doc2_role)
+
+
+def do_test_add_and_query_records_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+
+    suffix = _timestamp_suffix()
+    checksum1 = f"abc123_{suffix}"
+    checksum2 = f"def456_{suffix}"
+
+    for checksum, name in [
+        (checksum1, "Record 1"),
+        (checksum1, "Record 1 v2"),
+        (checksum2, "Record 2"),
+    ]:
+        backend.add_record(checksum, name=name, registry=DOCUMENT_REGISTRY_DENOM)
+
+    backend.query_records(registry=DOCUMENT_REGISTRY_DENOM)
+    backend.assert_in_last_output(checksum1)
+    backend.assert_in_last_output(checksum2)
+
+
+def do_test_add_record_same_checksum_maintains_record_id_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    suffix = _timestamp_suffix()
+    checksum = f"test_checksum_123_{suffix}"
+
+    backend.add_record(checksum, name="Version 1", registry=DOCUMENT_REGISTRY_DENOM)
+    backend.add_record(checksum, name="Version 2", registry=DOCUMENT_REGISTRY_DENOM)
+
+
+def do_test_add_record_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    suffix = _timestamp_suffix()
+    checksum = f"record_123_{suffix}"
+
+    backend.add_record(checksum, name="Test Record", registry=DOCUMENT_REGISTRY_DENOM)
+
+    backend.query_records(registry=DOCUMENT_REGISTRY_DENOM)
+    backend.assert_in_last_output(checksum)
+
+
+def do_test_remove_record_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.ensure_registry_exists(DOCUMENT_REGISTRY_DENOM)
+    backend.set_sender("community")
+    suffix = _timestamp_suffix()
+    checksum = f"remove_test_123_{suffix}"
+
+    backend.add_record(checksum, name="To Remove", registry=DOCUMENT_REGISTRY_DENOM)
+    backend.query_records(registry=DOCUMENT_REGISTRY_DENOM)
+    backend.assert_in_last_output(checksum)
+
+
+def do_test_shared_checksum_in_multi_registries_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.set_sender("community")
+    registries, checksum = _unique_test_names("multi", 2)
+
+    for name in registries:
+        backend.ensure_registry_exists(name)
+
+    for i, name in enumerate(registries):
+        backend.add_record(
+            checksum,
+            name=f"doc{i + 1}",
+            registry=name,
+            status="active",
+            metadata_dict={
+                "document": f"doc{i + 1}",
+                "figi": f"figi{i + 1}",
+                "individualId": f"ind{i + 1:03d}",
+            },
+        )
+
+    backend.query_records(checksum=checksum)
+    for name in registries:
+        backend.assert_in_last_output(name)
+
+
+def do_test_query_by_registry_and_checksum_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.set_sender("community")
+    suffix = _timestamp_suffix()
+    registry_name = f"query-specific-reg-{suffix}"
+    checksum = f"query_test_checksum_{suffix}"
+
+    backend.ensure_registry_exists(registry_name)
+    backend.add_record(checksum, name="Query Test Record", registry=registry_name)
+    backend.query_records(registry=registry_name)
+    backend.assert_in_last_output(checksum)
+    backend.assert_in_last_output(registry_name)
+
+
+def do_test_same_checksum_different_record_ids_per_registry_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.set_sender("community")
+    registries, checksum = _unique_test_names("recid", 2)
+
+    for name in registries:
+        backend.ensure_registry_exists(name)
+
+    for name in registries:
+        backend.add_record(checksum, name=f"record in {name}", registry=name)
+
+    backend.query_records(checksum=checksum)
+    for name in registries:
+        backend.assert_in_last_output(name)
+
+
+def do_test_multiple_versions_same_checksum_across_registries_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.set_sender("community")
+    registries, checksum = _unique_test_names("ver", 2)
+
+    for name in registries:
+        backend.ensure_registry_exists(name)
+
+    for version in ["v1.0", "v2.0"]:
+        for reg in registries:
+            backend.add_record(checksum, name=version, registry=reg)
+
+    backend.query_records(checksum=checksum)
+    for name in registries:
+        backend.assert_in_last_output(name)
+
+
+def do_test_query_all_registries_for_checksum_cast(rpc_url: str):
+    backend = CastBackend(rpc_url)
+    backend.set_sender("community")
+    registries, checksum = _unique_test_names("qa", 3)
+
+    for name in registries:
+        backend.ensure_registry_exists(name)
+
+    for name in registries[:2]:
+        backend.add_record(checksum, name=f"record in {name}", registry=name)
+
+    backend.query_records(checksum=checksum)
+    for name in registries[:2]:
+        backend.assert_in_last_output(name)

@@ -37,12 +37,8 @@ async def test_grant_and_revoke_role_as_admin(mantra, checksum):
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-async def test_grant_role_permissions(mantra, is_admin):
+async def test_role_permissions(mantra, is_admin):
     await do_test_grant_role_permissions(mantra.async_w3, is_admin)
-
-
-@pytest.mark.parametrize("is_admin", [True, False])
-async def test_revoke_role_permissions(mantra, is_admin):
     await do_test_revoke_role_permissions(mantra.async_w3, is_admin)
 
 

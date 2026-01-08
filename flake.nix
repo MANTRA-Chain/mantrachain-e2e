@@ -89,6 +89,7 @@
             pkgs.rustc
             pkgs.cargo
             scripts.start-scripts
+            pkgs.foundry
           ];
 
           commonShellHook = ''

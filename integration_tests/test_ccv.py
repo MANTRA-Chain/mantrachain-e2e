@@ -262,12 +262,8 @@ async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, chec
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-async def test_grant_role_permissions(ibc, setup_consumer_accounts, is_admin):
+async def test_role_permissions(ibc, setup_consumer_accounts, is_admin):
     await do_test_grant_role_permissions(ibc.ibc2.async_w3, is_admin)
-
-
-@pytest.mark.parametrize("is_admin", [True, False])
-async def test_revoke_role_permissions(ibc, setup_consumer_accounts, is_admin):
     await do_test_revoke_role_permissions(ibc.ibc2.async_w3, is_admin)
 
 
