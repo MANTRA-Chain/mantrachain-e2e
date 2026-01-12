@@ -172,11 +172,12 @@ def check_basic_eth_tx(w3, contract, from_acc, to, msg):
     assert receipt.status == 1
     assert contract.caller.greet() == msg
     # check basic tx works
+    to_addr = to if to.startswith("0x") else bech32_to_eth(to)
     receipt = send_transaction(
         w3,
         {
             "from": from_acc.address,
-            "to": bech32_to_eth(to),
+            "to": to_addr,
             "value": 1000,
             "gas": 21000,
             "maxFeePerGas": 10000000000000,

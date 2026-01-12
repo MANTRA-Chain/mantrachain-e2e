@@ -9,11 +9,13 @@ from pystarport.utils import wait_for_new_blocks, wait_for_port
 from .network import Mantra
 from .upgrade_utils import (
     LEGACY_DENOM,
+    check_basic_eth_tx,
     cleanup_upgrades_folder,
     do_upgrade,
     setup_mantra_upgrade,
 )
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     CHAIN_ID,
     SCALE_FACTOR,
@@ -58,8 +60,8 @@ async def exec(c):
     def cb(cli):
         wait_for_new_blocks(cli, 2)
         stop_height = cli.block_height()
-        c.supervisorctl("stop", f"{CHAIN_ID}-node1")
-        update_node_cmd(c.base_dir, grpc_cmd, 1, grpc_only=True)
+        c.supervisorctl("stop", f"{CHAIN_ID}-node2")
+        update_node_cmd(c.base_dir, grpc_cmd, 2, grpc_only=True)
         target_height = stop_height + wait_height
         cli = do_upgrade(c, "v7.0.0", target_height, denom=LEGACY_DENOM)
         return cli, target_height
@@ -82,13 +84,13 @@ async def exec(c):
     c.supervisorctl("start", "mantra-canary-net-1-node0")
     wait_for_new_blocks(c.cosmos_cli(), 1)
 
-    grpc_node = 1
+    grpc_node = 2
     api_port = ports.api_port(c.base_port(grpc_node))
     grpc_port = ports.grpc_port(c.base_port(grpc_node))
 
     def start_grpc_node(logfile):
         return subprocess.Popen(
-            [grpc_cmd, "start", "--grpc-only", "--home", c.base_dir / "node1"],
+            [grpc_cmd, "start", "--grpc-only", "--home", c.base_dir / "node2"],
             stdout=logfile,
             stderr=subprocess.STDOUT,
         )
@@ -107,7 +109,7 @@ async def exec(c):
         return await greeter.greet(block_identifier=old_height)
 
     # run grpc-only mode directly with existing chain state
-    with (c.base_dir / "node1.log").open("a") as logfile:
+    with (c.base_dir / "node2.log").open("a") as logfile:
         proc = start_grpc_node(logfile)
 
         try:
@@ -146,6 +148,14 @@ async def exec(c):
             # test historical queries work after reconnection
             await test_historical_queries()
             assert await w3.eth.get_balance(community) == balance
+
+            sync_contract = c.w3.eth.contract(
+                address=greeter.address, abi=greeter.contract.abi
+            )
+            check_basic_eth_tx(
+                c.w3, sync_contract, ACCOUNTS["community"], ADDRS["signer1"], "world"
+            )
+            wait_for_new_blocks(cli, 2)
         finally:
             if proc.poll() is None:
                 proc.terminate()
