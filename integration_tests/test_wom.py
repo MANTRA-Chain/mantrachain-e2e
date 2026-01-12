@@ -1,6 +1,6 @@
 import pytest
-from eth_contract.erc20 import ERC20
 from eth_contract.utils import send_transaction
+from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 
 from .utils import ACCOUNTS, deploy_wom
@@ -17,14 +17,16 @@ async def test_wom(mantra):
     await send_transaction(w3, deployer, to=wom, value=deposit_amt)
     spender = to_checksum_address(b"\x01" * 20)
     approval_amt = 500
-    await ERC20.fns.approve(spender, approval_amt).transact(w3, deployer, to=wom)
-    name = await ERC20.fns.name().call(w3, to=wom)
+    weth = WETH(to=wom)
+    await weth.fns.approve(spender, approval_amt).transact(w3, deployer, to=wom)
+    name = await weth.fns.name().call(w3, to=wom)
     assert name == "Wrapped OM"
-    symbol = await ERC20.fns.symbol().call(w3, to=wom)
+    symbol = await weth.fns.symbol().call(w3, to=wom)
     assert symbol == "wOM"
-    decimals = await ERC20.fns.decimals().call(w3, to=wom)
+    decimals = await weth.fns.decimals().call(w3, to=wom)
     assert decimals == 18
-    balance = await ERC20.fns.balanceOf(deployer.address).call(w3, to=wom)
+    balance = await weth.fns.balanceOf(deployer.address).call(w3, to=wom)
     assert balance == deposit_amt
-    allowance = await ERC20.fns.allowance(deployer.address, spender).call(w3, to=wom)
+    allowance = await weth.fns.allowance(deployer.address, spender).call(w3, to=wom)
     assert allowance == approval_amt
+    await weth.fns.withdraw(200).transact(w3, deployer, to=wom)

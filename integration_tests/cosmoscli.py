@@ -128,6 +128,15 @@ class CosmosCLI(PystarportCosmosCLI):
                 return line.split()[-1]
         return eth_addr
 
+    def debug_pubkey(self, pubkey):
+        output = self.raw("debug", "pubkey", pubkey).decode().strip().split("\n")
+        prefix = "Address (EIP-55):"
+        for line in output:
+            if line.startswith(prefix):
+                addr = line.split()[-1]
+                return addr[2:] if addr.startswith("0x") else addr
+        return pubkey
+
     def create_tokenfactory_denom(self, subdenom, generate_only=False, **kwargs):
         rsp = json.loads(
             self.raw(
@@ -369,3 +378,187 @@ class CosmosCLI(PystarportCosmosCLI):
         if rsp.get("code") == 0:
             rsp = self.event_query_tx_for(rsp["txhash"])
         return rsp
+
+    def total_supply_of(self, denom=DEFAULT_DENOM, **kwargs):
+        return super().total_supply_of(denom=denom, **kwargs)
+
+    def provider_create_consumer(self, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "create-consumer",
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def provider_update_consumer(self, msg, **kwargs):
+        if isinstance(msg, dict):
+            msg = json.dumps(msg)
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "update-consumer",
+                msg,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def provider_consumer_genesis(self, consumer_id, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "provider",
+                "consumer-genesis",
+                consumer_id,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def provider_opt_in(self, consumer_id, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "provider",
+                "opt-in",
+                consumer_id,
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def oracle_add_currency_pairs(self, pairs, **kwargs):
+        rsp = json.loads(
+            self.raw(
+                "tx",
+                "oracle",
+                "add-currency-pairs",
+                "--currency-pairs",
+                json.dumps(pairs),
+                "-y",
+                **(self.get_kwargs_with_gas() | kwargs),
+            )
+        )
+        if rsp.get("code") == 0:
+            rsp = self.event_query_tx_for(rsp["txhash"])
+        return rsp
+
+    def oracle_query_currency_pairs(self, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "oracle",
+                "currency-pairs",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("currency_pairs", [])
+
+    def cleanup_block_events(self, height):
+        return self.raw(
+            "cleanup-block-events",
+            height,
+            home=self.data_dir,
+        )
+
+    def query_delegator_starting_info(
+        self,
+        delegator,
+        validator,
+        **kwargs,
+    ):
+        return json.loads(
+            self.raw(
+                "q",
+                "distribution",
+                "delegator-starting-info",
+                delegator,
+                validator,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("starting_info")
+
+    def query_validator_historical_rewards(
+        self,
+        delegator,
+        period,
+        **kwargs,
+    ):
+        return json.loads(
+            self.raw(
+                "q",
+                "distribution",
+                "validator-historical-rewards",
+                delegator,
+                period,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        ).get("rewards")
+
+    def query_precisebank_fraction(self, addr, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "precisebank",
+                "fractional-balance",
+                addr,
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return int(res.get("fractional_balance", {}).get("amount", "0"))
+
+    def query_doc_records(self, **kwargs):
+        res = json.loads(
+            self.raw(
+                "q",
+                "document",
+                "records",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+        return res.get("records", [])
+
+    def query_registry(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "document",
+                "registry",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def query_registries(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "document",
+                "registries",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )
+
+    def query_provider_info(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "ccvconsumer",
+                "provider-info",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )

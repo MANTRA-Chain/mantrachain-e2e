@@ -10,6 +10,11 @@ import web3
 from dateutil.parser import isoparse
 from eth_account import Account
 from eth_contract.contract import Contract
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_deployed_by_create2,
+)
+from eth_contract.utils import get_initcode
 from pystarport import cluster
 from pystarport.utils import (
     BondStatus,
@@ -27,12 +32,10 @@ from .utils import (
     WEI_PER_ETH,
     address_to_bytes32,
     bech32_to_eth,
-    build_and_deploy_contract_async,
     build_contract,
     duration,
     edit_app_cfg,
     find_log_event_attrs,
-    send_transaction_async,
 )
 
 PRECOMPILE = Contract(build_contract("StakingI")["abi"])
@@ -40,6 +43,8 @@ DELEGATE = PRECOMPILE.fns.delegate
 UNDELEGATE = PRECOMPILE.fns.undelegate
 VALIDATOR = PRECOMPILE.fns.validator
 STAKING = "0x0000000000000000000000000000000000000800"
+TEST_STAKING = Contract(build_contract("TestStaking")["abi"])
+TEST_STAKING_CONTRACT = None
 gas = 400_000
 
 
@@ -71,50 +76,79 @@ async def test_connect_staking_delegate(connect_mantra, tmp_path):
     await test_staking_delegate(None, connect_mantra, tmp_path)
 
 
+async def get_test_staking_contract(w3):
+    global TEST_STAKING_CONTRACT
+    signer = ACCOUNTS["community"]
+    if TEST_STAKING_CONTRACT is None:
+        artifact = build_contract("TestStaking")
+        await ensure_create2_deployed(w3, signer)
+        TEST_STAKING_CONTRACT = await ensure_deployed_by_create2(
+            w3,
+            signer,
+            get_initcode(artifact),
+            salt=100,
+        )
+    return TEST_STAKING_CONTRACT
+
+
+async def delegate(w3, acct, validator, amt, to):
+    if to == STAKING:
+        return await DELEGATE(acct.address, validator, amt).transact(
+            w3, acct, to=to, gas=gas
+        )
+    return await TEST_STAKING.fns.callDelegate(validator, amt).transact(
+        w3, acct, to=to, gas=gas, value=amt * WEI_PER_DENOM
+    )
+
+
+async def undelegate(w3, acct, validator, amt, to):
+    if to == STAKING:
+        return await UNDELEGATE(acct.address, validator, amt).transact(
+            w3, acct, to=to, gas=gas
+        )
+    return await TEST_STAKING.fns.callUndelegate(validator, amt).transact(
+        w3, acct, to=to, gas=gas
+    )
+
+
+async def redelegate(w3, acct, val_ops, amt, to):
+    if to == STAKING:
+        return await PRECOMPILE.fns.redelegate(
+            acct.address, val_ops[0], val_ops[1], amt
+        ).transact(w3, acct, to=to, gas=gas)
+    else:
+        return await TEST_STAKING.fns.callRedelegate(
+            val_ops[0], val_ops[1], amt
+        ).transact(w3, acct, to=to, gas=gas)
+
+
 async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3
-    name = "signer1"
+    test_staking = await get_test_staking_contract(w3)
     amt = 2
-    acct = ACCOUNTS[name]
-    bonded = cli.staking_pool()
-    balance_bf = await w3.eth.get_balance(acct.address)
-    res = await get_validators(w3)
-    addr = res[0][0]
-    validator = cli.debug_addr(addr, bech="val")
-    gas = 200_000
-    res = await DELEGATE(acct.address, validator, amt).transact(
-        w3, acct, to=STAKING, gas=gas
-    )
-    assert res.status == 1
-    assert res.logs[0].topics == [
-        PRECOMPILE.events.Delegate.topic,
-        address_to_bytes32(acct.address),
-        address_to_bytes32(addr),
-    ]
-    fee = res["gasUsed"] * res["effectiveGasPrice"]
-    assert cli.staking_pool() == bonded + amt
-    balance = await w3.eth.get_balance(acct.address)
-    assert balance_bf == balance + amt * WEI_PER_DENOM + fee
-
-
-async def test_staking_call_delegate(mantra):
-    cli = mantra.cosmos_cli()
-    w3 = mantra.async_w3
     name = "signer1"
-    amt = 2
     acct = ACCOUNTS[name]
-    bonded = cli.staking_pool()
-    res = await get_validators(w3)
-    addr = res[0][0]
+    addr = (await get_validators(w3))[0][0]
     validator = cli.debug_addr(addr, bech="val")
-    gas = 200_000
-    contract = await build_and_deploy_contract_async(w3, "TestStaking")
-    tx = await contract.functions.callDelegate(validator, amt).build_transaction(
-        {"from": acct.address, "gas": gas, "value": amt * WEI_PER_DENOM}
-    )
-    assert (await send_transaction_async(w3, acct.address, **tx)).status == 1
-    assert cli.staking_pool() == bonded + amt
+
+    for to, caller in [
+        (STAKING, acct.address),
+        (test_staking, test_staking),
+    ]:
+        bonded = cli.staking_pool()
+        balance_before = await w3.eth.get_balance(acct.address)
+        res = await delegate(w3, acct, validator, amt, to=to)
+        assert res.status == 1
+        assert res.logs[0].topics == [
+            PRECOMPILE.events.Delegate.topic,
+            address_to_bytes32(caller),
+            address_to_bytes32(addr),
+        ]
+        fee = res["gasUsed"] * res["effectiveGasPrice"]
+        assert cli.staking_pool() == bonded + amt
+        balance_after = await w3.eth.get_balance(acct.address)
+        assert balance_before == balance_after + amt * WEI_PER_DENOM + fee
 
 
 @pytest.mark.connect
@@ -128,49 +162,60 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     if unbond_duration > 60:
         pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     w3 = connect_mantra.async_w3
+    test_staking = await get_test_staking_contract(w3)
     name = "signer1"
     acct = ACCOUNTS[name]
     res = await get_validators(w3)
     val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
-    balance_bf = await w3.eth.get_balance(acct.address)
-    bonded_bf = cli.staking_pool()
     amounts = [3, 4]
     fee = 0
 
-    for i, amt in enumerate(amounts):
-        res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct, to=STAKING, gas=gas
-        )
-        assert res.status == 1
-        fee += res["gasUsed"] * res["effectiveGasPrice"]
-
-    assert cli.staking_pool() == bonded_bf + sum(amounts)
-    balance = await w3.eth.get_balance(acct.address)
-    assert balance == balance_bf - sum(amounts) * WEI_PER_DENOM - fee
+    for to in [STAKING, test_staking]:
+        for i, amt in enumerate(amounts):
+            balance_bf = await w3.eth.get_balance(acct.address)
+            bonded_bf = cli.staking_pool()
+            res = await delegate(w3, acct, val_ops[i], amt, to=to)
+            assert res.status == 1
+            fee = res["gasUsed"] * res["effectiveGasPrice"]
+            assert cli.staking_pool() == bonded_bf + amt
+            balance = await w3.eth.get_balance(acct.address)
+            assert balance == balance_bf - amt * WEI_PER_DENOM - fee
 
     unbonded_bf = cli.staking_pool(bonded=False)
-    unbonded_amt = 2
-    res = await UNDELEGATE(acct.address, val_ops[0], unbonded_amt).transact(
-        w3, acct, to=STAKING, gas=gas
-    )
-    assert res.status == 1
-    addr = cli.debug_addr(val_ops[0], bech="hex")
-    assert res.logs[0].topics == [
-        PRECOMPILE.events.Unbond.topic,
-        address_to_bytes32(acct.address),
-        address_to_bytes32(addr),
-    ]
-    fee += res["gasUsed"] * res["effectiveGasPrice"]
-    assert cli.staking_pool(bonded=False) == unbonded_bf + unbonded_amt
-    blk = res["blockNumber"]
-    rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={blk}").json()
-    rsp = next((tx for tx in rsp["result"]["txs_results"] if tx["code"] == 0), None)
-    data = find_log_event_attrs(
-        rsp["events"], "unbond", lambda attrs: "completion_time" in attrs
-    )
-    wait_for_block_time(cli, isoparse(data["completion_time"]) + timedelta(seconds=1))
-    balance = await w3.eth.get_balance(acct.address)
-    assert balance == balance_bf - (sum(amounts) - unbonded_amt) * WEI_PER_DENOM - fee
+    unbond_amt = 2
+
+    for to, caller in [
+        (STAKING, acct.address),
+        (test_staking, test_staking),
+    ]:
+        balance_user_bf = await w3.eth.get_balance(acct.address)
+        balance_contract_bf = await w3.eth.get_balance(test_staking)
+        res = await undelegate(w3, acct, val_ops[0], unbond_amt, to=to)
+        assert res.status == 1
+        assert res.logs[0].topics == [
+            PRECOMPILE.events.Unbond.topic,
+            address_to_bytes32(caller),
+            address_to_bytes32(cli.debug_addr(val_ops[0], bech="hex")),
+        ]
+        fee = res["gasUsed"] * res["effectiveGasPrice"]
+        assert cli.staking_pool(bonded=False) == unbonded_bf + unbond_amt
+        blk = res["blockNumber"]
+        rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={blk}").json()
+        rsp = next((tx for tx in rsp["result"]["txs_results"] if tx["code"] == 0), None)
+        data = find_log_event_attrs(
+            rsp["events"], "unbond", lambda attrs: "completion_time" in attrs
+        )
+        wait_for_block_time(
+            cli, isoparse(data["completion_time"]) + timedelta(seconds=1)
+        )
+        balance_user_af = await w3.eth.get_balance(acct.address)
+        balance_contract_af = await w3.eth.get_balance(test_staking)
+        unbond_diff = unbond_amt * WEI_PER_DENOM
+        if to == STAKING:
+            assert balance_user_af == balance_user_bf - fee + unbond_diff
+        else:
+            assert balance_user_af == balance_user_bf - fee
+            assert balance_contract_af == balance_contract_bf + unbond_diff
 
 
 @pytest.mark.connect
@@ -181,6 +226,7 @@ async def test_connect_staking_redelegate(mantra, connect_mantra, tmp_path):
 async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3
+    test_staking = await get_test_staking_contract(w3)
     name = "signer1"
     acct = ACCOUNTS[name]
     res = await get_validators(w3)
@@ -188,29 +234,35 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     amounts = [3, 4]
     fee = 0
 
-    for i, amt in enumerate(amounts):
-        res = await DELEGATE(acct.address, val_ops[i], amt).transact(
-            w3, acct, to=STAKING, gas=gas
-        )
-        assert res.status == 1
-        fee += res["gasUsed"] * res["effectiveGasPrice"]
+    for to in [STAKING, test_staking]:
+        for i, amt in enumerate(amounts):
+            balance_bf = await w3.eth.get_balance(acct.address)
+            bonded_bf = cli.staking_pool()
+            res = await delegate(w3, acct, val_ops[i], amt, to=to)
+            assert res.status == 1
+            fee = res["gasUsed"] * res["effectiveGasPrice"]
+            assert cli.staking_pool() == bonded_bf + amt
+            balance = await w3.eth.get_balance(acct.address)
+            assert balance == balance_bf - amt * WEI_PER_DENOM - fee
 
     DELEGATION = PRECOMPILE.fns.delegation
-    _, balance_bf = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
     redelegate_amt = 2
-    res = await PRECOMPILE.fns.redelegate(
-        acct.address, val_ops[0], val_ops[1], redelegate_amt
-    ).transact(w3, acct, to=STAKING, gas=gas)
-    assert res.status == 1
-    assert res.logs[0].topics == [
-        PRECOMPILE.events.Redelegate.topic,
-        address_to_bytes32(acct.address),
-        address_to_bytes32(cli.debug_addr(val_ops[0], bech="hex")),
-        address_to_bytes32(cli.debug_addr(val_ops[1], bech="hex")),
-    ]
-    fee += res["gasUsed"] * res["effectiveGasPrice"]
-    _, balance = await DELEGATION(acct.address, val_ops[0]).call(w3, to=STAKING)
-    assert balance_bf[1] == balance[1] + redelegate_amt
+
+    for to, caller in [
+        (STAKING, acct.address),
+        (test_staking, test_staking),
+    ]:
+        _, balance_bf = await DELEGATION(caller, val_ops[0]).call(w3, to=STAKING)
+        res = await redelegate(w3, acct, val_ops, redelegate_amt, to=to)
+        assert res.status == 1
+        assert res.logs[0].topics == [
+            PRECOMPILE.events.Redelegate.topic,
+            address_to_bytes32(caller),
+            address_to_bytes32(cli.debug_addr(val_ops[0], bech="hex")),
+            address_to_bytes32(cli.debug_addr(val_ops[1], bech="hex")),
+        ]
+        _, balance = await DELEGATION(caller, val_ops[0]).call(w3, to=STAKING)
+        assert balance_bf[1] == balance[1] + redelegate_amt
 
 
 async def test_join_validator(mantra):

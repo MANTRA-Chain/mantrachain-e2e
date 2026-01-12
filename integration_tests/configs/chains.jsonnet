@@ -33,7 +33,7 @@
   },
   mantrachaind: {
     'account-prefix': 'mantra',
-    evm_denom: 'uom',
+    evm_denom: 'amantra',
     cmd: 'mantrachaind',
     evm_chain_id: 7888,
     bank: {
@@ -41,42 +41,68 @@
         description: 'The native staking token of the Mantrachain.',
         denom_units: [
           {
-            denom: 'uom',
+            denom: 'amantra',
+            exponent: 0,
           },
           {
-            denom: 'om',
-            exponent: 6,
+            denom: 'mantra',
+            exponent: 18,
           },
         ],
-        base: 'uom',
-        display: 'om',
-        name: 'om',
-        symbol: 'OM',
+        base: 'amantra',
+        display: 'mantra',
+        name: 'mantra',
+        symbol: 'MANTRA',
       }],
     },
     evm: {
       params: {
         extended_denom_options: {
-          extended_denom: 'aom',
+          extended_denom: 'amantra',
         },
       },
     },
     feemarket: {
       params: {
-        base_fee: '0.010000000000000000',
-        min_gas_price: '0.010000000000000000',
+        base_fee: '40000000000',
+        min_gas_price: '40000000000',
       },
     },
   },
-  inveniemd: {
-    'account-prefix': 'inveniem',
+  inveniamd: {
+    'account-prefix': 'inveniam',
     evm_denom: 'anvnm',
-    cmd: 'inveniemd',
-    evm_chain_id: 7888,
-    bank: {},
+    cmd: 'inveniamd',
+    evm_chain_id: 58886,
+    bank: {
+      denom_metadata: [{
+        description: 'Native 18-decimal denom metadata for Cosmos EVM chain',
+        denom_units: [
+          {
+            denom: 'anvnm',
+            exponent: 0,
+          },
+          {
+            denom: 'nvnm',
+            exponent: 18,
+          },
+        ],
+        base: 'anvnm',
+        display: 'nvnm',
+        name: 'nvnm',
+        symbol: 'NVNM',
+      }],
+    },
     evm: {
       params: {
-        allow_unprotected_txs: true,
+        active_static_precompiles: [
+          '0x0000000000000000000000000000000000000A00',
+        ],
+      },
+    },
+    anchoring: {
+      params: {
+        admin: 'inveniam1x7x9pkfxf33l87ftspk5aetwnkr0lvlvyde8p7',
       },
     },
     feemarket: {

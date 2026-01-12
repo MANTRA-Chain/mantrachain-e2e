@@ -1,7 +1,9 @@
 import asyncio
+import json
 import time
 
 import pytest
+import requests
 import web3
 from eth_account import Account
 from eth_bloom import BloomFilter
@@ -198,6 +200,8 @@ async def test_transaction(mantra, connect_mantra):
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
     res = await send_transaction_async(w3, acct, **data)
     assert res["transactionIndex"] == 0
+    res = await w3.eth.get_transaction(res["transactionHash"])
+    assert res["transactionIndex"] == 0
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
         data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
@@ -318,7 +322,7 @@ async def test_connect_message_call(connect_mantra):
     test_message_call(None, connect_mantra, diff=10)
 
 
-def test_message_call(mantra, connect_mantra, diff=5):
+def test_message_call(mantra, connect_mantra, diff=10):
     "stress test the evm by doing message calls as much as possible"
     w3 = connect_mantra.w3
     key = KEYS["community"]
@@ -588,3 +592,25 @@ def test_comet_validator_set(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     res = cli.comet_validator_set(cli.block_height())
     assert len(res["validators"]) == len(cli.validators())
+
+
+@pytest.mark.skip(reason="https://github.com/cosmos/evm/pull/917")
+def test_coinbase(mantra):
+    w3 = mantra.w3
+    contract = Contract("Coinbase")
+    contract.deploy(w3)
+    height = w3.eth.block_number
+    coinbase = contract.contract.functions.getCurrentProposer().call(
+        block_identifier=height
+    )
+    cli = mantra.cosmos_cli()
+    val_addr = cli.debug_addr(coinbase, bech="val")
+    pubkey = cli.validator(val_addr).get("consensus_pubkey")
+    pubkey = cli.debug_pubkey(
+        json.dumps({"@type": pubkey["type"], "key": pubkey["value"]})
+    )
+    res = (
+        requests.get(f"{cli.node_rpc_http}/block?height={height}").json().get("result")
+    )
+    proposer = res.get("block").get("header").get("proposer_address")
+    assert proposer.lower() == pubkey.lower()

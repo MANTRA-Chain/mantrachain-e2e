@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build-env:
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: ubuntu-latest
     outputs:
       run_tests: ${{ steps.set-run-tests.outputs.run_tests }}
     steps:
@@ -56,6 +56,8 @@ jobs:
       - name: Enable Cachix
         if: steps.set-run-tests.outputs.run_tests == 'true'
         uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        env:
+          USER: runner
         with:
           name: mantrachain-e2e
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
@@ -66,12 +68,12 @@ jobs:
   integration_tests:
     needs: build-env
     if: needs.build-env.outputs.run_tests == 'true'
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: ubuntu-latest
     timeout-minutes: 240
     strategy:
       fail-fast: true
       matrix:
-        group: [asyncio, unmarked, slow, all]
+        group: [asyncio, unmarked, slow]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,6 +89,8 @@ jobs:
             sandbox = false
       - name: Enable Cachix
         uses: cachix/cachix-action@6a9a34cdd93d0ae4b4b59fd678660efb08109f2f
+        env:
+          USER: runner
         with:
           name: mantrachain-e2e
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"

@@ -1,0 +1,63 @@
+{
+  "outdir": "/tmp/data/out",
+  "validators": 1,
+  "fullnodes": 0,
+  "validator_generate_load": true,
+  "num_accounts": 8000,
+  "num_txs": 20,
+  "tx_type": "simple-transfer",
+  "app_patch": {
+    "json-rpc": {
+      "enable": true
+    },
+    "mempool": {
+      "max-txs": -1
+    }
+  },
+  "config_patch": {
+    "mempool": {
+      "size": 50000
+    },
+    "consensus": {
+      "timeout_commit": "20ms"
+    }
+  },
+  "genesis_patch": {
+    "consensus": {
+      "params": {
+        "block": {
+          "max_gas": "363000000"
+        }
+      }
+    },
+    "app_state": {
+      "bank": {
+        "denom_metadata": [
+          {
+            "base": "uom",
+            "denom_units": [
+              {
+                "denom": "uom"
+              },
+              {
+                "denom": "om",
+                "exponent": 6
+              }
+            ],
+            "description": "The native staking token of the Mantrachain.",
+            "display": "om",
+            "name": "om",
+            "symbol": "OM"
+          }
+        ]
+      },
+      "evm": {
+        "params": {
+          "extended_denom_options": {
+            "extended_denom": "aom"
+          }
+        }
+      }
+    }
+  }
+}

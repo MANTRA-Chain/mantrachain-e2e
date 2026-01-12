@@ -1,15 +1,27 @@
 local config = import 'default.jsonnet';
-local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
+local legacy_evm_denom = 'uom';
+local constant = import 'constant.jsonnet';
+local coins = constant.coins;
+local staked = constant.staked;
 
 config {
   'mantra-canary-net-1'+: {
+    config: {
+      consensus: {
+        timeout_commit: '500ms',
+      },
+    },
     'app-config'+: {
       evm+: {
         'evm-chain-id': 5887,
       },
+      'minimum-gas-prices': '0' + legacy_evm_denom,
     },
     validators: [validator {
       'coin-type':: validator['coin-type'],
+      coins: coins + legacy_evm_denom,
+      staked: staked + legacy_evm_denom,
+      gas_prices: '0.01' + legacy_evm_denom,
       'app-config'+: {
         mempool: {
           'max-txs': -1,  // TODO: wait fix sender release
@@ -18,6 +30,7 @@ config {
     } for validator in super.validators],
     accounts: [account {
       'coin-type':: account['coin-type'],
+      coins: coins + legacy_evm_denom,
     } for account in super.accounts],
     genesis+: {
       consensus_params: {
@@ -27,8 +40,60 @@ config {
         },
       },
       app_state+: {
+        oracle+: {
+          currency_pair_genesis: [
+            {
+              currency_pair: {
+                Base: 'OM',
+                Quote: 'USD',
+              },
+              nonce: 0,
+              id: 1,
+            },
+            {
+              currency_pair: {
+                Base: 'USD',
+                Quote: 'OM',
+              },
+              nonce: 0,
+              id: 2,
+            },
+          ],
+          next_id: 3,
+        },
         bank+: {
           denom_metadata:: super.bank.denom_metadata,
+        },
+        crisis+: {
+          constant_fee+: {
+            denom: legacy_evm_denom,
+          },
+        },
+        mint+: {
+          params+: {
+            mint_denom: legacy_evm_denom,
+          },
+        },
+        staking+: {
+          params+: {
+            bond_denom: legacy_evm_denom,
+          },
+        },
+        gov+: {
+          params+: {
+            expedited_min_deposit: [
+              {
+                amount: '2',
+                denom: legacy_evm_denom,
+              },
+            ],
+            min_deposit: [
+              {
+                amount: '1',
+                denom: legacy_evm_denom,
+              },
+            ],
+          },
         },
         evm:: super.evm,
         erc20:: super.erc20,
@@ -43,7 +108,7 @@ config {
             max_learning_rate: '0.125000000000000000',
             max_block_utilization: '75000000',
             window: '1',
-            fee_denom: chain.evm_denom,
+            fee_denom: legacy_evm_denom,
             enabled: true,
             distribute_fees: false,
           },

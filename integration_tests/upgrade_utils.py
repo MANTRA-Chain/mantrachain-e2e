@@ -14,7 +14,6 @@ from pystarport.utils import wait_for_block, wait_for_port
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
     EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
@@ -22,13 +21,18 @@ from .utils import (
     send_transaction,
 )
 
+LEGACY_DENOM = "uom"
+LEGACY_EXTENDED_DENOM = "aom"
 
-def do_upgrade(c, plan_name, target):
+
+def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, scale=1):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
     rsp = {}
-    gas_prices = f"{80 * DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+    price = 100000000 * scale
+    min_deposit = 1 * scale
+    gas_prices = f"{price}{denom}"
 
     rsp = cli.software_upgrade(
         "community",
@@ -38,7 +42,7 @@ def do_upgrade(c, plan_name, target):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": f"1{DEFAULT_DENOM}",
+            "deposit": f"{min_deposit}{denom}",
         },
         gas=300000,
         gas_prices=gas_prices,
@@ -51,7 +55,7 @@ def do_upgrade(c, plan_name, target):
         Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
     )
     # block should pass the target height
-    wait_for_block(c.cosmos_cli(), target + 2, timeout=480)
+    wait_for_block(c.cosmos_cli(), target + 1)
     wait_for_port(ports.rpc_port(base_port))
     return c.cosmos_cli()
 
@@ -92,27 +96,34 @@ def post_init(path, base_port, config, genesis):
     )
 
 
-def setup_mantra_upgrade(tmp_path_factory, nix_name, cfg_name, genesis, chain):
-    path = tmp_path_factory.mktemp("upgrade")
-    port = 26200
-    configdir = Path(__file__).parent
+def build_upgrade_package(upgrades_dir, nix_file, output="./result"):
     cmd = [
         "nix-build",
-        configdir / f"configs/{nix_name}.nix",
+        nix_file,
+        "-o",
+        output,
     ]
-    if os.environ.get("INCLUDE_MANTRACHAIND", "true").lower() != "true":
-        cmd += ["--arg", "includeMantrachaind", "false"]
+    use_lite_mode = os.environ.get("NIX_LITE_MODE", "").lower() == "true"
+    cmd += ["--arg", "useLiteMode", str(use_lite_mode).lower()]
+    print(f"build {'lite' if use_lite_mode else 'full'} mode")
     print(*cmd)
     subprocess.run(cmd, check=True)
-
     # copy the content so the new directory is writable.
-    upgrades = path / "upgrades"
-    shutil.copytree("./result", upgrades)
+    shutil.copytree(output, upgrades_dir)
     mod = stat.S_IRWXU
-    upgrades.chmod(mod)
-    for d in upgrades.iterdir():
+    upgrades_dir.chmod(mod)
+    for d in upgrades_dir.iterdir():
         d.chmod(mod)
+    return cmd
 
+
+def setup_mantra_upgrade(
+    tmp_path_factory, nix_name, cfg_name, genesis, chain, port=26200
+):
+    path = tmp_path_factory.mktemp("upgrade")
+    configdir = Path(__file__).parent
+    upgrades = path / "upgrades"
+    build_upgrade_package(upgrades, configdir / f"configs/{nix_name}.nix")
     # init with genesis binary
     with contextmanager(setup_custom_mantra)(
         path,

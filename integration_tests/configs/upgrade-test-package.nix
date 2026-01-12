@@ -1,5 +1,6 @@
 { 
-  pkgs ? (builtins.getFlake (toString ../..)).legacyPackages.${builtins.currentSystem or "x86_64-linux"}, includeMantrachaind ? true
+  pkgs ? (builtins.getFlake (toString ../..)).legacyPackages.${builtins.currentSystem or "x86_64-linux"},
+  useLiteMode ? false
 }:
 let
   common = import ./mantrachain-common.nix { inherit pkgs; };
@@ -9,19 +10,13 @@ let
     "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
     "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
     "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
-  } // (
-    pkgs.lib.optionalAttrs includeMantrachaind {
-      "v7.0.0-rc0" = pkgs.mantrachaind;
-    }
-  ) // (
-    pkgs.lib.optionalAttrs (!includeMantrachaind) {
-      "v7.0.0-rc0" = pkgs.writeShellScriptBin "mantrachaind" ''
-        exec mantrachaind "$@"
-      '';
-    }
-  );
-
+    "v7.0.0" = pkgs.callPackage ../../nix/v7.0.0/default.nix {};
+    "v8.0.0-rc0" = if useLiteMode
+      then common.localMantrachaindWrapper
+      else pkgs.mantrachaind;
+  };
+  packageName = "upgrade-test-package" + (if useLiteMode then "-lite" else "-full");
 in
-pkgs.linkFarm "upgrade-test-package" (
+pkgs.linkFarm packageName (
   pkgs.lib.mapAttrsToList (name: path: { inherit name path; }) releases
 )

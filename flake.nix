@@ -27,9 +27,7 @@
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
-          (_: pkgs: {
-            evmd = pkgs.callPackage ./nix/evm/default.nix { };
-          })
+          (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
         ];
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in
@@ -76,33 +74,45 @@
               dotenv = toString ./scripts/.env;
             };
           };
-          includeMantrachaind = builtins.getEnv "INCLUDE_MANTRACHAIND" != "0";
+
+          commonInputs = [
+            pkgs.nixfmt-rfc-style
+            pkgs.solc_0_8_21
+            pkgs.python312
+            pkgs.python312Packages.jsonnet
+            pkgs.uv
+            pkgs.direnv
+            pkgs.git
+            pkgs.hermes
+            pkgs.go-ethereum
+            pkgs.cosmovisor
+            pkgs.rustc
+            pkgs.cargo
+            scripts.start-scripts
+            pkgs.foundry
+          ];
+
+          commonShellHook = ''
+            export PATH=${pkgs.go-ethereum}/bin:$PATH
+            if [ -d integration_tests/.venv ]; then
+              source integration_tests/.venv/bin/activate
+            fi
+          '';
 
         in {
           default = pkgs.mkShell {
-            buildInputs =
-              [
-                pkgs.nixfmt-rfc-style
-                pkgs.solc_0_8_21
-                pkgs.python312
-                pkgs.python312Packages.jsonnet
-                pkgs.uv
-                pkgs.direnv
-                pkgs.git
-                pkgs.hermes
-                pkgs.go-ethereum
-                pkgs.evmd
-                pkgs.cosmovisor
-                scripts.start-scripts
-              ]
-              ++ pkgs.lib.optionals includeMantrachaind [ pkgs.mantrachaind ];
-            
-            shellHook = ''
-              export PATH=${pkgs.go-ethereum}/bin:$PATH
-              if [ -d integration_tests/.venv ]; then
-                source integration_tests/.venv/bin/activate
-              fi
-            '';
+            buildInputs = commonInputs ++ [ pkgs.mantrachaind pkgs.evmd ];
+            shellHook = commonShellHook;
+          };
+
+          lite = pkgs.mkShell {
+            buildInputs = commonInputs ++ [ pkgs.evmd ];
+            shellHook = commonShellHook;
+          };
+
+          lite_evmd = pkgs.mkShell {
+            buildInputs = commonInputs;
+            shellHook = commonShellHook;
           };
         }
       );
