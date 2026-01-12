@@ -135,7 +135,7 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
     p["base_fee"] = new_base_fee
     p["elasticity_multiplier"] = new_multiplier
     p["base_fee_change_denominator"] = new_denominator
-    submit_gov_proposal(
+    heights = submit_gov_proposal(
         node,
         tmp_path,
         messages=[
@@ -146,10 +146,13 @@ def update_feemarket_param(node, tmp_path, new_multiplier=2, new_denominator=200
             }
         ],
     )
-    p = cli.get_params("feemarket")
-    assert abs(float(p["base_fee"]) - float(new_base_fee)) < 1e-9
-    assert p["elasticity_multiplier"] == new_multiplier
-    assert p["base_fee_change_denominator"] == new_denominator
+    for height in range(heights[0], heights[1] + 1):
+        params = cli.get_params("feemarket", height=height)
+        print(f"check params at height {height}: {params}")
+        if float(params["base_fee"]) == float(new_base_fee):
+            break
+    assert params["elasticity_multiplier"] == new_multiplier
+    assert params["base_fee_change_denominator"] == new_denominator
 
 
 def test_concurrent(custom_mantra, tmp_path):

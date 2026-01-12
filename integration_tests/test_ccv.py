@@ -13,11 +13,15 @@ from pystarport.utils import wait_for_fn, wait_for_new_blocks, wait_for_port
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
+    ADDRS,
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
+    DEFAULT_GAS_AMT,
+    KEYS,
     bech32_to_eth,
     find_log_event_attrs,
+    send_transaction,
     update_node_cmd,
 )
 
@@ -192,7 +196,7 @@ def ibc(request, tmp_path_factory):
         val = cli.debug_addr(bech32_to_eth(owner_address), bech="val")
         res = cli.delegations(owner_address)
         val = res[0]["delegation"]["validator_address"]
-        delegate_amt = 1000000
+        delegate_amt = 10000000000000000000
         gas = 350_000
         coin = f"{delegate_amt}{DEFAULT_DENOM}"
         rsp = cli.delegate_amount(val, coin, _from="validator", gas=gas)
@@ -217,7 +221,9 @@ def ibc(request, tmp_path_factory):
 
 def test_ccv(ibc):
     cli = ibc.ibc1.cosmos_cli()
-    res = cli.ibc_query_channel("provider", "channel-0").get("channel")
+    cli2 = ibc.ibc2.cosmos_cli()
+    provider_channel = "channel-0"
+    res = cli.ibc_query_channel("provider", provider_channel).get("channel")
     assert res.get("state") == "STATE_OPEN"
 
     def check_channel_ready():
@@ -229,3 +235,43 @@ def test_ccv(ibc):
         return res is not None and res.get("state") == "STATE_OPEN"
 
     wait_for_fn("channel ready", check_channel_ready, timeout=30)
+
+    def check_provider_ready():
+        try:
+            res = cli2.query_provider_info()
+            return res.get("provider", {}).get("channelID") == provider_channel
+        except Exception as e:
+            print(f"provider not ready: {e}")
+            return False
+
+    wait_for_fn("provider ready", check_provider_ready, timeout=30)
+
+    w3 = ibc.ibc2.w3
+    community = "community"
+    signer = "signer2"
+    sender = ADDRS[community]
+    receiver = ADDRS[signer]
+    balance_bf = w3.eth.get_balance(receiver)
+    amt = 1000
+    receipt = send_transaction(
+        w3,
+        {
+            "from": sender,
+            "to": receiver,
+            "value": amt,
+        },
+        KEYS[community],
+    )
+    balance = w3.eth.get_balance(receiver)
+    assert receipt.status == 1
+    assert balance - balance_bf == amt
+    amt = 2000
+    denom = "anvnm"
+    rsp = cli2.transfer(
+        cli2.address(community),
+        cli2.address(signer),
+        f"{amt}{denom}",
+        gas_prices=f"{DEFAULT_GAS_AMT}{denom}",
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert w3.eth.get_balance(receiver) - balance == amt

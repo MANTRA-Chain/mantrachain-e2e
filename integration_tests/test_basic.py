@@ -320,7 +320,7 @@ async def test_connect_message_call(connect_mantra):
     test_message_call(None, connect_mantra, diff=10)
 
 
-def test_message_call(mantra, connect_mantra, diff=5):
+def test_message_call(mantra, connect_mantra, diff=10):
     "stress test the evm by doing message calls as much as possible"
     w3 = connect_mantra.w3
     key = KEYS["community"]

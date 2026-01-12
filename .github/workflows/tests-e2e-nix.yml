@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build-env:
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: ubuntu-latest
     outputs:
       run_tests: ${{ steps.set-run-tests.outputs.run_tests }}
     steps:
@@ -45,17 +45,6 @@ jobs:
       - name: Free disk space
         if: steps.set-run-tests.outputs.run_tests == 'true'
         run: sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY" || true
-      - name: Install dependencies
-        if: steps.set-run-tests.outputs.run_tests == 'true'
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            xz-utils \
-            curl \
-            git \
-            jq \
-            zip \
-            unzip \
-            && sudo rm -rf /var/lib/apt/lists/*
       - name: Install Nix
         if: steps.set-run-tests.outputs.run_tests == 'true'
         uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
@@ -79,7 +68,7 @@ jobs:
   integration_tests:
     needs: build-env
     if: needs.build-env.outputs.run_tests == 'true'
-    runs-on: ubuntu-latest-x64-xlarge
+    runs-on: ubuntu-latest
     timeout-minutes: 240
     strategy:
       fail-fast: true
@@ -91,17 +80,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            xz-utils \
-            curl \
-            git \
-            jq \
-            zip \
-            unzip \
-            make \
-            && sudo rm -rf /var/lib/apt/lists/*
       - name: Install Nix
         uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
         with:

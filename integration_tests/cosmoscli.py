@@ -543,3 +543,13 @@ class CosmosCLI(PystarportCosmosCLI):
                 **(self.get_base_kwargs() | kwargs),
             )
         )
+
+    def query_provider_info(self, **kwargs):
+        return json.loads(
+            self.raw(
+                "q",
+                "ccvconsumer",
+                "provider-info",
+                **(self.get_base_kwargs() | kwargs),
+            )
+        )

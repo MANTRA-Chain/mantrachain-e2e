@@ -1,5 +1,8 @@
-local config = import 'fullnode.jsonnet';
+local config = import 'default.jsonnet';
 local legacy_evm_denom = 'uom';
+local constant = import 'constant.jsonnet';
+local coins = constant.coins;
+local staked = constant.staked;
 
 config {
   'mantra-canary-net-1'+: {
@@ -12,17 +15,18 @@ config {
       },
     },
     validators: [
-      if i == 0 then
+      if i < 2 then
         validator {
           'coin-type':: validator['coin-type'],
-          coins: '100000000000000' + legacy_evm_denom,
-          staked: '10000000000000' + legacy_evm_denom,
+          coins: coins + legacy_evm_denom,
+          staked: staked + legacy_evm_denom,
           gas_prices: '0.01' + legacy_evm_denom,
         }
       else
         validator {
           'coin-type':: validator['coin-type'],
-          coins: '100000000000000' + legacy_evm_denom,
+          staked:: null,  // hide staked to make this a fullnode
+          coins: coins + legacy_evm_denom,
           gas_prices: '0.01' + legacy_evm_denom,
         }
       for i in std.range(0, std.length(super.validators) - 1)
@@ -30,10 +34,10 @@ config {
     ],
     accounts: [account {
       'coin-type':: account['coin-type'],
-      coins: '100000000000000' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
     } for account in super.accounts] + [{
       name: 'scammer',
-      coins: '946791000000' + legacy_evm_denom,
+      coins: coins + legacy_evm_denom,
       mnemonic: '${SCAMMER_MNEMONIC}',
       vesting: '31449600s',
     }],

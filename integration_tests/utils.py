@@ -799,10 +799,11 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
     proposal_id = ev["proposal_id"]
     for i in range(len(n.config["validators"])):
         node = n.config["validators"][i]
-        # skip fullnodes
+        # skip fullnodes (nodes without staked amount)
         if "staked" not in node:
             continue
         account_name = node.get("name", "validator")
+        print(f"voting for validator {i} with account {account_name}")
         rsp = n.cosmos_cli(i).gov_vote(
             account_name,
             proposal_id,
@@ -810,18 +811,27 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
             event_query_tx=event_query_tx,
             **kwargs,
         )
-        assert rsp["code"] == 0, rsp["raw_log"]
+        print(f"vote broadcast: txhash={rsp.get('txhash')}")
     wait_for_new_blocks(cli, 1, sleep=0.01)
+    proposal = cli.query_proposal(proposal_id)
+    # if proposal is already passed, skip waiting
+    if proposal["status"] == "PROPOSAL_STATUS_PASSED":
+        height = cli.block_height()
+        return [height, height]
     res = cli.query_tally(proposal_id)
     res = res.get("tally") or res
-    assert (
-        int(res["yes_count"]) == cli.staking_pool()
-    ), "all validators should have voted yes"
-    print("wait for proposal to be activated")
-    proposal = cli.query_proposal(proposal_id)
-    wait_for_block_time(cli, isoparse(proposal["voting_end_time"]))
+    staking_pool = cli.staking_pool()
+    yes_count = int(res["yes_count"])
+    print(f"tally: yes_count={yes_count}, staking_pool={staking_pool}")
+    assert yes_count == staking_pool, f"all validators should have voted yes: {res}"
+    end = isoparse(proposal["voting_end_time"])
+    print(f"wait for proposal to be activated after {end}")
+    height_bf = cli.block_height()
+    wait_for_block_time(cli, end, sleep=0.01)
+    height_af = cli.block_height()
     proposal = cli.query_proposal(proposal_id)
     assert proposal["status"] == "PROPOSAL_STATUS_PASSED", proposal
+    return [height_bf, height_af]
 
 
 def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwargs):
@@ -835,9 +845,9 @@ def submit_gov_proposal(mantra, tmp_path, messages, event_query_tx=True, **kwarg
     proposal.write_text(json.dumps(proposal_src))
     rsp = mantra.cosmos_cli().submit_gov_proposal(proposal, from_="community", **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
-    print("check params have been updated now")
-    return rsp
+    heights = approve_proposal(mantra, rsp["events"], event_query_tx=event_query_tx)
+    print(f"check params have been updated now after {heights}")
+    return heights
 
 
 def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):

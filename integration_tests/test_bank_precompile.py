@@ -31,13 +31,19 @@ async def test_bank(mantra):
     assert balances
     erc20_addr, bal_amount = balances[0]
     assert bal_amount == cli.balance(eth_to_bech32(community))
-
-    total_supply = await PRECOMPILE.fns.totalSupply().call(w3, to=BANK)
+    height = await w3.eth.block_number
+    total_supply = await PRECOMPILE.fns.totalSupply().call(
+        w3, to=BANK, block_identifier=height
+    )
     await assert_balances_structure(total_supply)
     assert total_supply
     erc20_addr, supply_amount = total_supply[0]
-    assert supply_amount == int(cli.total_supply_of(DEFAULT_DENOM)["amount"])
-    supply = await PRECOMPILE.fns.supplyOf(erc20_addr).call(w3, to=BANK)
+    assert supply_amount == int(
+        cli.total_supply_of(DEFAULT_DENOM, height=height)["amount"]
+    )
+    supply = await PRECOMPILE.fns.supplyOf(erc20_addr).call(
+        w3, to=BANK, block_identifier=height
+    )
     assert supply == supply_amount
 
     fake_token = "0x1234567890123456789012345678901234567890"

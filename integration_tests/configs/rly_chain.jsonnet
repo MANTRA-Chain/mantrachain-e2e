@@ -12,7 +12,7 @@ local constant = import 'constant.jsonnet';
     price: constant.gas_price,
   },
   event_source: {
-    batch_delay: '250ms',
+    batch_delay: '50ms',
   },
   extension_options: [{
     type: 'cosmos_evm_dynamic_fee_v1',

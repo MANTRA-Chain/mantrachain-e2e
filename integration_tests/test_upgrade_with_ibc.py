@@ -51,7 +51,8 @@ async def exec(c):
 
     def upgrade():
         nonlocal cli
-        target_height = cli.block_height() + 15
+        wait_height = 30
+        target_height = cli.block_height() + wait_height
         cli = do_upgrade(c.ibc1, "v7.0.0", target_height, denom=LEGACY_DENOM)
 
         c.ibc1.supervisorctl("stop", "relayer-demo")
