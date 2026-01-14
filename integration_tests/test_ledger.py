@@ -7,7 +7,6 @@ from .network import setup_custom_mantra
 from .utils import DEFAULT_DENOM, WEI_PER_DENOM, find_fee
 
 pytestmark = pytest.mark.slow
-pytest.skip("wait next bump deps", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")

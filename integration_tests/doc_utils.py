@@ -102,7 +102,6 @@ DOCUMENT_PRECOMPILE_ABI = [
     function updateRecordStatus(
         uint64 registryId,
         uint64 recordId,
-        string memory checksum,
         uint64 index,
         string memory status
     )
@@ -406,17 +405,15 @@ async def update_record_status(
     w3: AsyncWeb3,
     admin,
     record: Record,
-    checksum,
     status: str,
 ):
     receipt = await DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
         DOCUMENT_REGISTRY_ID,
         record.recordId,
-        checksum,
         record.index,
         status,
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-    assert receipt.status == 1, f"updateRecordStatus({checksum}, {status}) failed"
+    assert receipt.status == 1, f"updateRecordStatus({status}) failed"
     return receipt
 
 
@@ -639,7 +636,7 @@ async def do_test_add_record(w3: AsyncWeb3):
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
-    await update_record_status(w3, admin, records[0], checksum, "verified")
+    await update_record_status(w3, admin, records[0], "verified")
     do_test_add_record_cast(w3.provider.endpoint_uri)
 
 
@@ -654,7 +651,7 @@ async def do_test_remove_record(w3: AsyncWeb3):
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
     assert len(records) > 0, f"Record with checksum {checksum} not found"
-    await update_record_status(w3, admin, records[0], checksum, "removed")
+    await update_record_status(w3, admin, records[0], "removed")
 
     do_test_remove_record_cast(w3.provider.endpoint_uri)
 

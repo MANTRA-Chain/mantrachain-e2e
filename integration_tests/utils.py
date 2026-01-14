@@ -1026,16 +1026,21 @@ def address_to_bytes32(addr) -> HexBytes:
     return HexBytes(addr).rjust(32, b"\x00")
 
 
+# verify Approval event with expected owner, spender, and allowance
 def assert_approval_log(receipt, owner, spender, expected):
     approval_topic = HexBytes(ERC20.events.Approval.topic.hex())
     approval_logs = [
         log for log in receipt["logs"] if log["topics"][0] == approval_topic
     ]
-    assert len(approval_logs) == 1
+    assert len(approval_logs) == 1, f"got {len(approval_logs)}"
     approval_log = approval_logs[0]
     assert approval_log["topics"][1] == address_to_bytes32(owner), "owner mismatch"
     assert approval_log["topics"][2] == address_to_bytes32(spender), "spender mismatch"
-    return int.from_bytes(approval_log["data"], "big") == expected
+    actual = int.from_bytes(approval_log["data"], "big")
+    assert (
+        actual == expected
+    ), f"Approval allowance mismatch: expected {expected}, got {actual}"
+    return True
 
 
 async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
@@ -1315,6 +1320,7 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.balance(signer2, height=height_af),
     ]
     mantra.supervisorctl("stop", "mantra-canary-net-1-node0")
+    time.sleep(1)  # wait for database lock to be released
 
     def get_reward_ratio(height):
         dis = cli.export(

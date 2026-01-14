@@ -34,7 +34,8 @@ from eth_contract.multicall3 import (
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_hash.auto import keccak
-from eth_utils import to_bytes
+from eth_utils import to_bytes, to_checksum_address
+from hexbytes import HexBytes
 from web3 import AsyncWeb3
 from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
@@ -50,6 +51,7 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
+    contract_address,
     create_contract_transaction,
     w3_wait_for_new_blocks_async,
 )
@@ -475,3 +477,32 @@ async def test_storage_layout(mantra):
     slot = keccak(encode(["address", "bytes32"], [spender, tmp]))
     allowance = await w3.eth.get_storage_at(contract, slot)
     assert int.from_bytes(allowance, "big") == 500
+
+
+async def test_selfdestruct(geth):
+    w3 = geth.async_w3
+    deployer = ACCOUNTS["community"]
+
+    # deploy exploit
+    artifact = build_contract("Selfdestruct")
+    receipt = await send_transaction(w3, deployer, data=get_initcode(artifact))
+    exploiter = receipt["contractAddress"]
+
+    address = contract_address(exploiter, 1)
+    # fund the future contract address
+    await send_transaction(w3, deployer, to=address, value=1000)
+
+    Exploit = ContractFunction.from_abi("function exploit()")
+
+    receipt = await Exploit().transact(w3, deployer, to=exploiter)
+    print("receipt", receipt)
+
+    assert address == to_checksum_address(
+        HexBytes(receipt["logs"][0]["topics"][1])[12:]
+    )
+
+    # check the contract balance is zero
+    assert await w3.eth.get_balance(address) == 0
+
+    code = await w3.eth.get_code(address)
+    assert code == HexBytes("0x"), f"contract code should be deleted, got {code.hex()}"

@@ -3,13 +3,17 @@ import time
 from pathlib import Path
 
 import pytest
+from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_new_blocks
 
 from .utils import (
+    ACCOUNTS,
+    assert_approval_log,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_set_tokenfactory_denom,
     assert_transfer,
+    denom_to_erc20_address,
     find_log_event_attrs,
     get_balance,
 )
@@ -131,3 +135,40 @@ def test_setup_hooks_denom(mantra):
                 cli.balance(contract_address, denom),
             )
             assert after == (before[0] - amt, before[1] + amt)
+
+
+async def test_precompile_transfer_from_approval_event(mantra):
+    w3, cli = mantra.async_w3, mantra.cosmos_cli()
+    owner, spender, recipient = (
+        ACCOUNTS["community"],
+        ACCOUNTS["signer1"],
+        ACCOUNTS["signer2"],
+    )
+    owner_addr = cli.address("community")
+    denom = assert_create_tokenfactory_denom(
+        cli, "testapproval", _from=owner_addr, gas=300000
+    )
+    assert_mint_tokenfactory_denom(cli, denom, 10_000, _from=owner_addr, gas=320000)
+    precompile_addr = denom_to_erc20_address(denom)
+
+    approve_amt = 5_000
+    await ERC20.fns.approve(spender.address, approve_amt).transact(
+        w3, owner, to=precompile_addr
+    )
+    allowance = await ERC20.fns.allowance(owner.address, spender.address).call(
+        w3, to=precompile_addr
+    )
+    assert allowance == approve_amt
+
+    transfer_amt = 2_000
+    new_allowance = approve_amt - transfer_amt
+    receipt = await ERC20.fns.transferFrom(
+        owner.address, recipient.address, transfer_amt
+    ).transact(w3, spender, to=precompile_addr)
+
+    assert receipt["status"] == 1
+    allowance = await ERC20.fns.allowance(owner.address, spender.address).call(
+        w3, to=precompile_addr
+    )
+    assert allowance == new_allowance
+    assert assert_approval_log(receipt, owner.address, spender.address, new_allowance)
