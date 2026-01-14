@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -165,10 +166,8 @@ def encode_value(value):
     return base64.b64encode(value).decode()
 
 
-@pytest.mark.asyncio
 async def test_override_precompile_state(mantra):
-    w3 = mantra.async_w3
-    cli = mantra.cosmos_cli()
+    w3, cli = mantra.async_w3, mantra.cosmos_cli()
     community = ADDRS["community"]
     sender = cli.address("community")
     subdenom = "eth_call"
@@ -183,8 +182,10 @@ async def test_override_precompile_state(mantra):
     name_fn = ERC20.fns.name()
     symbol_fn = ERC20.fns.symbol()
 
-    balance = await balance_fn.call(w3, to=address)
-    total = await total_fn.call(w3, to=address)
+    balance, total = await asyncio.gather(
+        balance_fn.call(w3, to=address),
+        total_fn.call(w3, to=address),
+    )
     assert balance == total == amt
 
     new_total = 1
@@ -222,14 +223,47 @@ async def test_override_precompile_state(mantra):
         )
 
     for state_type in ["stateDiff", "state"]:
-        assert await call(balance_fn, state_type) == new_balance
-        assert await call(total_fn, state_type) == new_total
+        balance_res, total_res, name_res, symbol_res, name_orig, symbol_orig = (
+            await asyncio.gather(
+                call(balance_fn, state_type),
+                call(total_fn, state_type),
+                call(name_fn, state_type),
+                call(symbol_fn, state_type),
+                call(name_fn, ""),
+                call(symbol_fn, ""),
+            )
+        )
+        assert balance_res == new_balance
+        assert total_res == new_total
         if state_type == "stateDiff":
-            assert await call(name_fn, state_type) == await call(name_fn, "")
-            assert await call(symbol_fn, state_type) == await call(symbol_fn, "")
+            assert name_res == name_orig
+            assert symbol_res == symbol_orig
         else:
-            assert await call(name_fn, state_type) == ""
-            assert await call(symbol_fn, state_type) == ""
+            assert name_res == ""
+            assert symbol_res == ""
+
+
+async def test_dynamic_precompile_with_evm_override(mantra):
+    w3, cli = mantra.async_w3, mantra.cosmos_cli()
+    community = ADDRS["community"]
+    sender = cli.address("community")
+    subdenom = "evm_override_test"
+    amt = 10**6
+
+    denom = assert_create_tokenfactory_denom(cli, subdenom, _from=sender, gas=620000)
+    address = denom_to_erc20_address(denom)
+    assert_mint_tokenfactory_denom(cli, denom, amt, _from=sender, gas=320000)
+
+    balance_fn = ERC20.fns.balanceOf(community)
+    # precompile works without any overrides
+    assert await balance_fn.call(w3, to=address) == amt
+
+    # use EVM state override on an unrelated address for GetPrecompileRecipientCallHook
+    dummy_addr = w3.to_checksum_address("0x0000000000000000000000000000ffffffffffff")
+    state_override = {dummy_addr: {"balance": hex(10**18)}}
+
+    # dynamic precompile should still work with EVM overrides active
+    assert (await balance_fn.call(w3, to=address, state_override=state_override)) == amt
 
 
 @pytest.mark.connect
