@@ -1,7 +1,7 @@
 std.manifestYamlDoc({
   services: {
     ['testplan-' + i]: {
-      image: 'mantra-testground:dnwx11r7d2wz16wk08b85wcmp7n93pli',
+      image: 'mantra-testground:' + std.extVar('image_tag'),
       command: 'stateless-testcase run',
       container_name: 'testplan-' + i,
       volumes: [

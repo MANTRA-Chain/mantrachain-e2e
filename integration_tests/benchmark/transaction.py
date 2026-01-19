@@ -13,7 +13,7 @@ import eth_abi
 import ujson
 from hexbytes import HexBytes
 
-from ..cosmostx_utils import (
+from .cosmostx_utils import (
     AuthInfo,
     Coin,
     Fee,
@@ -26,6 +26,7 @@ from .erc20 import CONTRACT_ADDRESS
 from .utils import (
     DEFAULT_DENOM,
     DEFAULT_EXTENDED_DENOM,
+    EVM_CHAIN_ID,
     LOCAL_RPC,
     gen_account,
     split,
@@ -33,7 +34,6 @@ from .utils import (
 )
 
 GAS_PRICE = 1000000000
-CHAIN_ID = 7888
 CONNECTION_POOL_SIZE = 1024
 TXS_DIR = "txs"
 
@@ -61,7 +61,7 @@ def simple_transfer_tx(sender: str, nonce: int, options: dict):
         "nonce": nonce,
         "gas": 21000,
         "gasPrice": options.get("gas_price", GAS_PRICE),
-        "chainId": options.get("chain_id", CHAIN_ID),
+        "chainId": options.get("chain_id", EVM_CHAIN_ID),
     }
 
 
@@ -74,7 +74,7 @@ def erc20_transfer_tx(sender: str, nonce: int, options: dict):
         "nonce": nonce,
         "gas": 51630,
         "gasPrice": options.get("gas_price", GAS_PRICE),
-        "chainId": options.get("chain_id", CHAIN_ID),
+        "chainId": options.get("chain_id", EVM_CHAIN_ID),
         "data": data,
     }
 
@@ -181,22 +181,27 @@ def build_cosmos_tx(*txs: EthTx, denom=DEFAULT_EXTENDED_DENOM) -> str:
     """
     return base64 encoded cosmos tx, support batch
     """
-    msgs = [build_evm_msg(tx) for tx in txs]
+    msgs = [build_evm_msg(tx).SerializeToString() for tx in txs]
     fee = sum(tx.tx["gas"] * tx.tx["gasPrice"] for tx in txs)
     gas = sum(tx.tx["gas"] for tx in txs)
     body = TxBody(
         messages=msgs,
-        extension_options=[build_any("/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx")],
+        extension_options=[
+            build_any(
+                "/cosmos.evm.vm.v1.ExtensionOptionsEthereumTx"
+            ).SerializeToString()
+        ],
     )
     auth_info = AuthInfo(
         fee=Fee(
             amount=[Coin(denom=denom, amount=str(fee))],
             gas_limit=gas,
-        )
+        ).SerializeToString()
     )
     return base64.b64encode(
         TxRaw(
-            body=body.SerializeToString(), auth_info=auth_info.SerializeToString()
+            body_bytes=body.SerializeToString(),
+            auth_info_bytes=auth_info.SerializeToString(),
         ).SerializeToString()
     ).decode()
 

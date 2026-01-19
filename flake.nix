@@ -49,6 +49,50 @@
             overlays = overlays;
             config = { };
           };
+
+          cprotobuf = pkgs.python312Packages.buildPythonPackage {
+            pname = "cprotobuf";
+            version = "0.1.12";
+            src = pkgs.fetchPypi {
+              pname = "cprotobuf";
+              version = "0.1.12";
+              hash = "sha256-YX2X0TAMobIIE3e7o9mSSZIH5VTKf+rBOmxrqdKFtBg=";
+            };
+            nativeBuildInputs = [ pkgs.python312Packages.cython ];
+            doCheck = false;
+          };
+
+          benchmark-testcase = pkgs.python312Packages.buildPythonApplication {
+            pname = "benchmark-testcase";
+            version = "0.1.0";
+            format = "pyproject";
+            src = ./integration_tests;
+            nativeBuildInputs = [ pkgs.python312Packages.hatchling ];
+            propagatedBuildInputs = with pkgs.python312Packages; [
+              click
+              aiohttp
+              backoff
+              eth-abi
+              ujson
+              hexbytes
+              tomlkit
+              web3
+              jsonmerge
+              requests
+              cprotobuf
+              bech32
+              pydantic
+              eth-utils
+              eth-hash
+            ];
+            # skip dependency check - only need deps for stateless-testcase cli
+            dontCheckRuntimeDeps = true;
+          };
+
+          testground-image = pkgs.callPackage ./nix/testground-image.nix {
+            inherit benchmark-testcase;
+            inherit (pkgs) mantrachaind;
+          };
         in {
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
@@ -56,6 +100,7 @@
           hermes = pkgs.hermes;
           cosmovisor = pkgs.cosmovisor;
           go-ethereum = pkgs.go-ethereum;
+          inherit benchmark-testcase testground-image;
         }
       );
 

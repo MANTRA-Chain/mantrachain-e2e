@@ -34,27 +34,28 @@
       "bank": {
         "denom_metadata": [
           {
-            "base": "uom",
+            "base": "amantra",
             "denom_units": [
               {
-                "denom": "uom"
+                "denom": "amantra",
+                "exponent": 0
               },
               {
-                "denom": "om",
-                "exponent": 6
+                "denom": "mantra",
+                "exponent": 18
               }
             ],
             "description": "The native staking token of the Mantrachain.",
-            "display": "om",
-            "name": "om",
-            "symbol": "OM"
+            "display": "mantra",
+            "name": "mantra",
+            "symbol": "MANTRA"
           }
         ]
       },
       "evm": {
         "params": {
           "extended_denom_options": {
-            "extended_denom": "aom"
+            "extended_denom": "amantra"
           }
         }
       }

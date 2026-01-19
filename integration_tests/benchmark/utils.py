@@ -7,14 +7,14 @@ import bech32
 import jsonmerge
 import requests
 import tomlkit
-import web3
 from eth_account import Account
+from eth_utils import to_checksum_address
 from hexbytes import HexBytes
-from web3._utils.transactions import fill_nonce, fill_transaction_defaults
 
-DEFAULT_DENOM = "uom"
-DEFAULT_EXTENDED_DENOM = "aom"
 ADDRESS_PREFIX = "mantra"
+DEFAULT_DENOM = "amantra"
+DEFAULT_EXTENDED_DENOM = "amantra"
+EVM_CHAIN_ID = 7888
 LOCAL_RPC = "http://127.0.0.1:26657"
 LOCAL_JSON_RPC = "http://127.0.0.1:8545"
 
@@ -60,6 +60,7 @@ def patch_genesis(path: Path, patch):
 
 
 def wait_for_port(port, host="127.0.0.1", timeout=40.0):
+    print("wait for port", port, "to be available")
     start_time = time.perf_counter()
     while True:
         try:
@@ -93,18 +94,9 @@ def wait_for_block(cli, target: int, timeout=40):
     return height
 
 
-def wait_for_w3(timeout=40):
-    for i in range(timeout):
-        try:
-            w3 = web3.Web3(web3.providers.HTTPProvider(LOCAL_JSON_RPC))
-            w3.eth.get_balance("0x0000000000000000000000000000000000000001")
-        except:  # noqa
-            time.sleep(1)
-            continue
-
-        break
-    else:
-        raise TimeoutError("Waited too long for web3 json-rpc to be ready.")
+def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):
+    bz = bech32.convertbits(HexBytes(addr), 8, 5)
+    return bech32.bech32_encode(prefix, bz)
 
 
 def decode_bech32(addr):
@@ -113,46 +105,7 @@ def decode_bech32(addr):
 
 
 def bech32_to_eth(addr):
-    return decode_bech32(addr).hex()
-
-
-def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):
-    bz = bech32.convertbits(HexBytes(addr), 8, 5)
-    return bech32.bech32_encode(prefix, bz)
-
-
-def sign_transaction(w3, tx, acct):
-    "fill default fields and sign"
-    tx["from"] = acct.address
-    tx = fill_transaction_defaults(w3, tx)
-    tx = fill_nonce(w3, tx)
-    return acct.sign_transaction(tx)
-
-
-def send_transaction(w3, tx, acct, wait=True):
-    signed = sign_transaction(w3, tx, acct)
-    txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    if wait:
-        return w3.eth.wait_for_transaction_receipt(txhash)
-    return txhash
-
-
-def send_transactions(w3, txs, acct, wait=True):
-    """
-    send a batch of transactions from same account
-    """
-    signed_txs = [sign_transaction(w3, tx, acct) for tx in txs]
-    txhashes = [
-        w3.eth.send_raw_transaction(signed.raw_transaction) for signed in signed_txs
-    ]
-    if wait:
-        return [w3.eth.wait_for_transaction_receipt(txhash) for txhash in txhashes]
-    return txhashes
-
-
-def export_eth_account(cli, name: str, **kwargs) -> Account:
-    kwargs.setdefault("keyring_backend", "test")
-    return Account.from_key(cli("keys", "unsafe-export-eth-key", name, **kwargs))
+    return to_checksum_address(decode_bech32(addr).hex())
 
 
 def gen_account(global_seq: int, index: int) -> Account:

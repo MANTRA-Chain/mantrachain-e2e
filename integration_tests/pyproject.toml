@@ -3,7 +3,6 @@ name = "integration-tests"
 version = "0.1.0"
 description = ""
 authors = [{ name = "Your Name", email = "you@example.com" }]
-readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pytest>=8.3.4",
@@ -41,7 +40,7 @@ line-length = 88
 [tool.isort]
 profile = "black"
 
-[tool.poetry.scripts]
+[project.scripts]
 stateless-testcase = "benchmark.stateless:cli"
 
 [tool.uv]
