@@ -8,75 +8,61 @@
 
 ## Steps
 
-### 1. Build testground image for Linux
+### 1. Set chain config
 
 ```bash
-nix build .#packages.aarch64-linux.testground-image \
+# config chain (mantrachaind, evmd)
+export CHAIN_CONFIG=evmd
+
+case $CHAIN_CONFIG in
+  mantrachaind)
+    export IMAGE_NAME=mantra-testground
+    export NIX_PACKAGE=testground-image
+    ;;
+  evmd)
+    export IMAGE_NAME=evmd-testground
+    export NIX_PACKAGE=testground-image-evmd
+    ;;
+esac
+
+export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+```
+
+### 2. Build testground image for Linux
+
+```bash
+nix build .#packages.aarch64-linux.$NIX_PACKAGE \
   --store 'ssh-ng://builder@linux-builder?ssh-key=/etc/nix/builder_ed25519' \
   --eval-store auto
 
-scp -i /etc/nix/builder_ed25519 "builder@linux-builder:$(nix path-info --store 'ssh-ng://builder@linux-builder?ssh-key=/etc/nix/builder_ed25519' .#packages.aarch64-linux.testground-image)" ./mantra-testground.tar.gz
+scp -i /etc/nix/builder_ed25519 "builder@linux-builder:$(nix path-info --store 'ssh-ng://builder@linux-builder?ssh-key=/etc/nix/builder_ed25519' .#packages.aarch64-linux.$NIX_PACKAGE)" ./$IMAGE_NAME.tar.gz
 
-export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
-export IMAGE_TAG=$(docker load < mantra-testground.tar.gz | sed -n 's/.*mantra-testground://p')
-echo "Image tag: $IMAGE_TAG"
+export IMAGE_TAG=$(docker load < $IMAGE_NAME.tar.gz | sed -n "s/.*$IMAGE_NAME://p")
+echo "Image: $IMAGE_NAME:$IMAGE_TAG"
 ```
 
-### 2. Generate test data
+### 3. Generate test data
 
 ```bash
 rm -rf /tmp/data && nix build .#benchmark-testcase -o benchmark-testcase
-./benchmark-testcase/bin/stateless-testcase generic-gen '{
-  "outdir": "/tmp/data/out",
-  "validators": 1,
-  "fullnodes": 0,
-  "validator_generate_load": true,
-  "num_accounts": 800,
-  "num_txs": 20,
-  "tx_type": "simple-transfer",
-  "app_patch": {
-    "json-rpc": {"enable": true},
-    "mempool": {"max-txs": -1}
-  },
-  "config_patch": {
-    "mempool": {"size": 50000},
-    "consensus": {"timeout_commit": "20ms"}
-  },
-  "genesis_patch": {
-    "consensus": {"params": {"block": {"max_gas": "363000000"}}},
-    "app_state": {
-      "bank": {
-        "denom_metadata": [{
-          "base": "amantra",
-          "denom_units": [
-            {"denom": "amantra", "exponent": 0},
-            {"denom": "mantra", "exponent": 18}
-          ],
-          "description": "The native staking token of the Mantrachain.",
-          "display": "mantra",
-          "name": "mantra",
-          "symbol": "MANTRA"
-        }]
-      },
-      "evm": {"params": {"extended_denom_options": {"extended_denom": "amantra"}}}
-    }
-  }
-}'
+./benchmark-testcase/bin/stateless-testcase generic-gen \
+  "$(jsonnet integration_tests/benchmark/testcase-config.jsonnet --ext-str CHAIN_CONFIG=$CHAIN_CONFIG)"
 ```
 
-### 3. Patch image with test data
+### 4. Patch image with test data
 
 ```bash
 ./benchmark-testcase/bin/stateless-testcase patchimage \
-  mantra-testground:$IMAGE_TAG \
+  $IMAGE_NAME:$IMAGE_TAG \
   /tmp/data/out \
-  --fromimage mantra-testground:$IMAGE_TAG
+  --fromimage $IMAGE_NAME:$IMAGE_TAG
 ```
 
-### 4. Run benchmark
+### 5. Run benchmark
 
 ```bash
 jsonnet -S integration_tests/compositions/docker-compose.jsonnet \
+  --ext-str image_name=$IMAGE_NAME \
   --ext-str image_tag=$IMAGE_TAG \
   --ext-str outputs=/tmp/colima \
   --ext-code nodes=1 \

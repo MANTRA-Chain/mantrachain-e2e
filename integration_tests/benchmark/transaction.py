@@ -6,29 +6,22 @@ import os
 import sys
 from collections import namedtuple
 from pathlib import Path
+from typing import Optional
 
 import aiohttp
 import backoff
 import eth_abi
 import ujson
+from cprotobuf import Field, ProtoEntity
 from hexbytes import HexBytes
 
-from .cosmostx_utils import (
-    AuthInfo,
-    Coin,
-    Fee,
-    MsgEthereumTx,
-    TxBody,
-    TxRaw,
-    build_any,
-)
 from .erc20 import CONTRACT_ADDRESS
 from .utils import (
-    DEFAULT_DENOM,
-    DEFAULT_EXTENDED_DENOM,
-    EVM_CHAIN_ID,
     LOCAL_RPC,
     gen_account,
+    get_evm_chain_id,
+    get_evm_denom,
+    get_extended_denom,
     split,
     split_batch,
 )
@@ -54,6 +47,58 @@ Job = namedtuple(
 EthTx = namedtuple("EthTx", ["tx", "raw", "sender"])
 
 
+class Coin(ProtoEntity):
+    denom = Field("string", 1)
+    amount = Field("string", 2)
+
+
+class AuthInfo(ProtoEntity):
+    signer_infos = Field("bytes", 1, repeated=True)
+    fee = Field("bytes", 2)
+    tip = Field("bytes", 3)
+
+
+class Fee(ProtoEntity):
+    amount = Field(Coin, 1, repeated=True)
+    gas_limit = Field("uint64", 2)
+    payer = Field("string", 3)
+    granter = Field("string", 4)
+
+
+class TxBody(ProtoEntity):
+    messages = Field("bytes", 1, repeated=True)
+    memo = Field("string", 2)
+    timeout_height = Field("uint64", 3)
+    extension_options = Field("bytes", 1023, repeated=True)
+    non_critical_extension_options = Field("bytes", 2047, repeated=True)
+
+
+class TxRaw(ProtoEntity):
+    body_bytes = Field("bytes", 1)
+    auth_info_bytes = Field("bytes", 2)
+    signatures = Field("bytes", 3, repeated=True)
+
+
+class ProtoAny(ProtoEntity):
+    type_url = Field("string", 1)
+    value = Field("bytes", 2)
+
+
+class MsgEthereumTx(ProtoEntity):
+    MSG_URL = "/cosmos.evm.vm.v1.MsgEthereumTx"
+    data = Field(ProtoAny, 1)
+    deprecated_hash = Field("string", 3)
+    from_ = Field("bytes", 5)
+    raw = Field("bytes", 6)
+
+
+def build_any(type_url: str, msg: Optional[ProtoEntity] = None) -> ProtoAny:
+    value = b""
+    if msg is not None:
+        value = msg.SerializeToString()
+    return ProtoAny(type_url=type_url, value=value)
+
+
 def simple_transfer_tx(sender: str, nonce: int, options: dict):
     return {
         "to": sender,
@@ -61,7 +106,7 @@ def simple_transfer_tx(sender: str, nonce: int, options: dict):
         "nonce": nonce,
         "gas": 21000,
         "gasPrice": options.get("gas_price", GAS_PRICE),
-        "chainId": options.get("chain_id", EVM_CHAIN_ID),
+        "chainId": options.get("chain_id", get_evm_chain_id()),
     }
 
 
@@ -74,7 +119,7 @@ def erc20_transfer_tx(sender: str, nonce: int, options: dict):
         "nonce": nonce,
         "gas": 51630,
         "gasPrice": options.get("gas_price", GAS_PRICE),
-        "chainId": options.get("chain_id", EVM_CHAIN_ID),
+        "chainId": options.get("chain_id", get_evm_chain_id()),
         "data": data,
     }
 
@@ -129,8 +174,10 @@ def gen(
     nonce: int = 0,
     start_account: int = 0,
     tx_options: dict = None,
-    evm_denom: str = DEFAULT_DENOM,
+    evm_denom: Optional[str] = None,
 ) -> [str]:
+    if evm_denom is None:
+        evm_denom = get_evm_denom()
     tx_options = tx_options or {}
     chunks = split(num_accounts, os.cpu_count())
     create_tx = TX_TYPES[tx_type]
@@ -177,7 +224,9 @@ def load(datadir: Path, global_seq: int) -> [str]:
         return ujson.load(f)
 
 
-def build_cosmos_tx(*txs: EthTx, denom=DEFAULT_EXTENDED_DENOM) -> str:
+def build_cosmos_tx(*txs: EthTx, denom=None) -> str:
+    if denom is None:
+        denom = get_extended_denom()
     """
     return base64 encoded cosmos tx, support batch
     """

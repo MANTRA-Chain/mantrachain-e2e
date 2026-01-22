@@ -18,7 +18,6 @@ from . import transaction
 from .cli import ChainCommand
 from .echo import run_echo_server
 from .peer import (
-    CONTAINER_BINARY_PATH,
     FULLNODE_GROUP,
     VALIDATOR_GROUP,
     gen_genesis,
@@ -28,11 +27,17 @@ from .peer import (
 from .stats import dump_block_stats
 from .topology import connect_all
 from .types import PeerPacket
-from .utils import Tee, block_height, block_txs, wait_for_block, wait_for_port
+from .utils import (
+    Tee,
+    block_height,
+    block_txs,
+    get_binary,
+    get_chain_id,
+    load_chain_config,
+    wait_for_block,
+    wait_for_port,
+)
 
-# use binary on host machine
-LOCAL_BINARY_PATH = "mantrachaind"
-DEFAULT_CHAIN_ID = "mantra-canary-net-1"
 # the container must be deployed with the prefixed name
 HOSTNAME_TEMPLATE = "testplan-{index}"
 ECHO_SERVER_PORT = 26659
@@ -71,6 +76,7 @@ def gen(**kwargs):
 @cli.command()
 @click.argument("options", callback=validate_json)
 def generic_gen(options: dict):
+    options.pop("image_name", None)
     return _gen(**options)
 
 
@@ -88,13 +94,36 @@ def _gen(
     config_patch: dict = None,
     app_patch: dict = None,
     genesis_patch: dict = None,
+    # Chain config
+    binary: Optional[str] = None,
+    address_prefix: Optional[str] = None,
+    chain_id: Optional[str] = None,
+    evm_denom: Optional[str] = None,
+    extended_denom: Optional[str] = None,
+    evm_chain_id: Optional[int] = None,
 ):
     config_patch = config_patch or {}
     app_patch = app_patch or {}
     genesis_patch = genesis_patch or {}
 
+    # Load chain config for utils module
+    chain_cfg = {}
+    if binary:
+        chain_cfg["binary"] = binary
+    if address_prefix:
+        chain_cfg["address_prefix"] = address_prefix
+    if chain_id:
+        chain_cfg["chain_id"] = chain_id
+    if evm_denom:
+        chain_cfg["evm_denom"] = evm_denom
+    if extended_denom:
+        chain_cfg["extended_denom"] = extended_denom
+    if evm_chain_id:
+        chain_cfg["evm_chain_id"] = evm_chain_id
+    load_chain_config(chain_cfg)
+
     outdir = Path(outdir)
-    cli = ChainCommand(LOCAL_BINARY_PATH)
+    cli = ChainCommand(get_binary())
     (outdir / VALIDATOR_GROUP).mkdir(parents=True, exist_ok=True)
     (outdir / FULLNODE_GROUP).mkdir(parents=True, exist_ok=True)
 
@@ -149,6 +178,13 @@ def _gen(
         "tx_type": tx_type,
         "batch_size": batch_size,
         "validator_generate_load": validator_generate_load,
+        # Chain config for runtime
+        "binary": get_binary(),
+        "address_prefix": chain_cfg.get("address_prefix"),
+        "chain_id": chain_cfg.get("chain_id"),
+        "evm_denom": chain_cfg.get("evm_denom"),
+        "extended_denom": chain_cfg.get("extended_denom"),
+        "evm_chain_id": chain_cfg.get("evm_chain_id"),
     }
     (outdir / "config.json").write_text(json.dumps(cfg))
 
@@ -176,11 +212,16 @@ ADD ./out {dst}
 @cli.command()
 @click.option("--outdir", default="/outputs")
 @click.option("--datadir", default="/data")
-@click.option("--binary", default=CONTAINER_BINARY_PATH)
+@click.option("--binary", default=None)
 @click.option("--global-seq", default=None, type=int)
 def run(outdir: str, datadir: str, binary, global_seq):
     datadir = Path(datadir)
     cfg = json.loads((datadir / "config.json").read_text())
+
+    # Load chain config and set binary default
+    load_chain_config(cfg)
+    if binary is None:
+        binary = "/bin/" + get_binary()
 
     if global_seq is None:
         global_seq = node_index()
@@ -281,8 +322,12 @@ def do_run(datadir: Path, home: Path, cmd: str, group: str, global_seq: int, cfg
 
     print("start node")
     logfile = open(home / "node.log", "ab", buffering=0)
+    start_cmd = [cmd, "start", "--home", str(home)]
+    chain_id = cfg.get("chain_id")
+    if chain_id:
+        start_cmd.extend(["--chain-id", chain_id])
     proc = subprocess.Popen(
-        [cmd, "start", "--home", str(home)],
+        start_cmd,
         stdout=logfile,
     )
 
@@ -382,7 +427,7 @@ def init_node_local(
         cli,
         outdir / group / str(group_seq),
         ip,
-        DEFAULT_CHAIN_ID,
+        get_chain_id(),
         group,
         group_seq,
         global_seq,

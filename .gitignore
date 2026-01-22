@@ -206,4 +206,4 @@ __marimo__/
 result
 artifacts
 benchmark-testcase
-mantra-testground.tar.gz
+*.tar.gz

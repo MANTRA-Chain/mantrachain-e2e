@@ -11,12 +11,62 @@ from eth_account import Account
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 
-ADDRESS_PREFIX = "mantra"
+DEFAULT_ADDRESS_PREFIX = "mantra"
+DEFAULT_CHAIN_ID = "mantra-canary-net-1"
 DEFAULT_DENOM = "amantra"
 DEFAULT_EXTENDED_DENOM = "amantra"
-EVM_CHAIN_ID = 7888
+DEFAULT_EVM_CHAIN_ID = 7888
+DEFAULT_BINARY = "mantrachaind"
 LOCAL_RPC = "http://127.0.0.1:26657"
 LOCAL_JSON_RPC = "http://127.0.0.1:8545"
+
+_chain_config = {
+    "address_prefix": DEFAULT_ADDRESS_PREFIX,
+    "chain_id": DEFAULT_CHAIN_ID,
+    "evm_denom": DEFAULT_DENOM,
+    "extended_denom": DEFAULT_EXTENDED_DENOM,
+    "evm_chain_id": DEFAULT_EVM_CHAIN_ID,
+    "binary": DEFAULT_BINARY,
+}
+
+
+def load_chain_config(config: dict):
+    if "address_prefix" in config:
+        _chain_config["address_prefix"] = config["address_prefix"]
+    if "chain_id" in config:
+        _chain_config["chain_id"] = config["chain_id"]
+    if "evm_denom" in config:
+        _chain_config["evm_denom"] = config["evm_denom"]
+    if "extended_denom" in config:
+        _chain_config["extended_denom"] = config["extended_denom"]
+    if "evm_chain_id" in config:
+        _chain_config["evm_chain_id"] = config["evm_chain_id"]
+    if "binary" in config:
+        _chain_config["binary"] = config["binary"]
+
+
+def get_address_prefix():
+    return _chain_config["address_prefix"]
+
+
+def get_chain_id():
+    return _chain_config["chain_id"]
+
+
+def get_evm_denom():
+    return _chain_config["evm_denom"]
+
+
+def get_extended_denom():
+    return _chain_config["extended_denom"]
+
+
+def get_evm_chain_id():
+    return _chain_config["evm_chain_id"]
+
+
+def get_binary():
+    return _chain_config["binary"]
 
 
 def patch_toml_doc(doc, patch):
@@ -94,7 +144,9 @@ def wait_for_block(cli, target: int, timeout=40):
     return height
 
 
-def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):
+def eth_to_bech32(addr, prefix=None):
+    if prefix is None:
+        prefix = get_address_prefix()
     bz = bech32.convertbits(HexBytes(addr), 8, 5)
     return bech32.bech32_encode(prefix, bz)
 

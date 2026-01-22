@@ -91,7 +91,14 @@
 
           testground-image = pkgs.callPackage ./nix/testground-image.nix {
             inherit benchmark-testcase;
-            inherit (pkgs) mantrachaind;
+            chaind = pkgs.mantrachaind;
+            imageName = "mantra-testground";
+          };
+
+          testground-image-evmd = pkgs.callPackage ./nix/testground-image.nix {
+            inherit benchmark-testcase;
+            chaind = pkgs.evmd;
+            imageName = "evmd-testground";
           };
         in {
           default = pkgs.mantrachaind;
@@ -100,7 +107,7 @@
           hermes = pkgs.hermes;
           cosmovisor = pkgs.cosmovisor;
           go-ethereum = pkgs.go-ethereum;
-          inherit benchmark-testcase testground-image;
+          inherit benchmark-testcase testground-image testground-image-evmd;
         }
       );
 

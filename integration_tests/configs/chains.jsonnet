@@ -3,6 +3,7 @@
     'account-prefix': 'cosmos',
     evm_denom: 'atest',
     cmd: 'evmd',
+    chain_id: 'evmd_262144-1',
     evm_chain_id: 262144,
     bank: {
       denom_metadata: [{
@@ -35,6 +36,7 @@
     'account-prefix': 'mantra',
     evm_denom: 'amantra',
     cmd: 'mantrachaind',
+    chain_id: 'mantra-canary-net-1',
     evm_chain_id: 7888,
     bank: {
       denom_metadata: [{
@@ -73,6 +75,7 @@
     'account-prefix': 'inveniam',
     evm_denom: 'anvnm',
     cmd: 'inveniamd',
+    chain_id: 'inveniam_58886-1',
     evm_chain_id: 58886,
     bank: {
       denom_metadata: [{
@@ -117,6 +120,7 @@
     'coin-type': 118,
     evm_denom: 'stake',
     cmd: 'simd',
+    chain_id: 'simd-test-1',
     evm_chain_id: 7888,
     bank: {},
     evm: {},

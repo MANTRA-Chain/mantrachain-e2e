@@ -1,8 +1,9 @@
 {
   dockerTools,
   runCommandLocal,
-  mantrachaind,
+  chaind,
   benchmark-testcase,
+  imageName,
 }:
 let
   tmpDir = runCommandLocal "tmp" { } ''
@@ -10,11 +11,11 @@ let
   '';
 in
 dockerTools.buildLayeredImage {
-  name = "mantra-testground";
+  name = imageName;
   created = "now";
   contents = [
     benchmark-testcase
-    mantrachaind
+    chaind
     tmpDir
   ];
   config = {

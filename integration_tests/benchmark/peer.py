@@ -11,23 +11,36 @@ from . import erc20
 from .cli import ChainCommand
 from .types import Balance, GenesisAccount, PeerPacket
 from .utils import (
-    DEFAULT_DENOM,
     bech32_to_eth,
     eth_to_bech32,
     gen_account,
+    get_evm_denom,
     merge_genesis,
     patch_genesis,
     patch_toml,
 )
 
 VAL_ACCOUNT = "validator"
-VAL_INITIAL_AMOUNT = Balance(amount="100000000000000000000", denom=DEFAULT_DENOM)
-VAL_STAKED_AMOUNT = Balance(amount="10000000000000000000", denom=DEFAULT_DENOM)
-ACC_INITIAL_AMOUNT = Balance(amount="10000000000000000000000000", denom=DEFAULT_DENOM)
+VAL_INITIAL_AMOUNT = "100000000000000000000"
+VAL_STAKED_AMOUNT = "10000000000000000000"
+ACC_INITIAL_AMOUNT = "10000000000000000000000000"
 MEMPOOL_SIZE = 10000
+
+
+def get_val_initial_balance():
+    return Balance(amount=VAL_INITIAL_AMOUNT, denom=get_evm_denom())
+
+
+def get_val_staked_balance():
+    return Balance(amount=VAL_STAKED_AMOUNT, denom=get_evm_denom())
+
+
+def get_acc_initial_balance():
+    return Balance(amount=ACC_INITIAL_AMOUNT, denom=get_evm_denom())
+
+
 VALIDATOR_GROUP = "validators"
 FULLNODE_GROUP = "fullnodes"
-CONTAINER_BINARY_PATH = "/bin/mantrachaind"
 
 
 def init_node(
@@ -48,7 +61,7 @@ def init_node(
     cli(
         "init",
         f"{group}-{group_seq}",
-        default_denom=DEFAULT_DENOM,
+        default_denom=get_evm_denom(),
         **default_kwargs,
     )
 
@@ -64,12 +77,12 @@ def init_node(
     accounts = [
         GenesisAccount(
             address=eth_to_bech32(val_acct.address),
-            coins=[VAL_INITIAL_AMOUNT],
+            coins=[get_val_initial_balance()],
         ),
     ] + [
         GenesisAccount(
             address=eth_to_bech32(gen_account(global_seq, i + 1).address),
-            coins=[ACC_INITIAL_AMOUNT],
+            coins=[get_acc_initial_balance()],
         )
         for i in range(num_accounts)
     ]
@@ -122,7 +135,7 @@ def gen_genesis(
                 "consensus": {"params": {"block": {"max_gas": "163000000"}}},
                 "app_state": {
                     "evm": {
-                        "params": {"evm_denom": DEFAULT_DENOM},
+                        "params": {"evm_denom": get_evm_denom()},
                         "accounts": evm_accounts,
                     },
                     "auth": {"accounts": auth_accounts},
@@ -145,7 +158,7 @@ def patch_configs(home: Path, peers: str, config_patch: dict, app_patch: dict):
         "consensus": {"timeout_commit": "1s"},
     }
     default_app_patch = {
-        "minimum-gas-prices": f"0{DEFAULT_DENOM}",
+        "minimum-gas-prices": f"0{get_evm_denom()}",
         "index-events": ["ethereum_tx.ethereumTxHash"],
         "mempool": {"max-txs": MEMPOOL_SIZE},
         "json-rpc": {"enable-indexer": True},
@@ -168,7 +181,7 @@ def gentx(cli, **kwargs):
         "genesis",
         "add-genesis-account",
         VAL_ACCOUNT,
-        str(VAL_INITIAL_AMOUNT),
+        f"{VAL_INITIAL_AMOUNT}{get_evm_denom()}",
         **kwargs,
     )
     with tempfile.TemporaryDirectory() as tmp:
@@ -177,7 +190,7 @@ def gentx(cli, **kwargs):
             "genesis",
             "gentx",
             VAL_ACCOUNT,
-            VAL_STAKED_AMOUNT,
+            f"{VAL_STAKED_AMOUNT}{get_evm_denom()}",
             min_self_delegation=1,
             output_document=output,
             **kwargs,
