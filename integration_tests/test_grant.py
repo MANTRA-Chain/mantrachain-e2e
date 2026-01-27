@@ -1,3 +1,6 @@
+import json
+import tempfile
+
 import pytest
 
 from .utils import DEFAULT_DENOM, find_fee
@@ -102,3 +105,51 @@ def test_flow(mantra):
 
     generic_grant = find_grant("/cosmos.authz.v1beta1.GenericAuthorization")
     assert generic_grant and generic_grant["authorization"]["value"]["msg"] == msg_type
+
+
+def test_authz_spend_limit_atomicity(mantra):
+    cli = mantra.cosmos_cli()
+    granter = cli.address("signer1")
+    grantee = cli.address("signer2")
+    receiver = cli.address("community")
+
+    granter_balance = cli.balance(granter)
+    send_amount = granter_balance + 1000
+    grant_limit = send_amount + 1000
+
+    rsp = cli.grant_authorization(
+        grantee,
+        "send",
+        from_=granter,
+        spend_limit=f"{grant_limit}{DEFAULT_DENOM}",
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    def get_send_grant_spend_limit():
+        grants = cli.query_grants(granter, grantee)
+        for g in grants:
+            if g["authorization"]["type"] == "/cosmos.bank.v1beta1.SendAuthorization":
+                return int(g["authorization"]["value"]["spend_limit"][0]["amount"])
+        return None
+
+    assert get_send_grant_spend_limit() == grant_limit
+
+    tx = cli.transfer(
+        granter,
+        receiver,
+        f"{send_amount}{DEFAULT_DENOM}",
+        generate_only=True,
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(tx, f)
+        tx_file = f.name
+
+    rsp = cli.exec_tx_by_grantee(tx_file, from_=grantee)
+    assert rsp["code"] != 0
+    assert "insufficient funds" in rsp.get("raw_log", "")
+
+    spend_limit = get_send_grant_spend_limit()
+    assert (
+        spend_limit == grant_limit
+    ), f"spendLimit changed from {grant_limit} to {spend_limit} despite exec failure."
