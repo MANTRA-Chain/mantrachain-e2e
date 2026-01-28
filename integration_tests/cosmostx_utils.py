@@ -114,6 +114,34 @@ class MsgEthereumTx(ProtoEntity):
     raw = Field("bytes", 6)
 
 
+class StateEntry(ProtoEntity):
+    key = Field("bytes", 1)
+    value = Field("bytes", 2)
+    delete = Field("bool", 3)
+
+
+class StoreStateDiff(ProtoEntity):
+    name = Field("string", 1)
+    entries = Field(StateEntry, 2, repeated=True)
+
+
+class DenomUnit(ProtoEntity):
+    denom = Field("string", 1)
+    exponent = Field("uint32", 2)
+    aliases = Field("string", 3, repeated=True)
+
+
+class Metadata(ProtoEntity):
+    description = Field("string", 1)
+    denom_units = Field(DenomUnit, 2, repeated=True)
+    base = Field("string", 3)
+    display = Field("string", 4)
+    name = Field("string", 5)
+    symbol = Field("string", 6)
+    uri = Field("string", 7)
+    uri_hash = Field("string", 8)
+
+
 LEGACY_AMINO = 127
 SIGN_DIRECT = 1
 
