@@ -1450,3 +1450,18 @@ def update_consumer_chain(
     rsp = cli.provider_update_consumer(msg_path, **kwargs)
     assert rsp["code"] == 0, f"Failed to update consumer: {rsp.get('raw_log', '')}"
     return rsp
+
+
+async def wait_for_unconfirmed_txs(url: str, min_txs: int = 1, timeout_s: float = 5.0):
+    deadline = time.monotonic() + timeout_s
+    last = None
+    while time.monotonic() < deadline:
+        last = requests.get(f"{url}/num_unconfirmed_txs").json()
+        try:
+            n = int(last["result"]["n_txs"])
+        except Exception:
+            n = 0
+        if n >= min_txs:
+            return n
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"expected >= {min_txs} unconfirmed txs, last={last}")

@@ -35,6 +35,7 @@ from .utils import (
     send_transaction,
     transfer_via_cosmos,
     w3_wait_for_new_blocks_async,
+    wait_for_unconfirmed_txs,
 )
 
 
@@ -107,6 +108,50 @@ async def test_send_transaction(mantra, connect_mantra, check_gas=True):
     )
     if check_gas:
         assert receipt.gasUsed == 21000
+
+
+@pytest.mark.connect
+async def test_connect_send_transaction_mempool_mix(connect_mantra, tmp_path):
+    await test_send_transaction_mempool_mix(None, connect_mantra, tmp_path)
+
+
+async def test_send_transaction_mempool_mix(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    sender = cli.address("signer2")
+    receiver = cli.address("signer1")
+    tx = cli.transfer(
+        sender,
+        receiver,
+        f"1{DEFAULT_DENOM}",
+        generate_only=True,
+        chain_id=cli.chain_id,
+    )
+    tx_json = cli.sign_tx_json(
+        tx,
+        sender,
+        home=cli.data_dir,
+        node=cli.node_rpc,
+        chain_id=cli.chain_id,
+    )
+    tx_file = tmp_path / "cosmos_async_broadcast_tx.json"
+    tx_file.write_text(json.dumps(tx_json))
+    rsp = json.loads(
+        cli.raw(
+            "tx",
+            "broadcast",
+            str(tx_file),
+            node=cli.node_rpc,
+            broadcast_mode="async",
+            output="json",
+        )
+    )
+    assert "txhash" in rsp, rsp
+    await wait_for_unconfirmed_txs(cli.node_rpc_http)
+    tx = {"to": ADDRS["signer1"], "value": 1000}
+    receipt = await send_transaction_async(
+        connect_mantra.async_w3, ACCOUNTS["community"], **tx
+    )
+    assert receipt.status == 1
 
 
 @pytest.mark.connect
