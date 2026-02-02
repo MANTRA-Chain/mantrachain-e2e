@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import tomlkit
+from eth_abi import decode, encode
 from eth_account import Account
 from eth_contract.contract import Contract
 from eth_contract.create2 import create2_address
@@ -14,6 +15,7 @@ from eth_contract.deploy_utils import (
     ensure_deployed_by_create2,
 )
 from eth_contract.utils import get_initcode
+from eth_hash.auto import keccak
 from pystarport import cluster, ports
 from pystarport.utils import (
     parse_amount,
@@ -64,32 +66,42 @@ from .utils import (
 pytestmark = pytest.mark.ccv
 
 CONSUMER_DENOM = "anvnm"
-
-
-_MANTRAUSD_CREATE2_SALT = 1
-_WMANTRAUSD_CREATE2_SALT = 2
-
-_PRED_MANTRAUSD_ADDR = create2_address(
+TRANSFER_CHANNEL_ID = "channel-1"
+MANTRAUSD_CREATE2_SALT = 1
+WMANTRAUSD_CREATE2_SALT = 2
+PRED_MANTRAUSD_ADDR = create2_address(
     get_initcode(MockERC20_ARTIFACT, "mantraUSD", "mUSD", 6),
-    _MANTRAUSD_CREATE2_SALT,
+    MANTRAUSD_CREATE2_SALT,
 )
-_PRED_WMANTRAUSD_ADDR = create2_address(
-    get_initcode(build_contract("wmantraUSD"), _PRED_MANTRAUSD_ADDR),
-    _WMANTRAUSD_CREATE2_SALT,
+PRED_WMANTRAUSD_ADDR = create2_address(
+    get_initcode(build_contract("wmantraUSD"), PRED_MANTRAUSD_ADDR),
+    WMANTRAUSD_CREATE2_SALT,
 )
+WMANTRAUSD_DENOM = f"erc20:{PRED_WMANTRAUSD_ADDR}"
 
-_WMANTRAUSD_DENOM = f"erc20:{_PRED_WMANTRAUSD_ADDR}"
-_WMANTRAUSD_CONSUMER_IBC_DENOM = (
-    f"ibc/{ibc_denom_hash(f'transfer/channel-1/{_WMANTRAUSD_DENOM}')}"
-)
+
+def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
+    return f"ibc/{ibc_denom_hash(f'transfer/{transfer_channel_id}/{WMANTRAUSD_DENOM}')}"
+
+
+WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
 
 
 ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
 ICS20_ADDRESS = "0x0000000000000000000000000000000000000802"
-
-
 DISTRIBUTION_CLAIM_ADDRESS = "0x0000000000000000000000000000000000000a01"
 DISTRIBUTION_ADDRESS = "0x0000000000000000000000000000000000000801"
+
+
+DISTRIBUTION_CLAIM_SIG = "claimRewardsAndConvertCoin(address,uint32,string)"
+
+
+def distribution_claim_call_data(
+    delegator_evm: str, max_retrieve: int, denom: str
+) -> str:
+    selector = keccak(DISTRIBUTION_CLAIM_SIG.encode())[:4]
+    args = encode(["address", "uint32", "string"], [delegator_evm, max_retrieve, denom])
+    return "0x" + (selector + args).hex()
 
 
 def find_open_transfer_channel_id(cli) -> str | None:
@@ -149,7 +161,7 @@ def ibc(request, tmp_path_factory):
 
         authority = cli.get_params("marketmap").get("admin")
         port = "transfer"
-        channel = "channel-1"
+        channel = TRANSFER_CHANNEL_ID
         denom = CONSUMER_DENOM
         denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
         owner_address = cli.address("validator")
@@ -158,7 +170,7 @@ def ibc(request, tmp_path_factory):
         # bridge wmantraUSD rewards that unwrap back to `erc20:<wmantraUSD>` on provider
         allowlisted_reward_denoms = [
             f"ibc/{denom_hash}",
-            _WMANTRAUSD_DENOM,
+            WMANTRAUSD_DENOM,
         ]
         update_consumer_chain(
             cli,
@@ -189,7 +201,7 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"] = consumer_genesis
             genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = [
                 CONSUMER_DENOM,
-                _WMANTRAUSD_CONSUMER_IBC_DENOM,
+                WMANTRAUSD_CONSUMER_IBC_DENOM,
             ]
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
@@ -224,7 +236,7 @@ def ibc(request, tmp_path_factory):
                 app_doc = tomlkit.parse(f.read())
             # allow paying fees with bridged wmantraUSD IBC denom
             app_doc["minimum-gas-prices"] = (
-                f"0{CONSUMER_DENOM},0{_WMANTRAUSD_CONSUMER_IBC_DENOM}"
+                f"0{CONSUMER_DENOM},0{WMANTRAUSD_CONSUMER_IBC_DENOM}"
             )
             with open(app_config_path, "w") as f:
                 f.write(tomlkit.dumps(app_doc))
@@ -283,7 +295,7 @@ async def test_ccv(ibc):
 
     wait_for_fn(
         "channel ready",
-        lambda: check_channel_ready(cli, "transfer", "channel-1"),
+        lambda: check_channel_ready(cli, "transfer", TRANSFER_CHANNEL_ID),
         timeout=30,
     )
 
@@ -343,9 +355,9 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     provider_transfer_channel = find_open_transfer_channel_id(provider_cli)
     assert consumer_transfer_channel and provider_transfer_channel
 
-    # channel-0 is for CCV and channel-1 is the ICS20 transfer channel
-    assert consumer_transfer_channel == "channel-1"
-    assert provider_transfer_channel == "channel-1"
+    # channel-0 is for CCV and TRANSFER_CHANNEL_ID is the ICS20 transfer channel
+    assert consumer_transfer_channel == TRANSFER_CHANNEL_ID
+    assert provider_transfer_channel == TRANSFER_CHANNEL_ID
 
     sender_name = "community"
     sender = ADDRS[sender_name]
@@ -365,10 +377,10 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         async_w3,
         funder_acct,
         mantrausd_initcode,
-        salt=_MANTRAUSD_CREATE2_SALT,
+        salt=MANTRAUSD_CREATE2_SALT,
         gas=3_000_000,
     )
-    assert w3.to_checksum_address(mantrausd_addr) == _PRED_MANTRAUSD_ADDR
+    assert w3.to_checksum_address(mantrausd_addr) == PRED_MANTRAUSD_ADDR
     mantrausd = w3.eth.contract(address=mantrausd_addr, abi=MockERC20_ARTIFACT["abi"])
 
     amt_mantrausd = 1_000_000  # 1.0 with 6 decimals
@@ -388,10 +400,10 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         async_w3,
         funder_acct,
         w_initcode,
-        salt=_WMANTRAUSD_CREATE2_SALT,
+        salt=WMANTRAUSD_CREATE2_SALT,
         gas=6_000_000,
     )
-    assert w3.to_checksum_address(wmantrausd_addr) == _PRED_WMANTRAUSD_ADDR
+    assert w3.to_checksum_address(wmantrausd_addr) == PRED_WMANTRAUSD_ADDR
     wmantrausd = w3.eth.contract(address=wmantrausd_addr, abi=w_res["abi"])
 
     wmantrausd_addr = w3.to_checksum_address(wmantrausd.address)
@@ -428,12 +440,10 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert pair_rsp and wmantrausd_addr.lower() in str(pair_rsp).lower(), pair_rsp
 
     erc20_denom = f"erc20:{wmantrausd_addr}"
-    trace = f"transfer/{consumer_transfer_channel}/{erc20_denom}"
-    denom_hash = ibc_denom_hash(trace)
-    ibc_denom = f"ibc/{denom_hash}"
+    ibc_denom = wmantrausd_consumer_ibc_denom(consumer_transfer_channel)
 
-    assert erc20_denom == _WMANTRAUSD_DENOM
-    assert ibc_denom == _WMANTRAUSD_CONSUMER_IBC_DENOM
+    assert erc20_denom == WMANTRAUSD_DENOM
+    assert ibc_denom == WMANTRAUSD_CONSUMER_IBC_DENOM
 
     amt_wmantrausd = amt_mantrausd * 10**12
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
@@ -523,11 +533,6 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
 
     # 6) DistributionClaim precompile smoke test
-    distribution_claim = w3.eth.contract(
-        address=DISTRIBUTION_CLAIM_ADDRESS,
-        abi=build_contract("DistributionClaimI")["abi"],
-    )
-
     signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
     val = provider_cli.address("validator", "val")
 
@@ -597,21 +602,33 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     # This checks we don't end up with a leftover `erc20:<addr>` bank coin.
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
-    expected_converted = distribution_claim.functions.claimRewardsAndConvertCoin(
+    claim_data = distribution_claim_call_data(
         signer1_evm,
         max_retrieve,
         erc20_denom,
-    ).call({"from": signer1_evm, "gas": gas_limit})
+    )
+
+    expected_converted = decode(
+        ["uint256"],
+        w3.eth.call(
+            {
+                "to": DISTRIBUTION_CLAIM_ADDRESS,
+                "from": signer1_evm,
+                "data": claim_data,
+                "gas": gas_limit,
+            }
+        ),
+    )[0]
     assert expected_converted > 0
 
     # claim + convert for the wmantraUSD token-pair denom
     claim_convert_receipt = send_transaction(
         w3,
-        distribution_claim.functions.claimRewardsAndConvertCoin(
-            signer1_evm,
-            max_retrieve,
-            erc20_denom,
-        ).build_transaction({"from": signer1_evm, "gas": gas_limit}),
+        {
+            "to": DISTRIBUTION_CLAIM_ADDRESS,
+            "data": claim_data,
+            "gas": gas_limit,
+        },
         KEYS["signer1"],
     )
     assert claim_convert_receipt.status == 1
