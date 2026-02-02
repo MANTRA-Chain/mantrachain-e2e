@@ -1,11 +1,8 @@
 import pytest
 from eth_contract.erc20 import ERC20
 from eth_contract.weth import WETH
-from eth_utils import to_checksum_address
 
-from .utils import ACCOUNTS
-
-WOM = to_checksum_address("0x4200000000000000000000000000000000000006")
+from .utils import ACCOUNTS, WOM
 
 
 @pytest.mark.asyncio

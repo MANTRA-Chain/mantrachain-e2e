@@ -59,6 +59,9 @@
     },
     evm: {
       params: {
+        active_static_precompiles: [
+          '0x0000000000000000000000000000000000000a01',
+        ],
         extended_denom_options: {
           extended_denom: 'amantra',
         },

@@ -7,8 +7,21 @@ from pathlib import Path
 import pytest
 import tomlkit
 from eth_account import Account
+from eth_contract.contract import Contract
+from eth_contract.create2 import create2_address
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_deployed_by_create2,
+)
+from eth_contract.utils import get_initcode
 from pystarport import cluster, ports
-from pystarport.utils import wait_for_fn, wait_for_new_blocks, wait_for_port
+from pystarport.utils import (
+    parse_amount,
+    parse_denom,
+    wait_for_fn,
+    wait_for_new_blocks,
+    wait_for_port,
+)
 
 from .doc_utils import (
     Role,
@@ -41,6 +54,8 @@ from .utils import (
     DEFAULT_GAS_AMT,
     KEYS,
     MNEMONICS,
+    MockERC20_ARTIFACT,
+    build_contract,
     create_consumer_chain,
     send_transaction,
     update_consumer_chain,
@@ -49,6 +64,45 @@ from .utils import (
 pytestmark = pytest.mark.ccv
 
 CONSUMER_DENOM = "anvnm"
+
+
+_MANTRAUSD_CREATE2_SALT = 1
+_WMANTRAUSD_CREATE2_SALT = 2
+
+_PRED_MANTRAUSD_ADDR = create2_address(
+    get_initcode(MockERC20_ARTIFACT, "mantraUSD", "mUSD", 6),
+    _MANTRAUSD_CREATE2_SALT,
+)
+_PRED_WMANTRAUSD_ADDR = create2_address(
+    get_initcode(build_contract("wmantraUSD"), _PRED_MANTRAUSD_ADDR),
+    _WMANTRAUSD_CREATE2_SALT,
+)
+
+_WMANTRAUSD_DENOM = f"erc20:{_PRED_WMANTRAUSD_ADDR}"
+_WMANTRAUSD_CONSUMER_IBC_DENOM = (
+    f"ibc/{ibc_denom_hash(f'transfer/channel-1/{_WMANTRAUSD_DENOM}')}"
+)
+
+
+ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
+ICS20_ADDRESS = "0x0000000000000000000000000000000000000802"
+
+
+DISTRIBUTION_CLAIM_ADDRESS = "0x0000000000000000000000000000000000000a01"
+DISTRIBUTION_ADDRESS = "0x0000000000000000000000000000000000000801"
+
+
+def find_open_transfer_channel_id(cli) -> str | None:
+    try:
+        for ch in cli.ibc_query_all_channels():
+            if ch.get("port_id") != "transfer":
+                continue
+            channel_id = ch.get("channel_id")
+            if channel_id and check_channel_ready(cli, "transfer", channel_id):
+                return channel_id
+    except Exception:
+        return None
+    return None
 
 
 @pytest.fixture(scope="function")
@@ -100,13 +154,19 @@ def ibc(request, tmp_path_factory):
         denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
         owner_address = cli.address("validator")
 
+        # consumer native denom (as `ibc/<hash>` on the provider)
+        # bridge wmantraUSD rewards that unwrap back to `erc20:<wmantraUSD>` on provider
+        allowlisted_reward_denoms = [
+            f"ibc/{denom_hash}",
+            _WMANTRAUSD_DENOM,
+        ]
         update_consumer_chain(
             cli,
             consumer_id,
             path,
             owner_address,
             authority,
-            allowlisted_reward_denoms={"denoms": [f"ibc/{denom_hash}"]},
+            allowlisted_reward_denoms={"denoms": allowlisted_reward_denoms},
             from_="validator",
         )
 
@@ -128,7 +188,8 @@ def ibc(request, tmp_path_factory):
             genesis["genesis_time"] = now.isoformat().replace("+00:00", "Z")
             genesis["app_state"]["ccvconsumer"] = consumer_genesis
             genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = [
-                CONSUMER_DENOM
+                CONSUMER_DENOM,
+                _WMANTRAUSD_CONSUMER_IBC_DENOM,
             ]
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
@@ -157,6 +218,16 @@ def ibc(request, tmp_path_factory):
             doc["p2p"]["persistent_peers"] = peers
             with open(config_path, "w") as f:
                 f.write(tomlkit.dumps(doc))
+
+            app_config_path = cons_cfg / "app.toml"
+            with open(app_config_path) as f:
+                app_doc = tomlkit.parse(f.read())
+            # allow paying fees with bridged wmantraUSD IBC denom
+            app_doc["minimum-gas-prices"] = (
+                f"0{CONSUMER_DENOM},0{_WMANTRAUSD_CONSUMER_IBC_DENOM}"
+            )
+            with open(app_config_path, "w") as f:
+                f.write(tomlkit.dumps(app_doc))
 
         ibc2.supervisorctl("start", *nodes)
 
@@ -194,6 +265,15 @@ def ibc(request, tmp_path_factory):
         wait_for_port(hermes.port)
 
 
+def check_channel_ready(cli, port_id: str, channel_id: str) -> bool:
+    try:
+        res = cli.ibc_query_channel(port_id, channel_id).get("channel")
+    except Exception as e:
+        print(f"{port_id}/{channel_id} not ready: {e}")
+        res = None
+    return res is not None and res.get("state") == "STATE_OPEN"
+
+
 async def test_ccv(ibc):
     cli = ibc.ibc1.cosmos_cli()
     cli2 = ibc.ibc2.cosmos_cli()
@@ -201,15 +281,11 @@ async def test_ccv(ibc):
     res = cli.ibc_query_channel("provider", provider_channel).get("channel")
     assert res.get("state") == "STATE_OPEN"
 
-    def check_channel_ready():
-        try:
-            res = cli.ibc_query_channel("transfer", "channel-1").get("channel")
-        except Exception as e:
-            print(f"channel-1 not ready: {e}")
-            res = None
-        return res is not None and res.get("state") == "STATE_OPEN"
-
-    wait_for_fn("channel ready", check_channel_ready, timeout=30)
+    wait_for_fn(
+        "channel ready",
+        lambda: check_channel_ready(cli, "transfer", "channel-1"),
+        timeout=30,
+    )
 
     def check_provider_ready():
         try:
@@ -250,6 +326,278 @@ async def test_ccv(ibc):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     assert w3.eth.get_balance(receiver) - balance == amt
+
+
+async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
+    provider_cli, consumer_cli = ibc.ibc1.cosmos_cli(), ibc.ibc2.cosmos_cli()
+
+    def channel_ready() -> bool:
+        return all(
+            find_open_transfer_channel_id(cli) is not None
+            for cli in (consumer_cli, provider_cli)
+        )
+
+    wait_for_fn("transfer channels open", channel_ready, timeout=60)
+
+    consumer_transfer_channel = find_open_transfer_channel_id(consumer_cli)
+    provider_transfer_channel = find_open_transfer_channel_id(provider_cli)
+    assert consumer_transfer_channel and provider_transfer_channel
+
+    # channel-0 is for CCV and channel-1 is the ICS20 transfer channel
+    assert consumer_transfer_channel == "channel-1"
+    assert provider_transfer_channel == "channel-1"
+
+    sender_name = "community"
+    sender = ADDRS[sender_name]
+    sender_key = KEYS[sender_name]
+    w3 = ibc.ibc1.w3
+    async_w3 = ibc.ibc1.async_w3
+
+    receiver_name = "signer2"
+    receiver_bech32 = consumer_cli.address(receiver_name)
+
+    funder_acct = Account.from_key(sender_key)
+    await ensure_create2_deployed(async_w3, funder_acct)
+
+    # 1) Deploy 6-decimal mantraUSD and mint to sender
+    mantrausd_initcode = get_initcode(MockERC20_ARTIFACT, "mantraUSD", "mUSD", 6)
+    mantrausd_addr = await ensure_deployed_by_create2(
+        async_w3,
+        funder_acct,
+        mantrausd_initcode,
+        salt=_MANTRAUSD_CREATE2_SALT,
+        gas=3_000_000,
+    )
+    assert w3.to_checksum_address(mantrausd_addr) == _PRED_MANTRAUSD_ADDR
+    mantrausd = w3.eth.contract(address=mantrausd_addr, abi=MockERC20_ARTIFACT["abi"])
+
+    amt_mantrausd = 1_000_000  # 1.0 with 6 decimals
+    mint_receipt = send_transaction(
+        w3,
+        mantrausd.functions.mint(sender, amt_mantrausd).build_transaction(
+            {"from": sender, "gas": 200_000}
+        ),
+        sender_key,
+    )
+    assert mint_receipt.status == 1
+
+    # 2) Deploy wmantraUSD
+    w_res = build_contract("wmantraUSD")
+    w_initcode = get_initcode(w_res, mantrausd.address)
+    wmantrausd_addr = await ensure_deployed_by_create2(
+        async_w3,
+        funder_acct,
+        w_initcode,
+        salt=_WMANTRAUSD_CREATE2_SALT,
+        gas=6_000_000,
+    )
+    assert w3.to_checksum_address(wmantrausd_addr) == _PRED_WMANTRAUSD_ADDR
+    wmantrausd = w3.eth.contract(address=wmantrausd_addr, abi=w_res["abi"])
+
+    wmantrausd_addr = w3.to_checksum_address(wmantrausd.address)
+
+    # 3) Approve + deposit
+    approve_receipt = send_transaction(
+        w3,
+        mantrausd.functions.approve(
+            wmantrausd.address, amt_mantrausd
+        ).build_transaction({"from": sender, "gas": 200_000}),
+        sender_key,
+    )
+    assert approve_receipt.status == 1
+
+    deposit_receipt = send_transaction(
+        w3,
+        wmantrausd.functions.deposit(amt_mantrausd).build_transaction(
+            {"from": sender, "gas": 500_000}
+        ),
+        sender_key,
+    )
+    assert deposit_receipt.status == 1
+
+    assert wmantrausd.functions.balanceOf(sender).call() >= amt_mantrausd * 10**12
+
+    register_tx = provider_cli.register_erc20(
+        wmantrausd_addr,
+        _from=sender_name,
+        gas=3_000_000,
+    )
+    assert register_tx.get("code", 0) == 0, register_tx.get("logs", "")
+
+    pair_rsp = provider_cli.query_erc20_token_pair(wmantrausd_addr)
+    assert pair_rsp and wmantrausd_addr.lower() in str(pair_rsp).lower(), pair_rsp
+
+    erc20_denom = f"erc20:{wmantrausd_addr}"
+    trace = f"transfer/{consumer_transfer_channel}/{erc20_denom}"
+    denom_hash = ibc_denom_hash(trace)
+    ibc_denom = f"ibc/{denom_hash}"
+
+    assert erc20_denom == _WMANTRAUSD_DENOM
+    assert ibc_denom == _WMANTRAUSD_CONSUMER_IBC_DENOM
+
+    amt_wmantrausd = amt_mantrausd * 10**12
+    expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
+
+    # 4) Convert ERC20 -> native coin (erc20:<wmantraUSD>) into sender
+    sender_bech32 = provider_cli.address(sender_name)
+    assert provider_cli.balance(sender_bech32, denom=erc20_denom) == 0
+    convert_rsp = provider_cli.convert_erc20(
+        wmantrausd_addr,
+        amt_wmantrausd,
+        _from=sender_name,
+        gas=999_999,
+    )
+    assert convert_rsp["code"] == 0, convert_rsp["raw_log"]
+    assert provider_cli.balance(sender_bech32, denom=erc20_denom) == amt_wmantrausd
+
+    # 5) ICS20 transfer
+    timeout_ns = int(
+        (
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)
+        ).timestamp()
+        * 1_000_000_000
+    )
+    ics20_call = ICS20_PRECOMPILE.fns.transfer(
+        "transfer",
+        provider_transfer_channel,
+        erc20_denom,
+        amt_wmantrausd,
+        sender,
+        receiver_bech32,
+        (0, 0),
+        timeout_ns,
+        "",
+    )
+    ics20_receipt = send_transaction(
+        w3,
+        {
+            "to": ICS20_ADDRESS,
+            "data": ics20_call.data,
+            "gas": 3_000_000,
+        },
+        sender_key,
+    )
+    assert ics20_receipt.status == 1
+
+    def received() -> bool:
+        return consumer_cli.balance(receiver_bech32, denom=ibc_denom) >= expected
+
+    wait_for_fn("wmantraUSD bridged balance", received, timeout=60)
+    assert consumer_cli.balance(receiver_bech32, denom=ibc_denom) == expected
+
+    # 6) DistributionClaim precompile smoke test
+    distribution_claim = w3.eth.contract(
+        address=DISTRIBUTION_CLAIM_ADDRESS,
+        abi=build_contract("DistributionClaimI")["abi"],
+    )
+
+    signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
+    val = provider_cli.address("validator", "val")
+
+    delegate_amt = 20_000_000
+    rsp = provider_cli.delegate_amount(
+        val,
+        f"{delegate_amt}{DEFAULT_DENOM}",
+        _from=signer1,
+        gas=250_000,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    wait_for_new_blocks(provider_cli, 10)
+
+    # pay consumer tx fees in the bridged denom after signer1 has delegated
+    # when these fees are relayed back to the provider, unwrap to `erc20:<wmantraUSD>`
+    fee_pay_rsp = consumer_cli.transfer(
+        receiver_bech32,
+        receiver_bech32,
+        f"1{ibc_denom}",
+        gas_prices=f"{DEFAULT_GAS_AMT}{ibc_denom}",
+    )
+    assert fee_pay_rsp["code"] == 0, fee_pay_rsp["raw_log"]
+    wait_for_new_blocks(consumer_cli, 15)
+    wait_for_new_blocks(provider_cli, 15)
+
+    def signer1_has_wmantrausd_rewards() -> bool:
+        try:
+            raw = provider_cli.raw(
+                "q",
+                "distribution",
+                "rewards",
+                signer1,
+                **provider_cli.get_base_kwargs(),
+            )
+            res = json.loads(raw)
+        except Exception:
+            return False
+
+        total = res.get("total") or []
+        if not isinstance(total, list) or len(total) == 0:
+            return False
+
+        for coin in total:
+            if coin is None:
+                continue
+            try:
+                denom = parse_denom(coin)
+            except Exception:
+                continue
+            if denom != erc20_denom:
+                continue
+            try:
+                return float(parse_amount(coin)) >= 1
+            except Exception:
+                return False
+
+        return False
+
+    wait_for_fn("signer1 wmantraUSD rewards", signer1_has_wmantrausd_rewards)
+
+    bal_wmantrausd_bf = wmantrausd.functions.balanceOf(signer1_evm).call()
+
+    max_retrieve = 10
+    gas_limit = 650_000
+
+    # Claim+convert happens atomically in a single tx (all-or-nothing).
+    # This checks we don't end up with a leftover `erc20:<addr>` bank coin.
+    assert provider_cli.balance(signer1, denom=erc20_denom) == 0
+
+    expected_converted = distribution_claim.functions.claimRewardsAndConvertCoin(
+        signer1_evm,
+        max_retrieve,
+        erc20_denom,
+    ).call({"from": signer1_evm, "gas": gas_limit})
+    assert expected_converted > 0
+
+    # claim + convert for the wmantraUSD token-pair denom
+    claim_convert_receipt = send_transaction(
+        w3,
+        distribution_claim.functions.claimRewardsAndConvertCoin(
+            signer1_evm,
+            max_retrieve,
+            erc20_denom,
+        ).build_transaction({"from": signer1_evm, "gas": gas_limit}),
+        KEYS["signer1"],
+    )
+    assert claim_convert_receipt.status == 1
+
+    bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
+    assert bal_wmantrausd_af - bal_wmantrausd_bf == expected_converted
+    assert provider_cli.balance(signer1, denom=erc20_denom) == 0
+
+    # native-denom rewards can be claimed (without conversion)
+    distribution = w3.eth.contract(
+        address=DISTRIBUTION_ADDRESS,
+        abi=build_contract("DistributionI")["abi"],
+    )
+    claim_receipt = send_transaction(
+        w3,
+        distribution.functions.claimRewards(
+            signer1_evm,
+            max_retrieve,
+        ).build_transaction({"from": signer1_evm, "gas": gas_limit}),
+        KEYS["signer1"],
+    )
+
+    assert claim_receipt.status == 1
 
 
 async def test_add_registry(ibc, setup_consumer_accounts):
