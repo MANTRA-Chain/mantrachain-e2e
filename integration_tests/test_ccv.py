@@ -485,17 +485,16 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     wait_for_fn("wmantraUSD bridged balance", received, timeout=60)
     assert consumer_cli.balance(receiver_bech32, denom=ibc_denom) == expected
 
-    # 5b) Reverse flow: send the consumer `ibc/<hash>` back.
-    # On the provider this unwinds to the escrowed `erc20:<addr>` bank coin
-    # for the recipient (and may be auto-converted for EVM receivers).
+    # 5b) Reverse flow: send `ibc/<hash>` back to provider.
+    # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins
+    # into their ERC20 form (convert-coin) when the receiver is an EVM hex address.
     receiver_evm = ADDRS[receiver_name]
     return_amt_wmantrausd = 10**15
     assert (
         consumer_cli.balance(receiver_bech32, denom=ibc_denom) > return_amt_wmantrausd
     )
 
-    provider_receiver_bech32 = provider_cli.debug_addr(receiver_evm, bech="acc")
-    provider_erc20_bal_bf = provider_cli.balance(provider_receiver_bech32, denom=erc20_denom)
+    provider_wmantrausd_bal_bf = wmantrausd.functions.balanceOf(receiver_evm).call()
     consumer_ibc_bal_bf = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
 
     return_rsp = consumer_cli.ibc_transfer(
@@ -513,13 +512,15 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         <= consumer_ibc_bal_bf - return_amt_wmantrausd
     )
 
-    def provider_received_erc20_coin() -> bool:
+    def provider_received_wmantrausd_erc20() -> bool:
         return (
-            provider_cli.balance(provider_receiver_bech32, denom=erc20_denom)
-            >= provider_erc20_bal_bf + return_amt_wmantrausd
+            wmantrausd.functions.balanceOf(receiver_evm).call()
+            >= provider_wmantrausd_bal_bf + return_amt_wmantrausd
         )
 
-    wait_for_fn("provider erc20 coin after return", provider_received_erc20_coin)
+    wait_for_fn(
+        "provider wmantraUSD ERC20 after return", provider_received_wmantrausd_erc20
+    )
 
     # 6) DistributionClaim precompile smoke test
     distribution_claim = w3.eth.contract(
