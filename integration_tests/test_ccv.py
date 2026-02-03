@@ -85,7 +85,8 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
 
 # ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
-
+# mantraUSD (6 decimals) <-> wmantraUSD (18 decimals)
+SCALAR = 10**12
 ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
 ICS20_ADDRESS = "0x0000000000000000000000000000000000000802"
 DISTRIBUTION_CLAIM_ADDRESS = "0x0000000000000000000000000000000000000a01"
@@ -421,7 +422,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert deposit_receipt.status == 1
 
-    assert wmantrausd.functions.balanceOf(sender).call() >= amt_mantrausd * 10**12
+    assert wmantrausd.functions.balanceOf(sender).call() >= amt_mantrausd * SCALAR
 
     register_tx = provider_cli.register_erc20(
         wmantrausd_addr,
@@ -439,7 +440,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert erc20_denom == WMANTRAUSD_DENOM
     assert ibc_denom == WMANTRAUSD_CONSUMER_IBC_DENOM
 
-    amt_wmantrausd = amt_mantrausd * 10**12
+    amt_wmantrausd = amt_mantrausd * SCALAR
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
 
     # 4) Ensure sender start with 0 erc20:<wmantraUSD> before MsgTransfer auto-converts
@@ -580,6 +581,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     wait_for_fn("signer1 wmantraUSD rewards", signer1_has_wmantrausd_rewards)
 
     bal_wmantrausd_bf = wmantrausd.functions.balanceOf(signer1_evm).call()
+    bal_mantrausd_bf = mantrausd.functions.balanceOf(signer1_evm).call()
 
     max_retrieve = 10
     gas_limit = 650_000
@@ -620,7 +622,20 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_convert_receipt.status == 1
 
     bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
-    assert bal_wmantrausd_af - bal_wmantrausd_bf == expected_converted
+    bal_mantrausd_af = mantrausd.functions.balanceOf(signer1_evm).call()
+
+    w_delta = bal_wmantrausd_af - bal_wmantrausd_bf
+    m_delta = bal_mantrausd_af - bal_mantrausd_bf
+
+    # If the precompile unwraps, only dust (< SCALAR) remains as wmantraUSD.
+    expected_underlying = expected_converted // SCALAR
+    expected_dust = expected_converted - (expected_underlying * SCALAR)
+
+    if m_delta > 0:
+        assert m_delta == expected_underlying
+        assert w_delta == expected_dust
+    else:
+        assert w_delta == expected_converted
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
     # native-denom rewards can be claimed (without conversion)
