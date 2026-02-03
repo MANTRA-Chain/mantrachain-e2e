@@ -448,17 +448,9 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     amt_wmantrausd = amt_mantrausd * 10**12
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
 
-    # 4) Convert ERC20 -> native coin (erc20:<wmantraUSD>) into sender
+    # 4) Ensure sender start with 0 erc20:<wmantraUSD> before MsgTransfer auto-converts
     sender_bech32 = provider_cli.address(sender_name)
     assert provider_cli.balance(sender_bech32, denom=erc20_denom) == 0
-    convert_rsp = provider_cli.convert_erc20(
-        wmantrausd_addr,
-        amt_wmantrausd,
-        _from=sender_name,
-        gas=999_999,
-    )
-    assert convert_rsp["code"] == 0, convert_rsp["raw_log"]
-    assert provider_cli.balance(sender_bech32, denom=erc20_denom) == amt_wmantrausd
 
     # 5) ICS20 transfer
     timeout_ns = int(
