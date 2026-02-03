@@ -65,7 +65,6 @@ from .utils import (
 
 pytestmark = pytest.mark.ccv
 
-CONSUMER_DENOM = "anvnm"
 TRANSFER_CHANNEL_ID = "channel-1"
 MANTRAUSD_CREATE2_SALT = 1
 WMANTRAUSD_CREATE2_SALT = 2
@@ -84,15 +83,13 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
     return f"ibc/{ibc_denom_hash(f'transfer/{transfer_channel_id}/{WMANTRAUSD_DENOM}')}"
 
 
+# ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
-
 
 ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
 ICS20_ADDRESS = "0x0000000000000000000000000000000000000802"
 DISTRIBUTION_CLAIM_ADDRESS = "0x0000000000000000000000000000000000000a01"
 DISTRIBUTION_ADDRESS = "0x0000000000000000000000000000000000000801"
-
-
 DISTRIBUTION_CLAIM_SIG = "claimRewardsAndConvertCoin(address,uint32,string)"
 
 
@@ -162,7 +159,7 @@ def ibc(request, tmp_path_factory):
         authority = cli.get_params("marketmap").get("admin")
         port = "transfer"
         channel = TRANSFER_CHANNEL_ID
-        denom = CONSUMER_DENOM
+        denom = WMANTRAUSD_CONSUMER_IBC_DENOM
         denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
         owner_address = cli.address("validator")
 
@@ -200,7 +197,6 @@ def ibc(request, tmp_path_factory):
             genesis["genesis_time"] = now.isoformat().replace("+00:00", "Z")
             genesis["app_state"]["ccvconsumer"] = consumer_genesis
             genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = [
-                CONSUMER_DENOM,
                 WMANTRAUSD_CONSUMER_IBC_DENOM,
             ]
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
@@ -235,9 +231,7 @@ def ibc(request, tmp_path_factory):
             with open(app_config_path) as f:
                 app_doc = tomlkit.parse(f.read())
             # allow paying fees with bridged wmantraUSD IBC denom
-            app_doc["minimum-gas-prices"] = (
-                f"0{CONSUMER_DENOM},0{WMANTRAUSD_CONSUMER_IBC_DENOM}"
-            )
+            app_doc["minimum-gas-prices"] = f"0{WMANTRAUSD_CONSUMER_IBC_DENOM}"
             with open(app_config_path, "w") as f:
                 f.write(tomlkit.dumps(app_doc))
 
@@ -329,7 +323,7 @@ async def test_ccv(ibc):
     assert receipt.status == 1
     assert balance - balance_bf == amt
     amt = 2000
-    denom = CONSUMER_DENOM
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
     rsp = cli2.transfer(
         cli2.address(community),
         cli2.address(signer),
