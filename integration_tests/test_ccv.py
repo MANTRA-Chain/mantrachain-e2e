@@ -253,7 +253,16 @@ async def test_ccv(ibc):
 
 
 async def test_add_registry(ibc, setup_consumer_accounts):
-    await do_test_add_registry(ibc.ibc2.async_w3)
+    metadata = json.dumps(
+        {
+            "test": "ccv",
+            "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        }
+    )
+    await do_test_add_registry(
+        ibc.ibc2.async_w3,
+        metadata=metadata,
+    )
 
 
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])

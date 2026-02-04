@@ -1,4 +1,5 @@
 import json
+import time
 from dataclasses import astuple, dataclass
 from enum import Enum
 
@@ -70,6 +71,7 @@ DOCUMENT_PRECOMPILE_ABI = [
         string description;
         string creator;
         string createdAt;
+        string metadata;
     }
     """,
     """
@@ -90,7 +92,8 @@ DOCUMENT_PRECOMPILE_ABI = [
     """
     function addRegistry(
         string memory name,
-        string memory description
+        string memory description,
+        string memory metadata
     ) returns (uint64 registryId)
     """,
     """
@@ -140,27 +143,57 @@ DOCUMENT_PRECOMPILE_ABI = [
 
 DOCUMENT_PRECOMPILE = ContractAsync.from_abi(DOCUMENT_PRECOMPILE_ABI)
 DOCUMENT_ADDRESS = "0x0000000000000000000000000000000000000A00"
-DOCUMENT_REGISTRY_ID = 1
 DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
 
 
-async def ensure_registry_exists(w3: AsyncWeb3, name=DOCUMENT_REGISTRY_DENOM):
+async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
+    registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
+        0, name, (b"", 0, 10, False, False)
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    reg = next((r for r in registries if r[1] == name), None)
+    if reg is None:
+        raise AssertionError(f"registry {name} not found")
+    return int(reg[0])
+
+
+async def ensure_registry_exists(
+    w3: AsyncWeb3,
+    name=DOCUMENT_REGISTRY_DENOM,
+    *,
+    metadata: str = "",
+) -> int:
     try:
         registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
             0, name, (b"", 0, 10, False, False)
         ).call(w3, to=DOCUMENT_ADDRESS)
-        exist = any(reg[1] == name for reg in registries)
+        reg = next((r for r in registries if r[1] == name), None)
     except Exception:
-        exist = False
-    if exist:
-        return
+        reg = None
+    if reg is not None:
+        if metadata:
+            assert (
+                reg[5] == metadata
+            ), f"expected registry metadata {metadata}, got {reg[5]}"
+        return int(reg[0])
     accounts = get_accounts()
     admin = accounts["community"]
-    receipt = await DOCUMENT_PRECOMPILE.fns.addRegistry(name, name).transact(
+    receipt = await DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata).transact(
         w3, admin, to=DOCUMENT_ADDRESS, gas=DOCUMENT_GAS
     )
     assert receipt.status == 1, f"failed to create registry {name}"
+
+    if metadata:
+        registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
+            0, name, (b"", 0, 10, False, False)
+        ).call(w3, to=DOCUMENT_ADDRESS)
+        reg = next((r for r in registries if r[1] == name), None)
+        assert reg is not None, "created registry not returned in query"
+        assert (
+            reg[5] == metadata
+        ), f"expected registry metadata {metadata}, got {reg[5]}"
+
+    return await get_registry_id(w3, name)
 
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
@@ -214,8 +247,9 @@ async def update_record_status(
     record: Record,
     status: str,
 ):
+    registry_id = await get_registry_id(w3, record.registry)
     receipt = await DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
-        DOCUMENT_REGISTRY_ID,
+        registry_id,
         record.recordId,
         record.index,
         status,
@@ -224,29 +258,36 @@ async def update_record_status(
     return receipt
 
 
-async def do_test_add_registry(w3: AsyncWeb3):
-    await ensure_registry_exists(w3)
+async def do_test_add_registry(
+    w3: AsyncWeb3,
+    *,
+    name: str | None = None,
+    metadata: str = '{"registry_meta":{"source":"integration_tests"}}',
+):
+    if name is None:
+        name = f"metadata-registry-{int(time.time() * 1000)}"
+    await ensure_registry_exists(w3, name, metadata=metadata)
 
 
 async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     editor = accounts["signer1"]
 
     receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-        DOCUMENT_REGISTRY_ID, checksum, editor.address, Role.EDITOR
+        registry_id, checksum, editor.address, Role.EDITOR
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
     assert receipt.status == 1, "GrantRole transaction failed"
 
     receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
-        DOCUMENT_REGISTRY_ID, checksum, editor.address, Role.EDITOR
+        registry_id, checksum, editor.address, Role.EDITOR
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
     assert receipt.status == 1, "RevokeRole transaction failed"
 
 
 async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     editor1 = accounts["signer1"]
@@ -256,7 +297,7 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
     checksum = ""
 
     tx = DOCUMENT_PRECOMPILE.fns.grantRole(
-        DOCUMENT_REGISTRY_ID, checksum, target.address, Role.EDITOR
+        registry_id, checksum, target.address, Role.EDITOR
     )
 
     if is_admin:
@@ -271,7 +312,7 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
 
 
 async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     editor1 = accounts["signer1"]
@@ -281,12 +322,12 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
 
     # ensure role granted first
     receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-        DOCUMENT_REGISTRY_ID, checksum, editor1.address, Role.EDITOR
+        registry_id, checksum, editor1.address, Role.EDITOR
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
     assert receipt.status == 1, "Setup grantRole failed"
 
     tx = DOCUMENT_PRECOMPILE.fns.revokeRole(
-        DOCUMENT_REGISTRY_ID, checksum, editor1.address, Role.EDITOR
+        registry_id, checksum, editor1.address, Role.EDITOR
     )
 
     if is_admin:
@@ -301,7 +342,7 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
 
 
 async def do_test_multiple_roles_management(w3: AsyncWeb3):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     editor1 = accounts["signer1"]
@@ -318,34 +359,34 @@ async def do_test_multiple_roles_management(w3: AsyncWeb3):
     # grant different roles
     for user_address, role in users_and_roles:
         receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-            DOCUMENT_REGISTRY_ID, checksum, user_address, role
+            registry_id, checksum, user_address, role
         ).transact(w3, admin, to=DOCUMENT_ADDRESS)
         assert receipt.status == 1, f"Failed to grant {role} to {user_address}"
 
     # revoke all roles
     for user_address, role in users_and_roles:
         receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
-            DOCUMENT_REGISTRY_ID, checksum, user_address, role
+            registry_id, checksum, user_address, role
         ).transact(w3, admin, to=DOCUMENT_ADDRESS)
         assert receipt.status == 1, f"Failed to revoke role from {user_address}"
 
 
 async def do_test_role_idempotency(w3: AsyncWeb3, role: Role):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     editor = accounts["signer1"]
     checksum = ""
 
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, checksum, editor, role, admin)
+    await grant_role(w3, registry_id, checksum, editor, role, admin)
     # second grant should be idempotent
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, checksum, editor, role, admin)
+    await grant_role(w3, registry_id, checksum, editor, role, admin)
 
 
 async def do_test_record_level_overrides_registry_level(
     w3: AsyncWeb3, registry_role: Role, record_role: Role
 ):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     user = accounts["signer1"]
@@ -353,31 +394,29 @@ async def do_test_record_level_overrides_registry_level(
     doc_checksum = "doc123"
 
     # registry-level role
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, reg_checksum, user, registry_role, admin)
+    await grant_role(w3, registry_id, reg_checksum, user, registry_role, admin)
     # record-level role (should override)
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, doc_checksum, user, record_role, admin)
+    await grant_role(w3, registry_id, doc_checksum, user, record_role, admin)
     # cleanup
-    await revoke_role(
-        w3, DOCUMENT_REGISTRY_ID, reg_checksum, user, registry_role, admin
-    )
-    await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc_checksum, user, record_role, admin)
+    await revoke_role(w3, registry_id, reg_checksum, user, registry_role, admin)
+    await revoke_role(w3, registry_id, doc_checksum, user, record_role, admin)
 
 
 async def do_test_role_with_different_checksums(
     w3: AsyncWeb3, doc1_role: Role, doc2_role: Role
 ):
-    await ensure_registry_exists(w3)
+    registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
     user = accounts["signer1"]
     doc1_checksum = "doc1"
     doc2_checksum = "doc2"
 
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, doc1_checksum, user, doc1_role, admin)
-    await grant_role(w3, DOCUMENT_REGISTRY_ID, doc2_checksum, user, doc2_role, admin)
+    await grant_role(w3, registry_id, doc1_checksum, user, doc1_role, admin)
+    await grant_role(w3, registry_id, doc2_checksum, user, doc2_role, admin)
 
-    await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc1_checksum, user, doc1_role, admin)
-    await revoke_role(w3, DOCUMENT_REGISTRY_ID, doc2_checksum, user, doc2_role, admin)
+    await revoke_role(w3, registry_id, doc1_checksum, user, doc1_role, admin)
+    await revoke_role(w3, registry_id, doc2_checksum, user, doc2_role, admin)
 
 
 async def do_test_add_and_query_records(w3: AsyncWeb3):
