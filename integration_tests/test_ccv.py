@@ -163,7 +163,7 @@ def ibc(request, tmp_path_factory):
         owner_address = cli.address("validator")
 
         # consumer native denom (as `ibc/<hash>` on the provider)
-        # bridge wmantraUSD rewards that unwrap back to `erc20:<wmantraUSD>` on provider
+        # bridge wmantraUSD rewards that unwrap back to `erc20:<addr>` on provider
         allowlisted_reward_denoms = [
             f"ibc/{denom_hash}",
             WMANTRAUSD_DENOM,
@@ -350,11 +350,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
 
     consumer_transfer_channel = find_open_transfer_channel_id(consumer_cli)
     provider_transfer_channel = find_open_transfer_channel_id(provider_cli)
-    assert consumer_transfer_channel and provider_transfer_channel
-
-    # `channel-0` is used for CCV; ICS20 uses the transfer channel (TRANSFER_CHANNEL_ID).
-    assert consumer_transfer_channel == TRANSFER_CHANNEL_ID
-    assert provider_transfer_channel == TRANSFER_CHANNEL_ID
+    assert consumer_transfer_channel == provider_transfer_channel == TRANSFER_CHANNEL_ID
 
     sender_name = "community"
     sender = ADDRS[sender_name]
@@ -445,7 +441,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     amt_wmantrausd = amt_mantrausd * SCALAR
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
 
-    # 4) Ensure sender starts with 0 `erc20:<wmantraUSD>` before MsgTransfer auto-converts.
+    # 4) Ensure sender starts with 0 `erc20:<addr>` before MsgTransfer auto-converts.
     sender_bech32 = provider_cli.address(sender_name)
     assert provider_cli.balance(sender_bech32, denom=erc20_denom) == 0
 
