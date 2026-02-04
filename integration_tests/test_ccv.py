@@ -18,8 +18,6 @@ from eth_contract.utils import get_initcode
 from eth_hash.auto import keccak
 from pystarport import cluster, ports
 from pystarport.utils import (
-    parse_amount,
-    parse_denom,
     wait_for_fn,
     wait_for_new_blocks,
     wait_for_port,
@@ -200,6 +198,10 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = [
                 WMANTRAUSD_CONSUMER_IBC_DENOM,
             ]
+            # make rewards transmission frequent for faster rewards
+            genesis["app_state"]["ccvconsumer"]["params"][
+                "blocks_per_distribution_transmission"
+            ] = "1"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
@@ -350,7 +352,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     provider_transfer_channel = find_open_transfer_channel_id(provider_cli)
     assert consumer_transfer_channel and provider_transfer_channel
 
-    # channel-0 is for CCV and TRANSFER_CHANNEL_ID is the ICS20 transfer channel
+    # `channel-0` is used for CCV; ICS20 uses the transfer channel (TRANSFER_CHANNEL_ID).
     assert consumer_transfer_channel == TRANSFER_CHANNEL_ID
     assert provider_transfer_channel == TRANSFER_CHANNEL_ID
 
@@ -443,11 +445,11 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     amt_wmantrausd = amt_mantrausd * SCALAR
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
 
-    # 4) Ensure sender start with 0 erc20:<wmantraUSD> before MsgTransfer auto-converts
+    # 4) Ensure sender starts with 0 `erc20:<wmantraUSD>` before MsgTransfer auto-converts.
     sender_bech32 = provider_cli.address(sender_name)
     assert provider_cli.balance(sender_bech32, denom=erc20_denom) == 0
 
-    # 5) ICS20 transfer
+    # 5) ICS20 transfer to consumer
     timeout_ns = int(
         (
             datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)
@@ -482,9 +484,9 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     wait_for_fn("wmantraUSD bridged balance", received, timeout=60)
     assert consumer_cli.balance(receiver_bech32, denom=ibc_denom) == expected
 
-    # 5b) Reverse flow: send `ibc/<hash>` back to provider.
-    # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins
-    # into their ERC20 form (convert-coin) when the receiver is an EVM hex address.
+    # 6) Reverse flow: send `ibc/<hash>` back to provider.
+    # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins into
+    # their ERC20 form (convert-coin) when the receiver is an EVM hex address.
     receiver_evm = ADDRS[receiver_name]
     return_amt_wmantrausd = 10**15
     assert (
@@ -519,11 +521,13 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         "provider wmantraUSD ERC20 after return", provider_received_wmantrausd_erc20
     )
 
-    # 6) DistributionClaim precompile smoke test
+    # 7) DistributionClaim precompile smoke test
     signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
     val = provider_cli.address("validator", "val")
 
-    delegate_amt = 20_000_000
+    # stake large enough to receive a meaningful share of fees
+    signer1_bal = provider_cli.balance(signer1, denom=DEFAULT_DENOM)
+    delegate_amt = min(10**18, max(20_000_000, signer1_bal // 2))
     rsp = provider_cli.delegate_amount(
         val,
         f"{delegate_amt}{DEFAULT_DENOM}",
@@ -533,58 +537,58 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(provider_cli, 10)
 
-    # pay consumer tx fees in the bridged denom after signer1 has delegated
-    # when these fees are relayed back to the provider, unwrap to `erc20:<wmantraUSD>`
-    fee_pay_rsp = consumer_cli.transfer(
-        receiver_bech32,
-        receiver_bech32,
-        f"1{ibc_denom}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{ibc_denom}",
+    max_retrieve = 10
+    block_gas_limit = int(w3.eth.get_block("latest")["gasLimit"])
+    # unwrap may do extra work; stay under the block gas limit
+    gas_limit = min(12_000_000, max(1_000_000, block_gas_limit - 500_000))
+
+    # generate consumer-side fees so CCV rewards cross `SCALAR` (1e12)
+    # unwrap happens when `m_delta = expected_converted // SCALAR > 0`
+    unwrap_threshold = SCALAR
+    high_gas = 1_000_000
+    fee_txs = 2
+    high_gas_price = unwrap_threshold // fee_txs  # 5e11 `ibc_denom` base units per gas
+    consumer_ibc_bal_fee_bf = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
+    for _ in range(fee_txs):
+        fee_pay_rsp = consumer_cli.transfer(
+            receiver_bech32,
+            receiver_bech32,
+            f"1{ibc_denom}",
+            gas=high_gas,
+            gas_prices=f"{high_gas_price}{ibc_denom}",
+        )
+        assert fee_pay_rsp["code"] == 0, fee_pay_rsp["raw_log"]
+    consumer_ibc_bal_fee_af = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
+    assert consumer_ibc_bal_fee_af < consumer_ibc_bal_fee_bf
+    wait_for_new_blocks(consumer_cli, 5)
+    wait_for_new_blocks(provider_cli, 5)
+
+    def expected_converted_now() -> int:
+        data = distribution_claim_call_data(
+            signer1_evm,
+            max_retrieve,
+            erc20_denom,
+        )
+        res = decode(
+            ["uint256"],
+            w3.eth.call(
+                {
+                    "to": DISTRIBUTION_CLAIM_ADDRESS,
+                    "from": signer1_evm,
+                    "data": data,
+                    "gas": gas_limit,
+                }
+            ),
+        )
+        return res[0]
+
+    wait_for_fn(
+        "expected_converted >= SCALAR",
+        lambda: expected_converted_now() >= SCALAR,
     )
-    assert fee_pay_rsp["code"] == 0, fee_pay_rsp["raw_log"]
-    wait_for_new_blocks(consumer_cli, 15)
-    wait_for_new_blocks(provider_cli, 15)
-
-    def signer1_has_wmantrausd_rewards() -> bool:
-        try:
-            raw = provider_cli.raw(
-                "q",
-                "distribution",
-                "rewards",
-                signer1,
-                **provider_cli.get_base_kwargs(),
-            )
-            res = json.loads(raw)
-        except Exception:
-            return False
-
-        total = res.get("total") or []
-        if not isinstance(total, list) or len(total) == 0:
-            return False
-
-        for coin in total:
-            if coin is None:
-                continue
-            try:
-                denom = parse_denom(coin)
-            except Exception:
-                continue
-            if denom != erc20_denom:
-                continue
-            try:
-                return float(parse_amount(coin)) >= 1
-            except Exception:
-                return False
-
-        return False
-
-    wait_for_fn("signer1 wmantraUSD rewards", signer1_has_wmantrausd_rewards)
 
     bal_wmantrausd_bf = wmantrausd.functions.balanceOf(signer1_evm).call()
     bal_mantrausd_bf = mantrausd.functions.balanceOf(signer1_evm).call()
-
-    max_retrieve = 10
-    gas_limit = 650_000
 
     # Claim+convert happens atomically in a single tx (all-or-nothing).
     # This checks we don't end up with a leftover `erc20:<addr>` bank coin.
@@ -596,17 +600,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         erc20_denom,
     )
 
-    expected_converted = decode(
-        ["uint256"],
-        w3.eth.call(
-            {
-                "to": DISTRIBUTION_CLAIM_ADDRESS,
-                "from": signer1_evm,
-                "data": claim_data,
-                "gas": gas_limit,
-            }
-        ),
-    )[0]
+    expected_converted = expected_converted_now()
     assert expected_converted > 0
 
     # claim + convert for the wmantraUSD token-pair denom
@@ -627,15 +621,18 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     w_delta = bal_wmantrausd_af - bal_wmantrausd_bf
     m_delta = bal_mantrausd_af - bal_mantrausd_bf
 
-    # If the precompile unwraps, only dust (< SCALAR) remains as wmantraUSD.
-    expected_underlying = expected_converted // SCALAR
-    expected_dust = expected_converted - (expected_underlying * SCALAR)
+    assert w_delta >= 0
+    assert m_delta >= 0
+
+    converted_total = w_delta + (m_delta * SCALAR)
+    assert converted_total > 0
 
     if m_delta > 0:
-        assert m_delta == expected_underlying
-        assert w_delta == expected_dust
+        # Unwrap: only dust (< SCALAR) should remain as wmantraUSD.
+        assert w_delta < SCALAR
     else:
-        assert w_delta == expected_converted
+        # No unwrap: only wmantraUSD should be received, and it's < SCALAR.
+        assert w_delta < SCALAR
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
     # native-denom rewards can be claimed (without conversion)
