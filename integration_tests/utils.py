@@ -1026,20 +1026,16 @@ def address_to_bytes32(addr) -> HexBytes:
     return HexBytes(addr).rjust(32, b"\x00")
 
 
-# verify Approval event with expected owner, spender, and allowance
-def assert_approval_log(receipt, owner, spender, expected):
-    approval_topic = HexBytes(ERC20.events.Approval.topic.hex())
-    approval_logs = [
-        log for log in receipt["logs"] if log["topics"][0] == approval_topic
-    ]
-    assert len(approval_logs) == 1, f"got {len(approval_logs)}"
-    approval_log = approval_logs[0]
-    assert approval_log["topics"][1] == address_to_bytes32(owner), "owner mismatch"
-    assert approval_log["topics"][2] == address_to_bytes32(spender), "spender mismatch"
-    actual = int.from_bytes(approval_log["data"], "big")
-    assert (
-        actual == expected
-    ), f"Approval allowance mismatch: expected {expected}, got {actual}"
+# verify ERC20 event (Transfer or Approval) with expected addresses and amount
+def assert_erc20_event(receipt, event, addr1, addr2, expected):
+    topic = HexBytes(event.topic.hex())
+    logs = [log for log in receipt["logs"] if log["topics"][0] == topic]
+    assert len(logs) == 1, f"expected 1 log, got {len(logs)}"
+    log = logs[0]
+    assert log["topics"][1] == address_to_bytes32(addr1), "topic[1] mismatch"
+    assert log["topics"][2] == address_to_bytes32(addr2), "topic[2] mismatch"
+    actual = int.from_bytes(log["data"], "big")
+    assert actual == expected, f"amount mismatch: expected {expected}, got {actual}"
     return True
 
 
@@ -1077,7 +1073,7 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
         to=tf_erc20_addr,
         gasPrice=await w3.eth.gas_price,
     )
-    assert_approval_log(res, signer1, signer2, approve_amt)
+    assert_erc20_event(res, ERC20.events.Approval, signer1, signer2, approve_amt)
     await asyncio.sleep(0.5)
 
     allowance = await ERC20.fns.allowance(signer1, signer2).call(w3, to=tf_erc20_addr)
@@ -1091,13 +1087,10 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
         to=tf_erc20_addr,
         gasPrice=await w3.eth.gas_price,
     )
-    transfer_logs = [
-        log
-        for log in res["logs"]
-        if log["topics"][0] == HexBytes(ERC20.events.Transfer.topic.hex())
-    ]
-    assert len(transfer_logs) == 1
-    assert_approval_log(res, signer1, signer2, approve_amt - approve_amt1)
+    assert_erc20_event(res, ERC20.events.Transfer, signer1, receiver, approve_amt1)
+    assert_erc20_event(
+        res, ERC20.events.Approval, signer1, signer2, approve_amt - approve_amt1
+    )
 
     signer1_balance = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert signer1_balance == signer1_balance_bf - approve_amt1

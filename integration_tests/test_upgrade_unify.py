@@ -126,19 +126,24 @@ async def exec(c, tmp_path):
 
     transfer_amt2 = 5
     receiver = derive_new_account(4).address
+    sender_balance = transfer_amt
+    receiver_balance = 0
+
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
+    sender_balance -= transfer_amt2
+    receiver_balance += transfer_amt2
 
     assert (
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-        == transfer_amt - transfer_amt2
+        == sender_balance
     )
     assert (
         cli.balance(eth_to_bech32(receiver), denom)
         == await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
-        == transfer_amt2
+        == receiver_balance
     )
 
     old_height = cli.block_height()
@@ -170,10 +175,12 @@ async def exec(c, tmp_path):
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
+    sender_balance -= transfer_amt2
+    receiver_balance += transfer_amt2
     assert (
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-        == transfer_amt - transfer_amt2 * 2
+        == sender_balance
     )
     assert evm_params["active_static_precompiles"] == active_precompiles
 
@@ -188,10 +195,12 @@ async def exec(c, tmp_path):
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
+    sender_balance -= transfer_amt2
+    receiver_balance += transfer_amt2
     assert (
         cli.balance(addr_b, denom)
         == await ERC20.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-        == transfer_amt - transfer_amt2 * 3
+        == sender_balance
     )
 
     deployer = acc_c
@@ -297,10 +306,12 @@ async def exec(c, tmp_path):
     await weth.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
+    sender_balance -= transfer_amt2
+    receiver_balance += transfer_amt2
     assert (
         cli.balance(addr_b, denom)
         == await weth.fns.balanceOf(sender).call(w3, to=tf_erc20_addr)
-        == transfer_amt - transfer_amt2 * 4
+        == sender_balance
     )
 
     # after migration
@@ -376,6 +387,37 @@ async def exec(c, tmp_path):
     assert len(get_block_events()) == 0
     cli = do_upgrade(
         c, "v8.0.0-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
+    )
+
+    # verify the token pair still exists and is enabled
+    pair = cli.query_erc20_token_pair(denom)
+    assert pair["enabled"]
+    assert pair["denom"] == denom
+
+    new_erc20_addr = pair["erc20_address"]
+    print(f"old_erc20_addr: {tf_erc20_addr}")
+    print(f"new_erc20_addr: {new_erc20_addr}")
+    assert (
+        new_erc20_addr != tf_erc20_addr
+    ), "erc20_address should now be the canonical CREATE2 address"
+
+    assert len(await w3.eth.get_code(new_erc20_addr)) > 0
+    new_balance = await ERC20.fns.balanceOf(sender).call(w3, to=new_erc20_addr)
+    assert new_balance == sender_balance
+    await ERC20.fns.transfer(receiver, transfer_amt2).transact(
+        w3, sender, to=new_erc20_addr, gasPrice=(await w3.eth.gas_price)
+    )
+    sender_balance -= transfer_amt2
+    receiver_balance += transfer_amt2
+    assert (
+        cli.balance(addr_b, denom)
+        == await ERC20.fns.balanceOf(sender).call(w3, to=new_erc20_addr)
+        == sender_balance
+    )
+    assert (
+        cli.balance(eth_to_bech32(receiver), denom)
+        == await ERC20.fns.balanceOf(receiver).call(w3, to=new_erc20_addr)
+        == receiver_balance
     )
 
 

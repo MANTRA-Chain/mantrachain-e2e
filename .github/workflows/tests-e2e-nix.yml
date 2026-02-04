@@ -83,7 +83,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        group: [asyncio, unmarked, slow]
+        include:
+          - group: asyncio
+            chain_config: mantrachaind
+          - group: unmarked
+            chain_config: mantrachaind
+          - group: slow
+            chain_config: mantrachaind
+          - group: evmd
+            chain_config: evmd
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -117,7 +125,8 @@ jobs:
       - name: Run test group via Makefile
         env:
           TESTS_TO_RUN: ${{ matrix.group }}
-        run: make test-e2e-nix TESTS_TO_RUN="${TESTS_TO_RUN}"
+          CHAIN_CONFIG: ${{ matrix.chain_config }}
+        run: make test-e2e-nix TESTS_TO_RUN="${TESTS_TO_RUN}" CHAIN_CONFIG="${CHAIN_CONFIG}"
       - name: Collect debug artifacts
         if: failure()
         run: tar cfz debug_${{ matrix.group }}.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" . || true

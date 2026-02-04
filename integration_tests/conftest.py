@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from .network import (
@@ -10,11 +12,11 @@ from .network import (
 def pytest_addoption(parser):
     parser.addoption(
         "--chain-config",
-        default="mantrachaind",
+        default=os.getenv("CHAIN_CONFIG", "mantrachaind"),
         action="store",
         metavar="CHAIN_CONFIG",
         required=False,
-        help="Specify chain config to test",
+        help="Specify chain config to test (default: $CHAIN_CONFIG or mantrachaind)",
     )
 
 
@@ -25,6 +27,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "asyncio: marks tests as asyncio")
     config.addinivalue_line("markers", "connect: marks connect related tests")
     config.addinivalue_line("markers", "skipped: marks skipped not supported tests")
+    config.addinivalue_line("markers", "evmd: marks tests that only run with evmd")
 
 
 def pytest_collection_modifyitems(items, config):
@@ -59,6 +62,18 @@ def pytest_collection_modifyitems(items, config):
                 or (markexpr and "skipped" in markexpr)
             ):
                 item.add_marker(skip_rollback)
+
+        # skip evmd-marked tests unless running with evmd chain config
+        if "evmd" in item.keywords:
+            if chain_config != "evmd" and not (
+                (keywordexpr and "evmd" in keywordexpr)
+                or (markexpr and "evmd" in markexpr)
+            ):
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason="evmd tests only run with --chain-config evmd"
+                    )
+                )
 
 
 @pytest.fixture(scope="session")

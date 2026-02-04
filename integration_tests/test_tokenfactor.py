@@ -8,8 +8,8 @@ from pystarport.utils import wait_for_new_blocks
 
 from .utils import (
     ACCOUNTS,
-    assert_approval_log,
     assert_create_tokenfactory_denom,
+    assert_erc20_event,
     assert_mint_tokenfactory_denom,
     assert_set_tokenfactory_denom,
     assert_transfer,
@@ -171,4 +171,6 @@ async def test_precompile_transfer_from_approval_event(mantra):
         w3, to=precompile_addr
     )
     assert allowance == new_allowance
-    assert assert_approval_log(receipt, owner.address, spender.address, new_allowance)
+    assert assert_erc20_event(
+        receipt, ERC20.events.Approval, owner.address, spender.address, new_allowance
+    )
