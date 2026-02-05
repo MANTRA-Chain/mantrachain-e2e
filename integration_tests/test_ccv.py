@@ -519,6 +519,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
 
     # 7) DistributionClaim precompile smoke test
     signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
+    signer2 = provider_cli.address("signer2")
     val = provider_cli.address("validator", "val")
 
     # stake large enough to receive a meaningful share of fees
@@ -532,6 +533,15 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(provider_cli, 10)
+
+    # test changedWithdrawAddr by set_withdraw_addr to signer1 to receive rewards,
+    # then restore it back to signer2 at the end of the tx.
+    rsp = provider_cli.set_withdraw_addr(signer2, from_=signer1, gas=200_000)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    wait_for_new_blocks(provider_cli, 1)
+    assert (
+        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
+    )
 
     max_retrieve = 10
     block_gas_limit = int(w3.eth.get_block("latest")["gasLimit"])
@@ -611,6 +621,11 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert claim_convert_receipt.status == 1
 
+    # withdraw addr should be restored
+    assert (
+        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
+    )
+
     bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
     bal_mantrausd_af = mantrausd.functions.balanceOf(signer1_evm).call()
 
@@ -630,6 +645,10 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         # No unwrap: only wmantraUSD should be received, and it's < SCALAR.
         assert w_delta < SCALAR
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
+
+    # restore default withdraw address
+    rsp = provider_cli.set_withdraw_addr(signer1, from_=signer1, gas=200_000)
+    assert rsp["code"] == 0, rsp["raw_log"]
 
     # native-denom rewards can be claimed (without conversion)
     distribution = w3.eth.contract(
