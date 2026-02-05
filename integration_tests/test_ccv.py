@@ -648,6 +648,27 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert claim_convert_receipt.status == 1
 
+    event_sig = "ClaimRewardsAndConvertCoin(address,string,uint256)"
+    event_topic0 = keccak(event_sig.encode())
+    signer1_topic = (bytes.fromhex(signer1_evm[2:])).rjust(32, b"\x00")
+
+    receipt = w3.eth.get_transaction_receipt(claim_convert_receipt.transactionHash)
+    logs = [
+        log
+        for log in receipt["logs"]
+        if log["address"].lower() == DISTRIBUTION_CLAIM_ADDRESS.lower()
+        and len(log["topics"]) >= 2
+        and bytes(log["topics"][0]) == event_topic0
+    ]
+    assert len(logs) == 1
+    log = logs[0]
+    assert bytes(log["topics"][1]) == signer1_topic
+    ev_denom, ev_amount = decode(
+        ["string", "uint256"],
+        bytes(log["data"]),
+    )
+    assert ev_denom == erc20_denom
+    assert ev_amount > 0
 
     bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
     bal_mantrausd_af = mantrausd.functions.balanceOf(signer1_evm).call()
