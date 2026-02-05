@@ -76,7 +76,7 @@
   },
   inveniamd: {
     'account-prefix': 'inveniam',
-    evm_denom: 'ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9',
+    evm_denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
     cmd: 'inveniamd',
     chain_id: 'inveniam_58886-1',
     evm_chain_id: 58886,
@@ -85,7 +85,7 @@
         description: 'Native 18-decimal denom metadata for Cosmos EVM chain',
         denom_units: [
           {
-            denom: 'ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9',
+            denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
             exponent: 0,
           },
           {
@@ -93,7 +93,7 @@
             exponent: 18,
           },
         ],
-        base: 'ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9',
+        base: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
         display: 'nvnm',
         name: 'nvnm',
         symbol: 'NVNM',

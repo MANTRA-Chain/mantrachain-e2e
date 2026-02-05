@@ -81,7 +81,7 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
     return f"ibc/{ibc_denom_hash(f'transfer/{transfer_channel_id}/{WMANTRAUSD_DENOM}')}"
 
 
-# ibc/343425D4475D42FD371D0A9CD2BC314F9E3238D59B9BEA0A747D4D1AFBBC7CC9
+# ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
 # mantraUSD (6 decimals) <-> wmantraUSD (18 decimals)
 SCALAR = 10**12
@@ -413,7 +413,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
 
     deposit_receipt = send_transaction(
         w3,
-        wmantrausd.functions.deposit(amt_mantrausd).build_transaction(
+        wmantrausd.functions.depositFor(sender, amt_mantrausd).build_transaction(
             {"from": sender, "gas": 500_000}
         ),
         sender_key,
