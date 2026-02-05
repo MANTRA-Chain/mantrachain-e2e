@@ -519,7 +519,6 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
 
     # 7) DistributionClaim precompile smoke test
     signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
-    signer2 = provider_cli.address("signer2")
     val = provider_cli.address("validator", "val")
 
     # stake large enough to receive a meaningful share of fees
@@ -534,19 +533,47 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(provider_cli, 10)
 
-    # test changedWithdrawAddr by set_withdraw_addr to signer1 to receive rewards,
-    # then restore it back to signer2 at the end of the tx.
-    rsp = provider_cli.set_withdraw_addr(signer2, from_=signer1, gas=200_000)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    wait_for_new_blocks(provider_cli, 1)
+    # withdraw address must equal delegator for this precompile.
     assert (
-        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
+        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer1
     )
 
     max_retrieve = 10
     block_gas_limit = int(w3.eth.get_block("latest")["gasLimit"])
     # unwrap may do extra work; stay under the block gas limit
     gas_limit = min(12_000_000, max(1_000_000, block_gas_limit - 500_000))
+
+    # require(withdrawAddr == delegator)
+    signer2 = provider_cli.address("signer2")
+    rsp = provider_cli.set_withdraw_addr(signer2, from_=signer1, gas=200_000)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert (
+        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
+    )
+
+    bad_claim_data = distribution_claim_call_data(
+        signer1_evm,
+        max_retrieve,
+        erc20_denom,
+    )
+    bad_claim_convert_receipt = send_transaction(
+        w3,
+        {
+            "to": DISTRIBUTION_CLAIM_ADDRESS,
+            "data": bad_claim_data,
+            "gas": gas_limit,
+        },
+        KEYS["signer1"],
+    )
+    assert bad_claim_convert_receipt.status == 0
+    assert provider_cli.balance(signer1, denom=erc20_denom) == 0
+
+    # proceed with the happy-path claim+convert
+    rsp = provider_cli.set_withdraw_addr(signer1, from_=signer1, gas=200_000)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert (
+        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer1
+    )
 
     # generate consumer-side fees so CCV rewards cross `SCALAR` (1e12)
     # unwrap happens when `m_delta = expected_converted // SCALAR > 0`
@@ -621,10 +648,6 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert claim_convert_receipt.status == 1
 
-    # withdraw addr should be restored
-    assert (
-        provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
-    )
 
     bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
     bal_mantrausd_af = mantrausd.functions.balanceOf(signer1_evm).call()
