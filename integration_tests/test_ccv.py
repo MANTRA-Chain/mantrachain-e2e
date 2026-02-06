@@ -689,14 +689,16 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert m_delta >= 0
 
     converted_total = w_delta + (m_delta * SCALAR)
-    assert converted_total > 0
+    assert converted_total == ev_amount
+    assert converted_total >= expected_converted
 
     if m_delta > 0:
-        # Unwrap: only dust (< SCALAR) should remain as wmantraUSD.
+        # Unwrap happened: only dust (< SCALAR) should remain as wmantraUSD.
         assert w_delta < SCALAR
     else:
-        # No unwrap: only wmantraUSD should be received, and it's < SCALAR.
-        assert w_delta < SCALAR
+        # No unwrap: all converted amount remains as wrapper.
+        assert m_delta == 0
+        assert w_delta == ev_amount
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
     # restore default withdraw address
