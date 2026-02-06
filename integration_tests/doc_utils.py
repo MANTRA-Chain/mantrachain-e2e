@@ -581,21 +581,6 @@ async def do_test_add_record_same_checksum_maintains_record_id(w3: AsyncWeb3):
     await add_record(w3, admin, checksum, name="Version 2")
 
 
-async def _assert_add_record_effects(
-    w3: AsyncWeb3,
-    *,
-    checksum: str,
-    record_id: int,
-):
-    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        DOCUMENT_REGISTRY_DENOM, checksum, record_id, 0, (b"", 0, 100, False, False)
-    ).call(w3, to=DOCUMENT_ADDRESS)
-    records = [Record.from_tuple(r) for r in records]
-    assert len(records) == 1, f"expected 1 record, got {len(records)}"
-    assert records[0].checksum == checksum
-    return records[0]
-
-
 async def _add_record_and_set_status(
     w3: AsyncWeb3,
     *,
@@ -615,9 +600,19 @@ async def _add_record_and_set_status(
     )
     assert int(ev_registry_id) == int(registry_id)
     assert ev_checksum == checksum
-    record = await _assert_add_record_effects(
-        w3, checksum=checksum, record_id=int(record_id)
-    )
+
+    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
+        DOCUMENT_REGISTRY_DENOM,
+        "",
+        int(record_id),
+        0,
+        (b"", 0, 100, False, False),
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    records = [Record.from_tuple(r) for r in records]
+    assert len(records) == 1, f"expected 1 record, got {len(records)}"
+    record = records[0]
+    assert record.checksum == checksum
+
     await update_record_status(w3, admin, record, status)
 
 
