@@ -482,6 +482,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     # 6) Reverse flow: send `ibc/<hash>` back to provider.
     # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins into
     # their ERC20 form (convert-coin) when the receiver is an EVM hex address.
+    # with `{"mantra":{"unwrap":true}}` memo, provider will also best-effort unwrap
+    # wrapper ERC20s (wmantraUSD) into the underlying (mantraUSD).
     receiver_evm = ADDRS[receiver_name]
     return_amt_wmantrausd = 10**15
     assert (
@@ -489,13 +491,17 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
 
     provider_wmantrausd_bal_bf = wmantrausd.functions.balanceOf(receiver_evm).call()
+    provider_mantrausd_bal_bf = mantrausd.functions.balanceOf(receiver_evm).call()
     consumer_ibc_bal_bf = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
+
+    unwrap_memo = json.dumps({"mantra": {"unwrap": True}})
 
     return_rsp = consumer_cli.ibc_transfer(
         receiver_evm,
         f"{return_amt_wmantrausd}{ibc_denom}",
         consumer_transfer_channel,
         from_=receiver_bech32,
+        memo=unwrap_memo,
         gas_prices=f"{DEFAULT_GAS_AMT}{ibc_denom}",
     )
     assert return_rsp["code"] == 0, return_rsp["raw_log"]
@@ -506,15 +512,19 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         <= consumer_ibc_bal_bf - return_amt_wmantrausd
     )
 
-    def provider_received_wmantrausd_erc20() -> bool:
-        return (
-            wmantrausd.functions.balanceOf(receiver_evm).call()
-            >= provider_wmantrausd_bal_bf + return_amt_wmantrausd
-        )
+    expected_min_unwrapped = return_amt_wmantrausd // SCALAR
 
-    wait_for_fn(
-        "provider wmantraUSD ERC20 after return", provider_received_wmantrausd_erc20
-    )
+    def provider_received_unwrapped() -> bool:
+        w_after = wmantrausd.functions.balanceOf(receiver_evm).call()
+        m_after = mantrausd.functions.balanceOf(receiver_evm).call()
+        w_delta = w_after - provider_wmantrausd_bal_bf
+        m_delta = m_after - provider_mantrausd_bal_bf
+
+        # unwrap should yield underlying tokens
+        # with only dust (< SCALAR) left as wrapper
+        return m_delta >= expected_min_unwrapped and 0 <= w_delta < SCALAR
+
+    wait_for_fn("provider mantraUSD after unwrap", provider_received_unwrapped)
 
     # 7) DistributionClaim precompile smoke test
     signer1, signer1_evm = provider_cli.address("signer1"), ADDRS["signer1"]
