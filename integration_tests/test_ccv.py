@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 import tomlkit
-from eth_abi import decode, encode
+from eth_abi.abi import decode, encode
 from eth_account import Account
 from eth_contract.contract import Contract
 from eth_contract.create2 import create2_address
@@ -37,7 +37,6 @@ from .doc_utils import (
     do_test_query_all_registries_for_checksum,
     do_test_query_by_registry_and_checksum,
     do_test_record_level_overrides_registry_level,
-    do_test_remove_record,
     do_test_revoke_role_permissions,
     do_test_role_idempotency,
     do_test_role_with_different_checksums,
@@ -789,10 +788,6 @@ async def test_add_record_same_checksum_maintains_record_id(
 
 async def test_add_record(ibc, setup_consumer_accounts):
     await do_test_add_record(ibc.ibc2.async_w3)
-
-
-async def test_remove_record(ibc, setup_consumer_accounts):
-    await do_test_remove_record(ibc.ibc2.async_w3)
 
 
 async def test_shared_checksum_in_multi_registries(ibc, setup_consumer_accounts):

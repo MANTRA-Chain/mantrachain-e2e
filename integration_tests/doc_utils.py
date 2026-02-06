@@ -3,7 +3,9 @@ import time
 from dataclasses import astuple, dataclass
 from enum import Enum
 
+from eth_abi.abi import decode as abi_decode
 from eth_contract.contract import Contract as ContractAsync
+from eth_hash.auto import keccak
 from web3 import AsyncWeb3
 
 from .utils import ACCOUNTS
@@ -97,7 +99,7 @@ DOCUMENT_PRECOMPILE_ABI = [
     ) returns (uint64 registryId)
     """,
     """
-    function addRecord(Record memory record)
+    function addRecord(Record memory record) returns (uint64 recordId)
     """,
     """
     function updateRecordStatus(
@@ -147,6 +149,101 @@ DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
 
 
+def _as_bytes(value) -> bytes:
+    if value is None:
+        return b""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, str):
+        value = value.strip()
+        return bytes.fromhex(value[2:] if value.startswith("0x") else value)
+    return bytes(value)
+
+
+def _decode_document_event_data(
+    receipt,
+    *,
+    event_sig: str,
+    caller: str,
+    data_types: list[str],
+):
+    topic0 = keccak(event_sig.encode())
+    caller_topic = b"\x00" * 12 + bytes.fromhex(caller[2:])
+
+    for log in receipt["logs"]:
+        if log["address"].lower() != DOCUMENT_ADDRESS.lower():
+            continue
+
+        topics = log["topics"]
+        if not topics or _as_bytes(topics[0]) != topic0:
+            continue
+
+        if len(topics) < 2 or _as_bytes(topics[1]) != caller_topic:
+            continue
+
+        return list(abi_decode(data_types, _as_bytes(log["data"])))
+
+    raise AssertionError(f"missing event {event_sig} from {DOCUMENT_ADDRESS}")
+
+
+async def _assert_add_record_event(
+    w3: AsyncWeb3,
+    receipt,
+    *,
+    caller: str,
+    registry: str,
+    checksum: str,
+):
+    registry_id = await get_registry_id(w3, registry)
+
+    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
+        registry, checksum, 0, 0, (b"", 0, 50, False, False)
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    parsed = [Record.from_tuple(r) for r in records]
+    assert parsed, f"expected record after addRecord({registry}, {checksum})"
+
+    # for versioned records, event should reflect the latest version
+    rec = max(parsed, key=lambda r: int(r.index))
+
+    assert_document_event(
+        receipt,
+        event_sig="AddRecord(address,uint64,uint64,uint64,string)",
+        caller=caller,
+        data_types=["uint64", "uint64", "uint64", "string"],
+        expected_data=[registry_id, int(rec.recordId), int(rec.index), checksum],
+    )
+
+
+def assert_document_event(
+    receipt,
+    *,
+    event_sig: str,
+    caller: str,
+    data_types: list[str],
+    expected_data: list,
+):
+    decoded = _decode_document_event_data(
+        receipt,
+        event_sig=event_sig,
+        caller=caller,
+        data_types=data_types,
+    )
+
+    if len(decoded) != len(expected_data):
+        raise AssertionError(
+            f"{event_sig} data length mismatch: {decoded} != {expected_data}"
+        )
+
+    for typ, got, exp in zip(data_types, decoded, expected_data, strict=True):
+        if typ == "address":
+            got, exp = got.lower(), exp.lower()
+        if got != exp:
+            kind = "address" if typ == "address" else "data"
+            raise AssertionError(
+                f"{event_sig} {kind} mismatch:\n  got: {got}\n  expected: {exp}"
+            )
+
+
 async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
     registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
         0, name, (b"", 0, 10, False, False)
@@ -183,6 +280,15 @@ async def ensure_registry_exists(
     )
     assert receipt.status == 1, f"failed to create registry {name}"
 
+    registry_id = await get_registry_id(w3, name)
+    assert_document_event(
+        receipt,
+        event_sig="AddRegistry(address,uint64,string)",
+        caller=admin.address,
+        data_types=["uint64", "string"],
+        expected_data=[int(registry_id), name],
+    )
+
     if metadata:
         registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
             0, name, (b"", 0, 10, False, False)
@@ -197,22 +303,40 @@ async def ensure_registry_exists(
 
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
+    role_value = role.value if isinstance(role, Role) else str(role)
     receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-        registry_id, checksum, user.address, role
+        registry_id, checksum, user.address, role_value
     ).transact(w3, sender, to=DOCUMENT_ADDRESS)
     assert (
         receipt.status == 1
     ), f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed"
+
+    assert_document_event(
+        receipt,
+        event_sig="GrantRole(address,uint64,string,address,string)",
+        caller=sender.address,
+        data_types=["uint64", "string", "address", "string"],
+        expected_data=[int(registry_id), str(checksum), user.address, role_value],
+    )
     return receipt
 
 
 async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
+    role_value = role.value if isinstance(role, Role) else str(role)
     receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
-        registry_id, checksum, user.address, role
+        registry_id, checksum, user.address, role_value
     ).transact(w3, sender, to=DOCUMENT_ADDRESS)
     assert (
         receipt.status == 1
     ), f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed"
+
+    assert_document_event(
+        receipt,
+        event_sig="RevokeRole(address,uint64,string,address,string)",
+        caller=sender.address,
+        data_types=["uint64", "string", "address", "string"],
+        expected_data=[int(registry_id), str(checksum), user.address, role_value],
+    )
     return receipt
 
 
@@ -238,6 +362,14 @@ async def add_record(
     assert (
         receipt.status == 1
     ), f"failed to add record {checksum} to registry {registry}"
+
+    await _assert_add_record_event(
+        w3,
+        receipt,
+        caller=admin.address,
+        registry=registry,
+        checksum=checksum,
+    )
     return receipt
 
 
@@ -255,6 +387,19 @@ async def update_record_status(
         status,
     ).transact(w3, admin, to=DOCUMENT_ADDRESS)
     assert receipt.status == 1, f"updateRecordStatus({status}) failed"
+
+    assert_document_event(
+        receipt,
+        event_sig="UpdateRecordStatus(address,uint64,uint64,uint64,string)",
+        caller=admin.address,
+        data_types=["uint64", "uint64", "uint64", "string"],
+        expected_data=[
+            int(registry_id),
+            int(record.recordId),
+            int(record.index),
+            str(status),
+        ],
+    )
     return receipt
 
 
@@ -275,15 +420,8 @@ async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
     admin = accounts["community"]
     editor = accounts["signer1"]
 
-    receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-        registry_id, checksum, editor.address, Role.EDITOR
-    ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-    assert receipt.status == 1, "GrantRole transaction failed"
-
-    receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
-        registry_id, checksum, editor.address, Role.EDITOR
-    ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-    assert receipt.status == 1, "RevokeRole transaction failed"
+    await grant_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
+    await revoke_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
 
 
 async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
@@ -301,8 +439,7 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
     )
 
     if is_admin:
-        receipt = await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
-        assert receipt.status == 1, "GrantRole transaction failed"
+        await grant_role(w3, registry_id, checksum, target, Role.EDITOR, sender)
     else:
         try:
             await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
@@ -321,18 +458,14 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
     checksum = ""
 
     # ensure role granted first
-    receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-        registry_id, checksum, editor1.address, Role.EDITOR
-    ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-    assert receipt.status == 1, "Setup grantRole failed"
+    await grant_role(w3, registry_id, checksum, editor1, Role.EDITOR, admin)
 
     tx = DOCUMENT_PRECOMPILE.fns.revokeRole(
         registry_id, checksum, editor1.address, Role.EDITOR
     )
 
     if is_admin:
-        receipt = await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
-        assert receipt.status == 1, "RevokeRole transaction failed"
+        await revoke_role(w3, registry_id, checksum, editor1, Role.EDITOR, sender)
     else:
         try:
             await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
@@ -358,17 +491,13 @@ async def do_test_multiple_roles_management(w3: AsyncWeb3):
 
     # grant different roles
     for user_address, role in users_and_roles:
-        receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
-            registry_id, checksum, user_address, role
-        ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-        assert receipt.status == 1, f"Failed to grant {role} to {user_address}"
+        user = next(a for a in accounts.values() if a.address == user_address)
+        await grant_role(w3, registry_id, checksum, user, role, admin)
 
     # revoke all roles
     for user_address, role in users_and_roles:
-        receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
-            registry_id, checksum, user_address, role
-        ).transact(w3, admin, to=DOCUMENT_ADDRESS)
-        assert receipt.status == 1, f"Failed to revoke role from {user_address}"
+        user = next(a for a in accounts.values() if a.address == user_address)
+        await revoke_role(w3, registry_id, checksum, user, role, admin)
 
 
 async def do_test_role_idempotency(w3: AsyncWeb3, role: Role):
@@ -452,32 +581,59 @@ async def do_test_add_record_same_checksum_maintains_record_id(w3: AsyncWeb3):
     await add_record(w3, admin, checksum, name="Version 2")
 
 
+async def _assert_add_record_effects(
+    w3: AsyncWeb3,
+    *,
+    checksum: str,
+    record_id: int,
+):
+    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
+        DOCUMENT_REGISTRY_DENOM, checksum, record_id, 0, (b"", 0, 100, False, False)
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    records = [Record.from_tuple(r) for r in records]
+    assert len(records) == 1, f"expected 1 record, got {len(records)}"
+    assert records[0].checksum == checksum
+    return records[0]
+
+
+async def _add_record_and_set_status(
+    w3: AsyncWeb3,
+    *,
+    checksum: str,
+    name: str,
+    status: str,
+):
+    registry_id = await ensure_registry_exists(w3)
+    accounts = get_accounts()
+    admin = accounts["community"]
+    receipt = await add_record(w3, admin, checksum, name=name)
+    ev_registry_id, record_id, _, ev_checksum = _decode_document_event_data(
+        receipt,
+        event_sig="AddRecord(address,uint64,uint64,uint64,string)",
+        caller=admin.address,
+        data_types=["uint64", "uint64", "uint64", "string"],
+    )
+    assert int(ev_registry_id) == int(registry_id)
+    assert ev_checksum == checksum
+    record = await _assert_add_record_effects(
+        w3, checksum=checksum, record_id=int(record_id)
+    )
+    await update_record_status(w3, admin, record, status)
+
+
 async def do_test_add_record(w3: AsyncWeb3):
-    await ensure_registry_exists(w3)
-    accounts = get_accounts()
-    admin = accounts["community"]
-    checksum = "record_123"
-    await add_record(w3, admin, checksum, name="Test Record")
-    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        DOCUMENT_REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
-    ).call(w3, to=DOCUMENT_ADDRESS)
-    records = [Record.from_tuple(r) for r in records]
-    assert len(records) > 0, f"Record with checksum {checksum} not found"
-    await update_record_status(w3, admin, records[0], "verified")
-
-
-async def do_test_remove_record(w3: AsyncWeb3):
-    await ensure_registry_exists(w3)
-    accounts = get_accounts()
-    admin = accounts["community"]
-    checksum = "remove_test_123"
-    await add_record(w3, admin, checksum, name="To Remove")
-    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        DOCUMENT_REGISTRY_DENOM, checksum, 0, 0, (b"", 0, 100, False, False)
-    ).call(w3, to=DOCUMENT_ADDRESS)
-    records = [Record.from_tuple(r) for r in records]
-    assert len(records) > 0, f"Record with checksum {checksum} not found"
-    await update_record_status(w3, admin, records[0], "removed")
+    await _add_record_and_set_status(
+        w3,
+        checksum="record_123",
+        name="Test Record",
+        status="verified",
+    )
+    await _add_record_and_set_status(
+        w3,
+        checksum="remove_test_123",
+        name="To Remove",
+        status="removed",
+    )
 
 
 async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
@@ -510,6 +666,14 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
             w3, admin, to=DOCUMENT_ADDRESS, gas=DOCUMENT_GAS
         )
         assert receipt.status == 1, f"failed to add record to {name}"
+
+        await _assert_add_record_event(
+            w3,
+            receipt,
+            caller=admin.address,
+            registry=name,
+            checksum=checksum,
+        )
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
         "", checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
