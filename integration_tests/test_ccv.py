@@ -496,15 +496,33 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
 
     unwrap_memo = json.dumps({"mantra": {"unwrap": True}})
 
-    return_rsp = consumer_cli.ibc_transfer(
-        receiver_evm,
-        f"{return_amt_wmantrausd}{ibc_denom}",
-        consumer_transfer_channel,
-        from_=receiver_bech32,
-        memo=unwrap_memo,
-        gas_prices=f"{DEFAULT_GAS_AMT}{ibc_denom}",
+    timeout_ns = int(
+        (
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)
+        ).timestamp()
+        * 1_000_000_000
     )
-    assert return_rsp["code"] == 0, return_rsp["raw_log"]
+    ics20_return_call = ICS20_PRECOMPILE.fns.transfer(
+        "transfer",
+        consumer_transfer_channel,
+        ibc_denom,
+        return_amt_wmantrausd,
+        receiver_evm,
+        receiver_evm,
+        (0, 0),
+        timeout_ns,
+        unwrap_memo,
+    )
+    ics20_return_receipt = send_transaction(
+        ibc.ibc2.w3,
+        {
+            "to": ICS20_ADDRESS,
+            "data": ics20_return_call.data,
+            "gas": 3_000_000,
+        },
+        KEYS[receiver_name],
+    )
+    assert ics20_return_receipt.status == 1
 
     # Consumer spent at least `return_amt_wmantrausd` (plus fees).
     assert (
