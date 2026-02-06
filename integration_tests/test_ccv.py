@@ -99,6 +99,15 @@ def distribution_claim_call_data(
     return "0x" + (selector + args).hex()
 
 
+def ibc_timeout_ns(minutes: int = 10) -> int:
+    return int(
+        (
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=minutes)
+        ).timestamp()
+        * 1_000_000_000
+    )
+
+
 def find_open_transfer_channel_id(cli) -> str | None:
     try:
         for ch in cli.ibc_query_all_channels():
@@ -445,12 +454,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert provider_cli.balance(sender_bech32, denom=erc20_denom) == 0
 
     # 5) ICS20 transfer to consumer
-    timeout_ns = int(
-        (
-            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)
-        ).timestamp()
-        * 1_000_000_000
-    )
+    timeout_ns = ibc_timeout_ns()
     ics20_call = ICS20_PRECOMPILE.fns.transfer(
         "transfer",
         provider_transfer_channel,
@@ -482,8 +486,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     # 6) Reverse flow: send `ibc/<hash>` back to provider.
     # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins into
     # their ERC20 form (convert-coin) when the receiver is an EVM hex address.
-    # with `{"mantra":{"unwrap":true}}` memo, provider will also best-effort unwrap
-    # wrapper ERC20s (wmantraUSD) into the underlying (mantraUSD).
+    # Provider will also best-effort unwrap wrapper ERC20s (wmantraUSD) into the
+    # underlying (mantraUSD) by default (for non-ICS-rewards packets).
     receiver_evm = ADDRS[receiver_name]
     return_amt_wmantrausd = 10**15
     assert (
@@ -494,14 +498,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     provider_mantrausd_bal_bf = mantrausd.functions.balanceOf(receiver_evm).call()
     consumer_ibc_bal_bf = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
 
-    unwrap_memo = json.dumps({"mantra": {"unwrap": True}})
-
-    timeout_ns = int(
-        (
-            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=10)
-        ).timestamp()
-        * 1_000_000_000
-    )
+    timeout_ns = ibc_timeout_ns()
     ics20_return_call = ICS20_PRECOMPILE.fns.transfer(
         "transfer",
         consumer_transfer_channel,
@@ -511,7 +508,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         receiver_evm,
         (0, 0),
         timeout_ns,
-        unwrap_memo,
+        "",
     )
     ics20_return_receipt = send_transaction(
         ibc.ibc2.w3,
