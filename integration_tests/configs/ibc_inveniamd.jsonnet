@@ -12,6 +12,12 @@ config {
     'account-prefix': chain['account-prefix'],
     genesis+: {
       app_state+: {
+        erc20+: {
+          params+: {
+            enable_erc20: true,
+            permissionless_registration: true,
+          },
+        },
         provider+: {
           params+: {
             blocks_per_epoch: 5,
@@ -50,7 +56,19 @@ config {
             extended_denom_options+: {
               extended_denom: inveniamd_chain.evm_denom,
             },
-            active_static_precompiles: basic.genesis.app_state.evm.params.active_static_precompiles + inveniamd_chain.evm.params.active_static_precompiles,
+            active_static_precompiles: std.sort(
+              [
+                '0x0000000000000000000000000000000000000100',
+                '0x0000000000000000000000000000000000000400',
+                '0x0000000000000000000000000000000000000800',
+                '0x0000000000000000000000000000000000000801',
+                '0x0000000000000000000000000000000000000802',
+                '0x0000000000000000000000000000000000000804',
+                '0x0000000000000000000000000000000000000805',
+                '0x0000000000000000000000000000000000000807',
+              ] + inveniamd_chain.evm.params.active_static_precompiles,
+              function(x) std.asciiLower(x)
+            ),
           },
         },
         erc20: {},

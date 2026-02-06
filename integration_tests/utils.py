@@ -83,6 +83,7 @@ SCALE_FACTOR = 4_000_000_000_000
 
 WETH_SALT = 999
 WETH_ADDRESS = create2_address(get_initcode(WETH9_ARTIFACT), WETH_SALT)
+WOM = to_checksum_address("0x4200000000000000000000000000000000000006")
 
 MockERC20_ARTIFACT = json.loads(
     Path(__file__).parent.joinpath("contracts/contracts/MockERC20.json").read_text()
@@ -347,14 +348,20 @@ def build_contract(name, dir="contracts", contract=None) -> dict:
     contract = contract or name
     if contract in CONTRACTS:
         return CONTRACTS[contract]
+
+    base_dir = Path(__file__).resolve().parent
+    contracts_dir = base_dir / "contracts"
+    build_dir = base_dir / "build"
+    sol_path = contracts_dir / dir / f"{name}.sol"
+    remappings_path = contracts_dir / "remappings.txt"
     cmd = [
         "solc",
         "--abi",
         "--bin",
         "--bin-runtime",
-        f"contracts/{dir}/{name}.sol",
+        str(sol_path),
         "-o",
-        "build",
+        str(build_dir),
         "--overwrite",
         "--optimize",
         "--optimize-runs",
@@ -364,19 +371,23 @@ def build_contract(name, dir="contracts", contract=None) -> dict:
         "none",
         "--no-cbor-metadata",
         "--base-path",
-        "./contracts",
+        str(contracts_dir),
         # "$(cat contracts/remappings.txt)",
     ]
-    with open("contracts/remappings.txt", "r") as f:
+
+    with remappings_path.open("r") as f:
         remappings = f.read().strip().split()
 
     cmd.extend(remappings)
     print(*cmd)
-    subprocess.run(cmd, check=True)
-    bytecode = Path(f"build/{contract}.bin").read_text().strip()
-    code = Path(f"build/{contract}.bin-runtime").read_text().strip()
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(cmd, check=True, cwd=base_dir)
+
+    bytecode = (build_dir / f"{contract}.bin").read_text().strip()
+    code = (build_dir / f"{contract}.bin-runtime").read_text().strip()
     result = {
-        "abi": json.loads(Path(f"build/{contract}.abi").read_text()),
+        "abi": json.loads((build_dir / f"{contract}.abi").read_text()),
         "bytecode": f"0x{bytecode}",
         "code": f"0x{code}",
     }
