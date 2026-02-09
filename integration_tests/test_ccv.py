@@ -488,8 +488,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     # 6) Reverse flow: send `ibc/<hash>` back to provider.
     # Provider transfer middleware auto-converts returned `erc20:<addr>` bank coins into
     # their ERC20 form (convert-coin) when the receiver is an EVM hex address.
-    # Provider will also best-effort unwrap wrapper ERC20s (wmantraUSD) into the
-    # underlying (mantraUSD) by default (for non-ICS-rewards packets).
+    # with `{"mantra":{"unwrap":true}}` memo, provider will also best-effort unwrap
+    # wrapper ERC20s (wmantraUSD) into the underlying (mantraUSD).
     receiver_evm = ADDRS[receiver_name]
     return_amt_wmantrausd = 10**15
     assert (
@@ -500,6 +500,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     provider_mantrausd_bal_bf = mantrausd.functions.balanceOf(receiver_evm).call()
     consumer_ibc_bal_bf = consumer_cli.balance(receiver_bech32, denom=ibc_denom)
 
+    unwrap_memo = json.dumps({"mantra": {"unwrap": True}})
     timeout_ns = ibc_timeout_ns()
     ics20_return_call = ICS20_PRECOMPILE.fns.transfer(
         "transfer",
@@ -510,7 +511,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         receiver_evm,
         (0, 0),
         timeout_ns,
-        "",
+        unwrap_memo,
     )
     ics20_return_receipt = send_transaction(
         ibc.ibc2.w3,
