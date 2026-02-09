@@ -455,7 +455,7 @@ async def do_test_disallow_last_admin_self_revoke(w3: AsyncWeb3):
 
     accounts = get_accounts()
     admin = accounts["community"]
-    replacement_admin = accounts["signer1"]
+    replacement_admin = accounts["validator"]
     target = accounts["signer2"]
 
     # last-admin revoke must fail
