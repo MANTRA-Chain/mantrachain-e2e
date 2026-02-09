@@ -30,6 +30,7 @@ from .doc_utils import (
     do_test_add_record,
     do_test_add_record_same_checksum_maintains_record_id,
     do_test_add_registry,
+    do_test_checksum_only_query_respects_limit,
     do_test_grant_and_revoke_role_as_admin,
     do_test_grant_role_permissions,
     do_test_multiple_roles_management,
@@ -839,3 +840,7 @@ async def test_multiple_versions_same_checksum_across_registries(
 
 async def test_query_all_registries_for_checksum(ibc, setup_consumer_accounts):
     await do_test_query_all_registries_for_checksum(ibc.ibc2.async_w3)
+
+
+async def test_checksum_only_query_respects_limit(ibc, setup_consumer_accounts):
+    await do_test_checksum_only_query_respects_limit(ibc.ibc2.async_w3)
