@@ -149,6 +149,26 @@ DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
 
 
+async def _tx_params(w3: AsyncWeb3, *, gas: int = DOCUMENT_GAS) -> dict:
+    try:
+        block = await w3.eth.get_block("latest")
+        base_fee = block.get("baseFeePerGas")
+        if base_fee:
+            base_fee = int(base_fee)
+            priority_fee = 2_000_000_000  # 2 gwei
+            return {
+                "gas": gas,
+                "maxFeePerGas": base_fee * 2 + priority_fee,
+                "maxPriorityFeePerGas": priority_fee,
+            }
+    except Exception:
+        pass
+    try:
+        return {"gas": gas, "gasPrice": int(await w3.eth.gas_price)}
+    except Exception:
+        return {"gas": gas}
+
+
 def _as_bytes(value) -> bytes:
     if value is None:
         return b""
@@ -275,8 +295,9 @@ async def ensure_registry_exists(
         return int(reg[0])
     accounts = get_accounts()
     admin = accounts["community"]
+    txp = await _tx_params(w3)
     receipt = await DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata).transact(
-        w3, admin, to=DOCUMENT_ADDRESS, gas=DOCUMENT_GAS
+        w3, admin, to=DOCUMENT_ADDRESS, **txp
     )
     assert receipt.status == 1, f"failed to create registry {name}"
 
@@ -304,9 +325,10 @@ async def ensure_registry_exists(
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     role_value = role.value if isinstance(role, Role) else str(role)
+    txp = await _tx_params(w3)
     receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
         registry_id, checksum, user.address, role_value
-    ).transact(w3, sender, to=DOCUMENT_ADDRESS)
+    ).transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed"
@@ -323,9 +345,10 @@ async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
 
 async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     role_value = role.value if isinstance(role, Role) else str(role)
+    txp = await _tx_params(w3)
     receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
         registry_id, checksum, user.address, role_value
-    ).transact(w3, sender, to=DOCUMENT_ADDRESS)
+    ).transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed"
@@ -356,8 +379,9 @@ async def add_record(
         index=0,
         isLatest=False,
     )
+    txp = await _tx_params(w3)
     receipt = await DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc)).transact(
-        w3, admin, to=DOCUMENT_ADDRESS, gas=DOCUMENT_GAS
+        w3, admin, to=DOCUMENT_ADDRESS, **txp
     )
     assert (
         receipt.status == 1
@@ -380,12 +404,13 @@ async def update_record_status(
     status: str,
 ):
     registry_id = await get_registry_id(w3, record.registry)
+    txp = await _tx_params(w3)
     receipt = await DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
         registry_id,
         record.recordId,
         record.index,
         status,
-    ).transact(w3, admin, to=DOCUMENT_ADDRESS)
+    ).transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"updateRecordStatus({status}) failed"
 
     assert_document_event(
@@ -424,6 +449,44 @@ async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
     await revoke_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
 
 
+async def do_test_disallow_last_admin_self_revoke(w3: AsyncWeb3):
+    registry_name = f"lockout-registry-{int(time.time() * 1000)}"
+    registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
+
+    accounts = get_accounts()
+    admin = accounts["community"]
+    replacement_admin = accounts["signer1"]
+    target = accounts["signer2"]
+
+    # last-admin revoke must fail
+    call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id,
+        "",
+        admin.address,
+        "admin",
+    )
+    try:
+        await w3.eth.call(
+            {
+                "to": DOCUMENT_ADDRESS,
+                "from": admin.address,
+                "data": call.data,
+                "gas": DOCUMENT_GAS,
+            }
+        )
+        assert False, "Expected last-admin self-revocation to fail"
+    except Exception:
+        pass
+
+    # revocation should succeed after adding a replacement admin
+    await grant_role(w3, registry_id, "", replacement_admin, "admin", admin)
+
+    await revoke_role(w3, registry_id, "", admin, "admin", admin)
+
+    # replacement admin can still perform admin actions
+    await grant_role(w3, registry_id, "", target, Role.EDITOR, replacement_admin)
+
+
 async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
     registry_id = await ensure_registry_exists(w3)
     accounts = get_accounts()
@@ -442,7 +505,14 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
         await grant_role(w3, registry_id, checksum, target, Role.EDITOR, sender)
     else:
         try:
-            await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
+            await w3.eth.call(
+                {
+                    "to": DOCUMENT_ADDRESS,
+                    "from": sender.address,
+                    "data": tx.data,
+                    "gas": DOCUMENT_GAS,
+                }
+            )
             assert False, "Expected grant by non-admin to fail"
         except Exception:
             pass  # Expected to fail
@@ -468,7 +538,14 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
         await revoke_role(w3, registry_id, checksum, editor1, Role.EDITOR, sender)
     else:
         try:
-            await tx.transact(w3, sender, to=DOCUMENT_ADDRESS)
+            await w3.eth.call(
+                {
+                    "to": DOCUMENT_ADDRESS,
+                    "from": sender.address,
+                    "data": tx.data,
+                    "gas": DOCUMENT_GAS,
+                }
+            )
             assert False, "Expected revoke by non-admin to fail"
         except Exception:
             pass  # Expected to fail
@@ -657,8 +734,9 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
             index=0,
             isLatest=False,
         )
+        txp = await _tx_params(w3)
         receipt = await DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record)).transact(
-            w3, admin, to=DOCUMENT_ADDRESS, gas=DOCUMENT_GAS
+            w3, admin, to=DOCUMENT_ADDRESS, **txp
         )
         assert receipt.status == 1, f"failed to add record to {name}"
 

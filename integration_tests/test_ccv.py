@@ -31,6 +31,7 @@ from .doc_utils import (
     do_test_add_record_same_checksum_maintains_record_id,
     do_test_add_registry,
     do_test_checksum_only_query_respects_limit,
+    do_test_disallow_last_admin_self_revoke,
     do_test_grant_and_revoke_role_as_admin,
     do_test_grant_role_permissions,
     do_test_multiple_roles_management,
@@ -754,6 +755,10 @@ async def test_add_registry(ibc, setup_consumer_accounts):
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])
 async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, checksum):
     await do_test_grant_and_revoke_role_as_admin(ibc.ibc2.async_w3, checksum)
+
+
+async def test_disallow_last_admin_self_revoke(ibc, setup_consumer_accounts):
+    await do_test_disallow_last_admin_self_revoke(ibc.ibc2.async_w3)
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
