@@ -33,6 +33,7 @@ from .utils import (
     escrow_address,
     eth_to_bech32,
     generate_isolated_address,
+    send_transaction_async,
     wait_for_balance_change,
 )
 
@@ -193,7 +194,7 @@ async def test_ibc_transfer(ibc):
 async def prepare_dest_callback(w3, sender, amt):
     # deploy cb contract
     contract = await build_and_deploy_contract_async(
-        w3, "CounterWithCallbacks", KEYS["signer1"]
+        w3, "CounterWithCallbacks", key=KEYS["signer1"]
     )
     calldata = await contract.functions.add(WETH_ADDRESS, amt).build_transaction(
         {"from": sender, "gas": 210000}
@@ -207,6 +208,30 @@ async def prepare_dest_callback(w3, sender, amt):
         }
     }
     return contract.address, json.dumps(dest_cb)
+
+
+async def prepare_src_callback(w3, funder_name: str, amt: int):
+    contract = await build_and_deploy_contract_async(
+        w3, "CounterWithCallbacks", key=KEYS[funder_name]
+    )
+    cb_balance_bf = await ERC20.fns.balanceOf(contract.address).call(
+        w3, to=WETH_ADDRESS
+    )
+    receipt = await ERC20.fns.transfer(contract.address, amt).transact(
+        w3, ACCOUNTS[funder_name], to=WETH_ADDRESS, gas=gas
+    )
+    assert receipt["status"] == 1
+    await wait_for_balance_change_async(
+        w3, contract.address, WETH_ADDRESS, cb_balance_bf
+    )
+    # send from contract via ICS20 with src_callback memo pointing to itself.
+    src_cb = {
+        "src_callback": {
+            "address": contract.address,
+            "gas_limit": "1000000",
+        }
+    }
+    return contract, json.dumps(src_cb)
 
 
 async def test_ibc_cb(ibc):
@@ -269,3 +294,43 @@ async def test_ibc_cb(ibc):
     escrow_addr = escrow_address(port, channel)
     assert cli.balance(escrow_addr, erc20_denom) == 0
     assert cli2.balance(addr_signer2, dst_denom) == 0
+
+
+async def test_ibc_src_ack_callback(ibc):
+    w3 = ibc.ibc2.async_w3
+    cli = ibc.ibc2.cosmos_cli()
+    signer2 = ADDRS["signer2"]
+
+    erc20_denom, total = await assert_create_erc20_denom(w3, signer2)
+
+    res = cli.register_erc20(WETH_ADDRESS, _from="community", gas=400_000)
+    assert res["code"] == 0, res
+
+    send_amt = total // 10
+    cb, src_cb_memo = await prepare_src_callback(w3, "signer2", send_amt)
+
+    addr_signer1 = eth_to_bech32(ADDRS["signer1"])
+    timeout_height = (0, 0)
+    timeout_timestamp = int((time.time() + 600) * 10**9)
+
+    tx = await cb.functions.ibcTransfer(
+        "transfer",
+        "channel-0",
+        erc20_denom,
+        send_amt,
+        addr_signer1,
+        timeout_height,
+        timeout_timestamp,
+        src_cb_memo,
+    ).build_transaction({"from": signer2, "gas": 900_000})
+
+    txreceipt = await send_transaction_async(w3, ACCOUNTS["signer2"], **tx)
+    assert txreceipt["status"] == 1
+
+    # ack callback increments counter on the source contract
+    async def check_ack():
+        val = await cb.functions.counter().call()
+        return val if val >= 1 else None
+
+    ack_counter = await wait_for_fn_async("ack callback", check_ack)
+    assert ack_counter >= 1

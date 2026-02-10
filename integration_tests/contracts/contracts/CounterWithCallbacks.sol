@@ -2,6 +2,7 @@
 pragma solidity ^0.8.4;
 
 import "./ICallbacks.sol";
+import "./ICS20I.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -33,6 +34,8 @@ contract CounterWithCallbacks is ICallbacks {
         uint64 sequence,
         bytes data
     );
+
+    event IBCTransferSent(uint64 sequence);
 
     /**
      * @dev Increment the counter and deposit ERC20 tokens
@@ -111,5 +114,29 @@ contract CounterWithCallbacks is ICallbacks {
      */
     function resetCounter() external {
         counter = 0;
+    }
+
+    function ibcTransfer(
+        string memory sourcePort,
+        string memory sourceChannel,
+        string memory denom,
+        uint256 amount,
+        string memory receiver,
+        Height memory timeoutHeight,
+        uint64 timeoutTimestamp,
+        string memory memo
+    ) external returns (uint64 nextSequence) {
+        nextSequence = ICS20_CONTRACT.transfer(
+            sourcePort,
+            sourceChannel,
+            denom,
+            amount,
+            address(this),
+            receiver,
+            timeoutHeight,
+            timeoutTimestamp,
+            memo
+        );
+        emit IBCTransferSent(nextSequence);
     }
 }
