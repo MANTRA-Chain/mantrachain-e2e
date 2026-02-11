@@ -2,6 +2,7 @@ import datetime
 import json
 import shutil
 from contextlib import contextmanager
+from dataclasses import astuple
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,9 @@ from pystarport.utils import (
 )
 
 from .doc_utils import (
+    DOCUMENT_ADDRESS,
+    DOCUMENT_PRECOMPILE,
+    Record,
     Role,
     clear_accounts_override,
     do_test_add_and_query_records,
@@ -44,6 +48,7 @@ from .doc_utils import (
     do_test_role_with_different_checksums,
     do_test_same_checksum_different_record_ids_per_registry,
     do_test_shared_checksum_in_multi_registries,
+    get_accounts,
     set_accounts_override,
 )
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
@@ -760,6 +765,40 @@ async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, chec
 
 async def test_disallow_last_admin_self_revoke(ibc, setup_consumer_accounts):
     await do_test_disallow_last_admin_self_revoke(ibc.ibc2.async_w3)
+
+
+async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_accounts):
+    w3 = ibc.ibc2.async_w3
+    accounts = get_accounts()
+    admin = accounts["community"]
+
+    registry_name = "oversize-algo-registry"
+    await do_test_add_registry(w3, name=registry_name, metadata="{}")
+
+    oversized_algo = "a" * 129
+    record = Record(
+        registry=registry_name,
+        uri="ipfs://oversize-algo",
+        checksum="abc123def456",
+        checksumAlgo=oversized_algo,
+        metadata=json.dumps({"document": "oversize-algo"}),
+        timestamp="",
+        status="active",
+        recordId=0,
+        index=0,
+        isLatest=False,
+    )
+
+    call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
+    with pytest.raises(Exception, match="checksum algorithm exceeds max length"):
+        await w3.eth.call(
+            {
+                "to": DOCUMENT_ADDRESS,
+                "from": admin.address,
+                "data": call.data,
+                "gas": 1_000_000,
+            }
+        )
 
 
 @pytest.mark.parametrize("is_admin", [True, False])

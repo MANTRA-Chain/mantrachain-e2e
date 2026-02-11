@@ -397,7 +397,7 @@ async def add_record(
         checksumAlgo="sha256",
         metadata=metadata,
         timestamp="",
-        status="",
+        status="active",
         recordId=0,
         index=0,
         isLatest=False,
