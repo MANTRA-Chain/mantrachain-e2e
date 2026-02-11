@@ -206,6 +206,29 @@ def _decode_document_event_data(
     raise AssertionError(f"missing event {event_sig} from {DOCUMENT_ADDRESS}")
 
 
+async def _assert_call_reverts(
+    w3: AsyncWeb3,
+    *,
+    sender: str,
+    to: str,
+    data,
+    gas: int = DOCUMENT_GAS,
+    message: str,
+):
+    try:
+        await w3.eth.call(
+            {
+                "to": to,
+                "from": sender,
+                "data": data,
+                "gas": gas,
+            }
+        )
+    except Exception:
+        return
+    raise AssertionError(message)
+
+
 async def _assert_add_record_event(
     w3: AsyncWeb3,
     receipt,
@@ -465,18 +488,13 @@ async def do_test_disallow_last_admin_self_revoke(w3: AsyncWeb3):
         admin.address,
         "admin",
     )
-    try:
-        await w3.eth.call(
-            {
-                "to": DOCUMENT_ADDRESS,
-                "from": admin.address,
-                "data": call.data,
-                "gas": DOCUMENT_GAS,
-            }
-        )
-        assert False, "Expected last-admin self-revocation to fail"
-    except Exception:
-        pass
+    await _assert_call_reverts(
+        w3,
+        sender=admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+        message="Expected last-admin self-revocation to fail",
+    )
 
     # revocation should succeed after adding a replacement admin
     await grant_role(w3, registry_id, "", replacement_admin, "admin", admin)
@@ -504,18 +522,13 @@ async def do_test_grant_role_permissions(w3: AsyncWeb3, is_admin: bool):
     if is_admin:
         await grant_role(w3, registry_id, checksum, target, Role.EDITOR, sender)
     else:
-        try:
-            await w3.eth.call(
-                {
-                    "to": DOCUMENT_ADDRESS,
-                    "from": sender.address,
-                    "data": tx.data,
-                    "gas": DOCUMENT_GAS,
-                }
-            )
-            assert False, "Expected grant by non-admin to fail"
-        except Exception:
-            pass  # Expected to fail
+        await _assert_call_reverts(
+            w3,
+            sender=sender.address,
+            to=DOCUMENT_ADDRESS,
+            data=tx.data,
+            message="Expected grant by non-admin to fail",
+        )
 
 
 async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
@@ -537,18 +550,13 @@ async def do_test_revoke_role_permissions(w3: AsyncWeb3, is_admin: bool):
     if is_admin:
         await revoke_role(w3, registry_id, checksum, editor1, Role.EDITOR, sender)
     else:
-        try:
-            await w3.eth.call(
-                {
-                    "to": DOCUMENT_ADDRESS,
-                    "from": sender.address,
-                    "data": tx.data,
-                    "gas": DOCUMENT_GAS,
-                }
-            )
-            assert False, "Expected revoke by non-admin to fail"
-        except Exception:
-            pass  # Expected to fail
+        await _assert_call_reverts(
+            w3,
+            sender=sender.address,
+            to=DOCUMENT_ADDRESS,
+            data=tx.data,
+            message="Expected revoke by non-admin to fail",
+        )
 
 
 async def do_test_multiple_roles_management(w3: AsyncWeb3):
