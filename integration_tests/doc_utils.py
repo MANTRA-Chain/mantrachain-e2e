@@ -886,3 +886,41 @@ async def do_test_checksum_only_query_respects_limit(w3: AsyncWeb3):
     assert len(page1) == 1
     assert len(page2) == 1
     assert {r.registry for r in page1}.isdisjoint({r.registry for r in page2})
+
+
+async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
+    accounts = get_accounts()
+    admin = accounts["community"]
+
+    reg_a = "reg-limit-a"
+    reg_b = "reg-limit-b"
+
+    await ensure_registry_exists(w3, name=reg_a)
+    await ensure_registry_exists(w3, name=reg_b)
+
+    # add records under A first
+    for i in range(5):
+        await add_record(
+            w3,
+            admin,
+            checksum=f"checksum-a-{i}",
+            name=f"record a {i}",
+            registry=reg_a,
+        )
+
+    checksum_b = "checksum-b"
+    await add_record(
+        w3,
+        admin,
+        checksum=checksum_b,
+        name="record b",
+        registry=reg_b,
+    )
+
+    page, _ = await DOCUMENT_PRECOMPILE.fns.records(
+        reg_b, "", 0, 0, (b"", 0, 1, False, False)
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    page = [Record.from_tuple(r) for r in page]
+    assert len(page) == 1
+    assert page[0].registry == reg_b
+    assert page[0].checksum == checksum_b
