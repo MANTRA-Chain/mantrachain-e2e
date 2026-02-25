@@ -38,6 +38,7 @@ from .doc_utils import (
     do_test_disallow_last_admin_self_revoke,
     do_test_grant_and_revoke_role_as_admin,
     do_test_grant_role_permissions,
+    do_test_module_admin_emergency_admin_recovery,
     do_test_multiple_roles_management,
     do_test_multiple_versions_same_checksum_across_registries,
     do_test_query_all_registries_for_checksum,
@@ -766,6 +767,10 @@ async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, chec
 
 async def test_disallow_last_admin_self_revoke(ibc, setup_consumer_accounts):
     await do_test_disallow_last_admin_self_revoke(ibc.ibc2.async_w3)
+
+
+async def test_module_admin_emergency_admin_recovery(ibc, setup_consumer_accounts):
+    await do_test_module_admin_emergency_admin_recovery(ibc.ibc2.async_w3)
 
 
 async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_accounts):

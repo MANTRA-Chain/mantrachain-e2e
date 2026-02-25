@@ -71,6 +71,11 @@ config {
             ),
           },
         },
+        anchoring+: {
+          params+: {
+            admin: inveniamd_chain.anchoring.params.admin,
+          },
+        },
         erc20: {},
         gov+: {
           params+: {
