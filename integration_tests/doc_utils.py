@@ -3,12 +3,13 @@ import time
 from dataclasses import astuple, dataclass
 from enum import Enum
 
+import pytest
 from eth_abi.abi import decode as abi_decode
 from eth_contract.contract import Contract as ContractAsync
 from eth_hash.auto import keccak
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS
+from .utils import ACCOUNTS, ADDRS, KEYS, build_contract, send_transaction
 
 # allow overriding accounts for different chain contexts
 _ACCOUNTS_OVERRIDE = None
@@ -285,6 +286,97 @@ def assert_document_event(
             raise AssertionError(
                 f"{event_sig} {kind} mismatch:\n  got: {got}\n  expected: {exp}"
             )
+
+
+def get_add_registry_event_registry_id(receipt, *, caller: str) -> int:
+    decoded = _decode_document_event_data(
+        receipt,
+        event_sig="AddRegistry(address,uint64,string)",
+        caller=caller,
+        data_types=["uint64", "string"],
+    )
+    return int(decoded[0])
+
+
+def do_test_contract_cannot_call_anchoring_sensitive_methods(
+    w3,
+    *,
+    sender=ADDRS["community"],
+):
+    artifact = build_contract("AnchoringCaller")
+    deploy_receipt = send_transaction(
+        w3,
+        {
+            "from": sender,
+            "data": artifact["bytecode"],
+            "gas": 2_000_000,
+        },
+        KEYS["community"],
+    )
+    assert deploy_receipt.status == 1
+
+    contract_addr = deploy_receipt.contractAddress
+    caller = ContractAsync(artifact["abi"])
+
+    add_registry_call = caller.fns.callAddRegistry(
+        "ccv-contract-caller-registry",
+        "repro non-EOA guard",
+        "{}",
+    )
+
+    def assert_reverted(data):
+        with pytest.raises(Exception) as exc_info:
+            w3.eth.call(
+                {
+                    "to": contract_addr,
+                    "from": sender,
+                    "data": data,
+                    "gas": 1_000_000,
+                }
+            )
+
+        err = str(exc_info.value).lower()
+        assert "sender not an eoa" in err, err
+
+    assert_reverted(add_registry_call.data)
+
+    eoa_add_registry_call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        "ccv-eoa-registry",
+        "repro EOA guard",
+        "{}",
+    )
+    eoa_add_registry_receipt = send_transaction(
+        w3,
+        {
+            "to": DOCUMENT_ADDRESS,
+            "from": sender,
+            "data": eoa_add_registry_call.data,
+            "gas": 1_000_000,
+        },
+        KEYS["community"],
+    )
+    assert eoa_add_registry_receipt.status == 1
+
+    registry_id = get_add_registry_event_registry_id(
+        eoa_add_registry_receipt,
+        caller=sender,
+    )
+
+    grant_role_call = caller.fns.callGrantRole(
+        registry_id,
+        "",
+        ADDRS["signer1"],
+        Role.EDITOR.value,
+    )
+    assert_reverted(grant_role_call.data)
+
+    revoke_role_call = caller.fns.callRevokeRole(
+        registry_id,
+        "",
+        ADDRS["signer1"],
+        Role.EDITOR.value,
+    )
+    assert_reverted(revoke_role_call.data)
 
 
 async def get_registry_id(w3: AsyncWeb3, name: str) -> int:

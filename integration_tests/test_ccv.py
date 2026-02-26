@@ -35,6 +35,7 @@ from .doc_utils import (
     do_test_add_record_same_checksum_maintains_record_id,
     do_test_add_registry,
     do_test_checksum_only_query_respects_limit,
+    do_test_contract_cannot_call_anchoring_sensitive_methods,
     do_test_disallow_last_admin_self_revoke,
     do_test_grant_and_revoke_role_as_admin,
     do_test_grant_role_permissions,
@@ -758,6 +759,12 @@ async def test_add_registry(ibc, setup_consumer_accounts):
         ibc.ibc2.async_w3,
         metadata=metadata,
     )
+
+
+async def test_contract_cannot_call_anchoring_sensitive_methods(
+    ibc, setup_consumer_accounts
+):
+    do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
 
 
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])
