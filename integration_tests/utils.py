@@ -449,7 +449,7 @@ def derive(address_type_bytes, key):
     return hash_func(address_type_bytes, key)
 
 
-def module_address(name, *derivation_keys):
+def module_address(name, *derivation_keys, prefix=ADDRESS_PREFIX):
     m_key = name.encode()
     if len(derivation_keys) == 0:
         address_bytes = hashlib.sha256(m_key).digest()[:20]
@@ -461,7 +461,7 @@ def module_address(name, *derivation_keys):
             addr = derive(addr, k)
         address_bytes = addr[:20]
     eth_address = "0x" + address_bytes.hex()
-    return eth_to_bech32(eth_address)
+    return eth_to_bech32(eth_address, prefix=prefix)
 
 
 def generate_isolated_address(channel_id, sender):

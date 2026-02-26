@@ -69,6 +69,7 @@ from .utils import (
     MockERC20_ARTIFACT,
     build_contract,
     create_consumer_chain,
+    module_address,
     send_transaction,
     update_consumer_chain,
 )
@@ -749,6 +750,22 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
 
     assert claim_receipt.status == 1
+
+
+async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    buffer_addr = module_address(
+        "cons_to_send_to_provider",
+        prefix="inveniam",
+    )
+    rsp = consumer_cli.transfer(
+        consumer_cli.address("community"),
+        buffer_addr,
+        f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+    )
+    assert rsp["code"] != 0, rsp
+    assert "restricted" in rsp["raw_log"], rsp
 
 
 async def test_add_registry(ibc, setup_consumer_accounts):
