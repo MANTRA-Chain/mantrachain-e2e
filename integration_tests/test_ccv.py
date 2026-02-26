@@ -29,6 +29,7 @@ from .doc_utils import (
     DOCUMENT_PRECOMPILE,
     Record,
     Role,
+    add_record,
     clear_accounts_override,
     do_test_add_and_query_records,
     do_test_add_record,
@@ -48,9 +49,11 @@ from .doc_utils import (
     do_test_registry_only_query_respects_limit,
     do_test_revoke_role_permissions,
     do_test_role_idempotency,
+    do_test_role_scope_existence_validation,
     do_test_role_with_different_checksums,
     do_test_same_checksum_different_record_ids_per_registry,
     do_test_shared_checksum_in_multi_registries,
+    ensure_registry_exists,
     get_accounts,
     set_accounts_override,
 )
@@ -764,7 +767,7 @@ async def test_add_registry(ibc, setup_consumer_accounts):
 async def test_contract_cannot_call_anchoring_sensitive_methods(
     ibc, setup_consumer_accounts
 ):
-    do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
+    await do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
 
 
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])
@@ -822,6 +825,74 @@ async def test_grant_role_permissions(ibc, setup_consumer_accounts, is_admin):
 @pytest.mark.parametrize("is_admin", [True, False])
 async def test_revoke_role_permissions(ibc, setup_consumer_accounts, is_admin):
     await do_test_revoke_role_permissions(ibc.ibc2.async_w3, is_admin)
+
+
+@pytest.mark.parametrize(
+    "name,method,build_case",
+    [
+        (
+            "grant registry not found",
+            "grant",
+            lambda _w3, _accounts: {
+                "registry_id": 999,
+                "checksum": "",
+                "account": _accounts["signer1"],
+                "role": "editor",
+                "sender": _accounts["community"],
+                "expect_err": "registry 999 does not exist",
+            },
+        ),
+        (
+            "revoke registry zero with checksum",
+            "revoke",
+            lambda _w3, _accounts: {
+                "registry_id": 0,
+                "checksum": "any-checksum",
+                "account": _accounts["signer1"],
+                "role": "editor",
+                "sender": _accounts["community"],
+                "expect_err": "registry 0 does not exist",
+            },
+        ),
+    ],
+)
+async def test_role_scope_existence_validation(
+    ibc, setup_consumer_accounts, name, method, build_case
+):
+    w3 = ibc.ibc2.async_w3
+    accounts = get_accounts()
+    case = build_case(w3, accounts)
+    await do_test_role_scope_existence_validation(
+        w3,
+        method=method,
+        registry_id=case["registry_id"],
+        checksum=case["checksum"],
+        account=case["account"],
+        role=case["role"],
+        sender=case["sender"],
+        expect_err=case["expect_err"],
+    )
+
+
+async def test_revoke_record_checksum_missing_in_registry(ibc, setup_consumer_accounts):
+    w3 = ibc.ibc2.async_w3
+    accounts = get_accounts()
+    registry_name = "ccv-role-scope"
+    registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
+    await add_record(
+        w3, accounts["community"], "present-checksum", registry=registry_name
+    )
+    err = f"record with checksum no-checksum does not exist in registry {registry_id}"
+    await do_test_role_scope_existence_validation(
+        w3,
+        method="revoke",
+        registry_id=registry_id,
+        checksum="no-checksum",
+        account=accounts["signer1"],
+        role="editor",
+        sender=accounts["community"],
+        expect_err=err,
+    )
 
 
 async def test_multiple_roles_management(ibc, setup_consumer_accounts):

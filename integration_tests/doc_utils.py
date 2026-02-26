@@ -230,6 +230,59 @@ async def _assert_call_reverts(
     raise AssertionError(message)
 
 
+async def _assert_call_reverts_contains(
+    w3: AsyncWeb3,
+    *,
+    sender: str,
+    to: str,
+    data,
+    expect_err: str,
+    gas: int = DOCUMENT_GAS,
+):
+    with pytest.raises(Exception) as exc_info:
+        await w3.eth.call(
+            {
+                "to": to,
+                "from": sender,
+                "data": data,
+                "gas": gas,
+            }
+        )
+    err = str(exc_info.value)
+    assert expect_err in err, err
+
+
+async def do_test_role_scope_existence_validation(
+    w3: AsyncWeb3,
+    *,
+    method: str,
+    registry_id: int,
+    checksum: str,
+    account,
+    role: str,
+    sender,
+    expect_err: str,
+):
+    if method == "grant":
+        call = DOCUMENT_PRECOMPILE.fns.grantRole(
+            registry_id, checksum, account.address, role
+        )
+    elif method == "revoke":
+        call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+            registry_id, checksum, account.address, role
+        )
+    else:
+        raise AssertionError(f"unsupported role method: {method}")
+
+    await _assert_call_reverts_contains(
+        w3,
+        sender=sender.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+        expect_err=expect_err,
+    )
+
+
 async def _assert_add_record_event(
     w3: AsyncWeb3,
     receipt,
@@ -298,7 +351,7 @@ def get_add_registry_event_registry_id(receipt, *, caller: str) -> int:
     return int(decoded[0])
 
 
-def do_test_contract_cannot_call_anchoring_sensitive_methods(
+async def do_test_contract_cannot_call_anchoring_sensitive_methods(
     w3,
     *,
     sender=ADDRS["community"],
@@ -324,21 +377,17 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
         "{}",
     )
 
-    def assert_reverted(data):
-        with pytest.raises(Exception) as exc_info:
-            w3.eth.call(
-                {
-                    "to": contract_addr,
-                    "from": sender,
-                    "data": data,
-                    "gas": 1_000_000,
-                }
-            )
+    async def assert_reverted(data):
+        await _assert_call_reverts_contains(
+            w3,
+            sender=sender,
+            to=contract_addr,
+            data=data,
+            expect_err="sender not an eoa",
+            gas=1_000_000,
+        )
 
-        err = str(exc_info.value).lower()
-        assert "sender not an eoa" in err, err
-
-    assert_reverted(add_registry_call.data)
+    await assert_reverted(add_registry_call.data)
 
     eoa_add_registry_call = DOCUMENT_PRECOMPILE.fns.addRegistry(
         "ccv-eoa-registry",
@@ -376,7 +425,7 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
             False,
         )
     )
-    assert_reverted(add_record_call.data)
+    await assert_reverted(add_record_call.data)
 
     update_record_status_call = caller.fns.callUpdateRecordStatus(
         registry_id,
@@ -384,7 +433,7 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
         1,
         "verified",
     )
-    assert_reverted(update_record_status_call.data)
+    await assert_reverted(update_record_status_call.data)
 
     grant_role_call = caller.fns.callGrantRole(
         registry_id,
@@ -392,7 +441,7 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
         ADDRS["signer1"],
         Role.EDITOR.value,
     )
-    assert_reverted(grant_role_call.data)
+    await assert_reverted(grant_role_call.data)
 
     revoke_role_call = caller.fns.callRevokeRole(
         registry_id,
@@ -400,7 +449,7 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
         ADDRS["signer1"],
         Role.EDITOR.value,
     )
-    assert_reverted(revoke_role_call.data)
+    await assert_reverted(revoke_role_call.data)
 
 
 async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
@@ -584,6 +633,9 @@ async def do_test_grant_and_revoke_role_as_admin(w3: AsyncWeb3, checksum: str):
     admin = accounts["community"]
     editor = accounts["signer1"]
 
+    if checksum:
+        await add_record(w3, admin, checksum)
+
     await grant_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
     await revoke_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
 
@@ -764,6 +816,8 @@ async def do_test_record_level_overrides_registry_level(
     reg_checksum = ""
     doc_checksum = "doc123"
 
+    await add_record(w3, admin, doc_checksum)
+
     # registry-level role
     await grant_role(w3, registry_id, reg_checksum, user, registry_role, admin)
     # record-level role (should override)
@@ -783,6 +837,9 @@ async def do_test_role_with_different_checksums(
     doc1_checksum = "doc1"
     doc2_checksum = "doc2"
 
+    await add_record(w3, admin, doc1_checksum)
+    await add_record(w3, admin, doc2_checksum)
+
     await grant_role(w3, registry_id, doc1_checksum, user, doc1_role, admin)
     await grant_role(w3, registry_id, doc2_checksum, user, doc2_role, admin)
 
@@ -791,7 +848,8 @@ async def do_test_role_with_different_checksums(
 
 
 async def do_test_add_and_query_records(w3: AsyncWeb3):
-    await ensure_registry_exists(w3)
+    registry_name = f"query-registry-{int(time.time() * 1000)}"
+    await ensure_registry_exists(w3, name=registry_name)
     accounts = get_accounts()
     admin = accounts["community"]
 
@@ -800,10 +858,10 @@ async def do_test_add_and_query_records(w3: AsyncWeb3):
         ("abc123", "Record 1 v2"),
         ("def456", "Record 2"),
     ]:
-        await add_record(w3, admin, checksum, name=name)
+        await add_record(w3, admin, checksum, name=name, registry=registry_name)
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        DOCUMENT_REGISTRY_DENOM, "", 0, 0, (b"", 0, 10, True, False)
+        registry_name, "", 0, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     docs = [Record.from_tuple(d) for d in records]
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
