@@ -2,11 +2,33 @@
 pragma solidity ^0.8.4;
 
 interface IAnchoringPrecompile {
+    struct Record {
+        string registry;
+        string uri;
+        string checksum;
+        string checksumAlgo;
+        string metadata;
+        string timestamp;
+        string status;
+        uint64 recordId;
+        uint64 index;
+        bool isLatest;
+    }
+
     function addRegistry(
         string calldata name,
         string calldata description,
         string calldata metadata
     ) external returns (uint64 registryId);
+
+    function addRecord(Record calldata record) external returns (uint64 recordId);
+
+    function updateRecordStatus(
+        uint64 registryId,
+        uint64 recordId,
+        uint64 index,
+        string calldata status
+    ) external;
 
     function grantRole(
         uint64 registryId,
@@ -76,6 +98,29 @@ contract AnchoringCaller {
                 checksum,
                 account,
                 role
+            )
+        );
+    }
+
+    function callAddRecord(IAnchoringPrecompile.Record calldata record) external {
+        _callAnchoring(
+            abi.encodeWithSelector(IAnchoringPrecompile.addRecord.selector, record)
+        );
+    }
+
+    function callUpdateRecordStatus(
+        uint64 registryId,
+        uint64 recordId,
+        uint64 index,
+        string calldata status
+    ) external {
+        _callAnchoring(
+            abi.encodeWithSelector(
+                IAnchoringPrecompile.updateRecordStatus.selector,
+                registryId,
+                recordId,
+                index,
+                status
             )
         );
     }

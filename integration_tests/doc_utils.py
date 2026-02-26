@@ -362,6 +362,30 @@ def do_test_contract_cannot_call_anchoring_sensitive_methods(
         caller=sender,
     )
 
+    add_record_call = caller.fns.callAddRecord(
+        (
+            "ccv-eoa-registry",
+            "ipfs://ccv-contract-caller",
+            "ccv-contract-caller-checksum",
+            "sha256",
+            "{}",
+            "",
+            "active",
+            0,
+            0,
+            False,
+        )
+    )
+    assert_reverted(add_record_call.data)
+
+    update_record_status_call = caller.fns.callUpdateRecordStatus(
+        registry_id,
+        1,
+        1,
+        "verified",
+    )
+    assert_reverted(update_record_status_call.data)
+
     grant_role_call = caller.fns.callGrantRole(
         registry_id,
         "",
