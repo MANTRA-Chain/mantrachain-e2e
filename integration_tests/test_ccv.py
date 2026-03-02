@@ -69,6 +69,7 @@ from .utils import (
     MockERC20_ARTIFACT,
     build_contract,
     create_consumer_chain,
+    eth_to_bech32,
     module_address,
     send_transaction,
     update_consumer_chain,
@@ -766,6 +767,15 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
+
+
+async def test_distribution_claim_precompile_rejects_user_bank_send(ibc):
+    cli = ibc.ibc1.cosmos_cli()
+    precompile_addr = eth_to_bech32(DISTRIBUTION_CLAIM_ADDRESS)
+    rsp = cli.transfer(cli.address("community"), precompile_addr, f"1{DEFAULT_DENOM}")
+    assert rsp["code"] != 0, rsp
+    raw_log = rsp.get("raw_log", "").lower()
+    assert "not allowed" in raw_log, rsp
 
 
 async def test_add_registry(ibc, setup_consumer_accounts):
