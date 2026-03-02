@@ -10,6 +10,7 @@ from web3 import AsyncWeb3
 from .ibc_utils import (
     assert_hermes_transfer,
     assert_ibc_transfer_flow,
+    ibc_denom_hash,
     prepare_network,
     run_hermes_transfer,
 )
@@ -138,7 +139,6 @@ async def test_ibc_transfer(ibc):
         denom=tf_denom,
     )
 
-    print("mm-signer2_balance", signer2_balance)
     print(f"chain2 signer2 -> chain1 signer1 {transfer_amt}{dst_denom}")
     balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     assert balance_bf == cli.balance(addr_signer1, tf_denom)
@@ -255,17 +255,35 @@ async def test_ibc_cb(ibc):
     port = "transfer"
     channel = "channel-0"
     isolated = generate_isolated_address(channel, addr_signer2)
+    path = f"{port}/{channel}/{erc20_denom}"
+    dst_denom = f"ibc/{ibc_denom_hash(path)}"
 
-    dst_denom, signer2_balance = assert_hermes_transfer(
-        ibc.hermes,
-        cli,
-        "signer1",
+    timeout_height = (0, 0)
+    timeout_timestamp = int((time.time() + 600) * 10**9)
+    signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
+
+    res = await PRECOMPILE.fns.transfer(
+        "transfer",
+        channel,
+        erc20_denom,
         transfer_amt,
+        signer1,
+        addr_signer2,
+        timeout_height,
+        timeout_timestamp,
+        "",
+    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
+    assert res.status == 1
+    sequence = int.from_bytes(res.logs[0].data, "big")
+    assert sequence > 0
+
+    signer2_balance = wait_for_balance_change(
         cli2,
         addr_signer2,
-        denom=erc20_denom,
-        skip_src_balance_check=True,
+        dst_denom,
+        signer2_balance_bf,
     )
+    assert signer2_balance == signer2_balance_bf + transfer_amt
 
     signer1_balance_eth = await ERC20.fns.balanceOf(signer1).call(w3, to=WETH_ADDRESS)
     assert signer1_balance_eth == total - transfer_amt
