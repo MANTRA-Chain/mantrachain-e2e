@@ -120,7 +120,16 @@ jobs:
         run: make test-e2e-nix TESTS_TO_RUN="${TESTS_TO_RUN}"
       - name: Collect debug artifacts
         if: failure()
-        run: tar cfz debug_${{ matrix.group }}.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" . || true
+        run: |
+          pytest_tmp_dir="${TMPDIR:-/tmp}/pytest-of-runner"
+          if [ ! -d "$pytest_tmp_dir" ] && [ -d "/tmp/pytest-of-runner" ]; then
+            pytest_tmp_dir="/tmp/pytest-of-runner"
+          fi
+          if [ -d "$pytest_tmp_dir" ]; then
+            tar cfz debug_${{ matrix.group }}.tar.gz -C "$pytest_tmp_dir" .
+          else
+            echo "pytest temp dir not found: ${TMPDIR:-/tmp}/pytest-of-runner or /tmp/pytest-of-runner"
+          fi
       - name: Upload debug artifacts
         if: failure()
         uses: actions/upload-artifact@v4
