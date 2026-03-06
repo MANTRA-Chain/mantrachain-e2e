@@ -83,7 +83,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        group: [asyncio, unmarked, slow]
+        group: [evm]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
