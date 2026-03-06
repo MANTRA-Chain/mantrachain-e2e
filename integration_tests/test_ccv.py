@@ -224,6 +224,10 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"]["params"][
                 "blocks_per_distribution_transmission"
             ] = "1"
+            # keep reward transfer timeout short for timeout refund test
+            genesis["app_state"]["ccvconsumer"]["params"][
+                "transfer_timeout_period"
+            ] = "10s"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
@@ -766,6 +770,77 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
+
+
+async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    buffer_addr = module_address(
+        "cons_to_send_to_provider",
+        prefix="inveniam",
+    )
+
+    buffer_bf = consumer_cli.balance(
+        buffer_addr,
+        denom=WMANTRAUSD_CONSUMER_IBC_DENOM,
+    )
+
+    ibc.ibc1.supervisorctl("stop", "relayer-demo")
+    wait_for_new_blocks(consumer_cli, 2)
+
+    sender = consumer_cli.address("community")
+    for i in range(2):
+        rsp = consumer_cli.transfer(
+            sender,
+            sender,
+            f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+            gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        )
+        assert rsp["code"] == 0, rsp["raw_log"]
+
+    wait_for_new_blocks(consumer_cli, 15)
+
+    ibc.ibc1.supervisorctl("start", "relayer-demo")
+
+    def count_timeout_txs() -> int:
+        queries = [
+            "message.action='/ibc.core.channel.v1.MsgTimeout'",
+            "message.action='/ibc.core.channel.v1.MsgTimeoutOnClose'",
+            "message.action='/ibc.core.channel.v2.MsgTimeout'",
+        ]
+        tx_hashes = set()
+        for query in queries:
+            try:
+                for tx in consumer_cli.tx_search_rpc(query):
+                    tx_hash = tx.get("hash") or tx.get("txhash")
+                    if tx_hash:
+                        tx_hashes.add(tx_hash)
+            except Exception:
+                continue
+
+        return len(tx_hashes)
+
+    timeout_txs_bf = count_timeout_txs()
+
+    wait_for_fn(
+        "ccv timeout refund observed",
+        lambda: count_timeout_txs() > timeout_txs_bf,
+    )
+
+    wait_for_new_blocks(consumer_cli, 2)
+
+    rsp = consumer_cli.transfer(
+        consumer_cli.address("community"),
+        buffer_addr,
+        f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+    )
+    assert rsp["code"] != 0, rsp
+
+    buffer_af = consumer_cli.balance(
+        buffer_addr,
+        denom=WMANTRAUSD_CONSUMER_IBC_DENOM,
+    )
+    assert buffer_af >= buffer_bf
 
 
 async def test_add_registry(ibc, setup_consumer_accounts):
