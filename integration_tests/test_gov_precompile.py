@@ -67,11 +67,7 @@ async def test_gov_proposal(mantra):
     pid = int.from_bytes(res.logs[0].data, "big")
     assert pid > 0
 
-    await w3_wait_for_new_blocks_async(w3, 1)
     await PRECOMPILE.fns.deposit(voter.address, pid, deposit).transact(
-        w3, voter, to=GOV, gas=gas
-    )
-    await PRECOMPILE.fns.vote(voter.address, pid, 1, "").transact(
         w3, voter, to=GOV, gas=gas
     )
     weighted_options = [
