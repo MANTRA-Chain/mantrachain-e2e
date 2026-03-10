@@ -57,10 +57,10 @@ buildGoModule' rec {
     ;
   stdenv = buildStdenv;
   src = fetchFromGitHub {
-    owner = "cosmos";
+    owner = "mmsqe";
     repo = "evm";
-    rev = "bea1ab990c509d14b76c6ef8387b88879cf9f59f";
-    hash = "sha256-SSxWeNFtWliIAu/i1aMnZ5Pkq8tZHvXbL4cCK8XF2Q0=";
+    rev = "9b6e4dc5c2b6bbb2a69dcf25391c69b0bdb35048";
+    hash = "sha256-hMtlAA+LKml+xB3yn9S/NOUcyuxoUvomzlrQ+fuEFv4=";
   };
   
   vendorHash = "sha256-2ExrGxegCcYS1Bq6I/S3vHaf/ES2rGgOJupFkxyhZvM=";
