@@ -55,7 +55,12 @@
               version = "0.1.12";
               hash = "sha256-YX2X0TAMobIIE3e7o9mSSZIH5VTKf+rBOmxrqdKFtBg=";
             };
-            nativeBuildInputs = [ pkgs.python312Packages.cython ];
+            pyproject = true;
+            build-system = with pkgs.python312Packages; [
+              setuptools
+              wheel
+              cython
+            ];
             doCheck = false;
           };
 
