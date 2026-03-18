@@ -69,6 +69,7 @@ from .utils import (
     MockERC20_ARTIFACT,
     build_contract,
     create_consumer_chain,
+    eth_to_bech32,
     module_address,
     send_transaction,
     update_consumer_chain,
@@ -770,6 +771,37 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
+
+
+async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    w3 = ibc.ibc2.w3
+
+    precompile_bech32 = eth_to_bech32(DOCUMENT_ADDRESS, prefix="inveniam")
+    sender_bech32 = consumer_cli.address("community")
+
+    rsp = consumer_cli.transfer(
+        sender_bech32,
+        precompile_bech32,
+        f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+    )
+    assert rsp["code"] != 0, rsp
+    assert "unauthorized" in rsp["raw_log"].lower(), rsp
+
+    precompile_balance_bf = w3.eth.get_balance(DOCUMENT_ADDRESS)
+    receipt = send_transaction(
+        w3,
+        {
+            "from": ADDRS["community"],
+            "to": DOCUMENT_ADDRESS,
+            "value": 1,
+            "gas": 100_000,
+        },
+        KEYS["community"],
+    )
+    assert receipt.status == 0
+    assert w3.eth.get_balance(DOCUMENT_ADDRESS) == precompile_balance_bf
 
 
 async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
