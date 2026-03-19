@@ -2,7 +2,7 @@
   src,
   lib,
   stdenv,
-  darwin,
+  libiconv,
   rustPlatform,
   symlinkJoin,
   openssl,
@@ -24,11 +24,7 @@ rustPlatform.buildRustPackage rec {
   buildInputs = [
     openssl
     llvmPackages.libclang.lib
-  ] ++ lib.optionals stdenv.isDarwin [
-    darwin.apple_sdk.frameworks.Security
-    darwin.libiconv
-    darwin.apple_sdk.frameworks.SystemConfiguration
-  ];
+  ] ++ lib.optionals stdenv.isDarwin [ libiconv ];
   cargoLock = {
     lockFile = "${src}/Cargo.lock";
   };

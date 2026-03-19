@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/release-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
     flake-utils.url = "github:numtide/flake-utils";
     flake-compat.url = "github:edolstra/flake-compat";
     hermes-src = {
@@ -15,10 +15,7 @@
         [
           (_: pkgs: {
             flake-compat = flake-compat;
-            go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix {
-              inherit (pkgs.darwin) libobjc;
-              inherit (pkgs.darwin.apple_sdk.frameworks) IOKit;
-            };
+            go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
             dapp = pkgs.dapp;
             solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
           })
@@ -58,7 +55,12 @@
               version = "0.1.12";
               hash = "sha256-YX2X0TAMobIIE3e7o9mSSZIH5VTKf+rBOmxrqdKFtBg=";
             };
-            nativeBuildInputs = [ pkgs.python312Packages.cython ];
+            pyproject = true;
+            build-system = with pkgs.python312Packages; [
+              setuptools
+              wheel
+              cython
+            ];
             doCheck = false;
           };
 
