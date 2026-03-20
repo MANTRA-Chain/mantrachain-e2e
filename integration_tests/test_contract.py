@@ -31,7 +31,13 @@ from eth_contract.multicall3 import (
     Call3Value,
     multicall,
 )
-from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode, send_transaction
+from eth_contract.utils import (
+    ZERO_ADDRESS,
+    balance_of,
+    broadcast_transaction,
+    get_initcode,
+    send_transaction,
+)
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_hash.auto import keccak
 from eth_utils import to_bytes, to_checksum_address
@@ -377,7 +383,8 @@ async def test_upgrade(mantra):
 
 async def test_replace_underpriced(mantra):
     w3 = mantra.async_w3
-    owner = ACCOUNTS["community"].address
+    acct = ACCOUNTS["community"]
+    owner = acct.address
     nonce = await w3.eth.get_transaction_count(owner)
     gas_price = await w3.eth.gas_price
     tx1 = {
@@ -388,7 +395,7 @@ async def test_replace_underpriced(mantra):
         "gasPrice": gas_price,
     }
     tx2 = {**tx1, "to": ADDRS["signer2"], "value": 2000}
-    hash1 = await w3.eth.send_transaction(tx1)
+    hash1 = await broadcast_transaction(w3, acct, **tx1)
     for _ in range(5):
         pending = await w3.geth.txpool.content()
         owner_pending = next(
@@ -410,7 +417,7 @@ async def test_replace_underpriced(mantra):
     with pytest.raises(
         web3.exceptions.Web3RPCError, match="replacement transaction underpriced"
     ):
-        await w3.eth.send_transaction(tx2)
+        await broadcast_transaction(w3, acct, **tx2)
     await w3.eth.wait_for_transaction_receipt(hash1)
 
 
