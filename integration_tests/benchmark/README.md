@@ -14,31 +14,14 @@
 # config chain (mantrachaind, evmd)
 export CHAIN_CONFIG=evmd
 
-case $CHAIN_CONFIG in
-  mantrachaind)
-    export IMAGE_NAME=mantra-testground
-    export NIX_PACKAGE=testground-image
-    ;;
-  evmd)
-    export IMAGE_NAME=evmd-testground
-    export NIX_PACKAGE=testground-image-evmd
-    ;;
-esac
-
 export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
 ```
 
 ### 2. Build testground image for Linux
 
 ```bash
-nix build .#packages.aarch64-linux.$NIX_PACKAGE \
-  --store 'ssh-ng://builder@linux-builder?ssh-key=/etc/nix/builder_ed25519' \
-  --eval-store auto
-
-scp -i /etc/nix/builder_ed25519 "builder@linux-builder:$(nix path-info --store 'ssh-ng://builder@linux-builder?ssh-key=/etc/nix/builder_ed25519' .#packages.aarch64-linux.$NIX_PACKAGE)" ./$IMAGE_NAME.tar.gz
-
-export IMAGE_TAG=$(docker load < $IMAGE_NAME.tar.gz | sed -n "s/.*$IMAGE_NAME://p")
-echo "Image: $IMAGE_NAME:$IMAGE_TAG"
+scripts/build-testground-image.sh $CHAIN_CONFIG
+source scripts/artifacts/testground-image.env
 ```
 
 ### 3. Generate test data

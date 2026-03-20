@@ -1,7 +1,7 @@
 {
   lib,
   stdenv,
-  buildGo125Module,
+  buildGo126Module,
   fetchFromGitHub,
   rev ? "dirty",
   nativeByteOrder ? true, # nativeByteOrder mode will panic on big endian machines
@@ -13,11 +13,11 @@ let
   pname = "evmd";
 
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module; };
+  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo126Module; };
   buildStdenv = buildPackages.stdenv;
   buildGoModule' = if stdenv.isLinux 
-    then buildPackages.buildGo125Module
-    else buildGo125Module;
+    then buildPackages.buildGo126Module
+    else buildGo126Module;
 
   tags =
     [
@@ -59,11 +59,11 @@ buildGoModule' rec {
   src = fetchFromGitHub {
     owner = "cosmos";
     repo = "evm";
-    rev = "79bcc14fefa4b5c82386a3fb0724c3f9a7688ba5";
-    hash = "sha256-QoQR7VBkAUMTj9M4qbAK76avjgiyH8htUeFFggVDExA=";
+    rev = "5a7f5358d5d607c407781304219aae34db027d8d";
+    hash = "sha256-Du7v2qEFTavEP9rOg4Vzww0YKGTX8uA/9LRyBYMbLLE=";
   };
   
-  vendorHash = "sha256-DO9SS1c5p9hSMR2M+bCxci/kdjpN7a9TZhMZhq2Efag=";
+  vendorHash = "sha256-Rr5jsoZQP9JrSdQtx4y/C7so4ft1B4mMFBPWGDiGyug=";
   proxyVendor = true;
   sourceRoot = "source/evmd";
   subPackages = [ "cmd/evmd" ];

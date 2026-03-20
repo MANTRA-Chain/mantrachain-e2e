@@ -29,7 +29,7 @@ local extended_denom =
     mempool: { 'max-txs': -1 },
   },
   config_patch: {
-    mempool: { size: 50000 },
+    mempool: { size: 50000, type: 'app' },
     consensus: { timeout_commit: '20ms' },
   },
   genesis_patch: {

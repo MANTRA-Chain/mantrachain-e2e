@@ -2,6 +2,7 @@ import json
 
 import pytest
 from eth_contract.erc20 import ERC20
+from pystarport.utils import wait_for_new_blocks
 
 from .utils import (
     ADDRS,
@@ -13,6 +14,7 @@ from .utils import (
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
     assert_transfer_tokenfactory_denom,
+    find_log_event_attrs,
     module_address,
     submit_gov_proposal,
 )
@@ -51,6 +53,68 @@ def test_submit_any_proposal(mantra, tmp_path):
     grant_detail = cli.query_grant(granter_addr, grantee_addr)
     assert grant_detail["granter"] == granter_addr
     assert grant_detail["grantee"] == grantee_addr
+
+
+@pytest.mark.slow
+def test_gov_proposal(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
+    proposer = cli.address("community")
+    voter = cli.address("signer1")
+
+    msg = {
+        "@type": "/cosmos.bank.v1beta1.MsgSetSendEnabled",
+        "authority": module_address("gov"),
+        "send_enabled": [{"denom": DEFAULT_DENOM, "enabled": True}],
+    }
+    proposal = {
+        "title": "test",
+        "summary": "test",
+        "deposit": f"1{DEFAULT_DENOM}",
+        "messages": [msg],
+    }
+    proposal_file = tmp_path / "proposal_full_cli.json"
+    proposal_file.write_text(json.dumps(proposal))
+
+    rsp = cli.submit_gov_proposal(proposal_file, from_="community", gas=400000)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    ev = find_log_event_attrs(
+        rsp["events"], "submit_proposal", lambda attrs: "proposal_id" in attrs
+    )
+    assert ev is not None, rsp["events"]
+    proposal_id = ev["proposal_id"]
+
+    rsp = cli.gov_deposit(proposal_id, f"1{DEFAULT_DENOM}", from_="signer1")
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    rsp = cli.gov_weighted_vote(
+        proposal_id, "yes=0.5,no=0.3,abstain=0.2", from_="signer1"
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    wait_for_new_blocks(cli, 1)
+
+    prop = cli.query_proposal(proposal_id)
+    assert str(prop["id"]) == str(proposal_id)
+    assert prop["title"] == proposal["title"]
+
+    vote = cli.query_vote(proposal_id, voter)
+    assert str(vote.get("proposal_id")) == str(proposal_id)
+    assert vote.get("voter") == voter
+
+    proposer_deposit = cli.query_gov_deposit(proposal_id, proposer)
+    assert str(proposer_deposit.get("proposal_id")) == str(proposal_id)
+    assert proposer_deposit.get("depositor") == proposer
+
+    voter_deposit = cli.query_gov_deposit(proposal_id, voter)
+    assert str(voter_deposit.get("proposal_id")) == str(proposal_id)
+    assert voter_deposit.get("depositor") == voter
+
+    tally = cli.query_tally(proposal_id)
+    tally = tally.get("tally") or tally
+    assert len(tally) >= 4
+
+    rsp = cli.gov_cancel_proposal(proposal_id, from_="community")
+    assert rsp["code"] == 0, rsp["raw_log"]
 
 
 def normalize(lst):

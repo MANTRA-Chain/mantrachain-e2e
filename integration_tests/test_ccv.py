@@ -225,6 +225,10 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"]["params"][
                 "blocks_per_distribution_transmission"
             ] = "1"
+            # keep reward transfer timeout short for timeout refund test
+            genesis["app_state"]["ccvconsumer"]["params"][
+                "transfer_timeout_period"
+            ] = "10s"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
