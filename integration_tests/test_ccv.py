@@ -773,6 +773,15 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     assert "restricted" in rsp["raw_log"], rsp
 
 
+async def test_distribution_claim_precompile_rejects_user_bank_send(ibc):
+    cli = ibc.ibc1.cosmos_cli()
+    precompile_addr = eth_to_bech32(DISTRIBUTION_CLAIM_ADDRESS)
+    rsp = cli.transfer(cli.address("community"), precompile_addr, f"1{DEFAULT_DENOM}")
+    assert rsp["code"] != 0, rsp
+    raw_log = rsp.get("raw_log", "").lower()
+    assert "not allowed" in raw_log, rsp
+
+
 async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     w3 = ibc.ibc2.w3
