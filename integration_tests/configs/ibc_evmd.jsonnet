@@ -20,9 +20,20 @@ config {
     accounts: [account {
       coins: coins + evmd_chain.evm_denom,
     } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
+    config+: {
+      mempool+: {
+        type: 'app',
+      },
+    },
     'app-config'+: {
       evm+: {
         'evm-chain-id': evmd_chain.evm_chain_id,
+        'block-executor': 'block-stm',
+        'block-stm-workers': 4,
+        'block-stm-pre-estimate': true,
+        mempool+: {
+          'operate-exclusively': false,
+        },
       },
       'minimum-gas-prices': '0' + evmd_chain.evm_denom,
     },
