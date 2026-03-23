@@ -19,9 +19,11 @@ from .utils import (
     DEFAULT_DENOM,
     SCALE_FACTOR,
     AsyncGreeter,
+    approve_proposal,
     assert_withdraw_rewards,
     call_with_retry_async,
     create_consumer_chain,
+    module_address,
     update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
@@ -43,7 +45,7 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-async def exec(c):
+async def exec(c, tmp_path):
     cli = c.cosmos_cli()
     w3 = c.async_w3
     grpc_cmd = cli.raw.cmd
@@ -57,6 +59,49 @@ async def exec(c):
 
     balance_bf = await w3.eth.get_balance(community, block_identifier=old_height)
     wait_height = 30
+
+    scam_addr = cli.address("scammer")
+    delegated_vesting_amt = 814_388_000_000
+
+    rsp = cli.transfer(
+        cli.address("community"),
+        scam_addr,
+        f"{delegated_vesting_amt}{LEGACY_DENOM}",
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    validators = cli.validators()
+    val_ops = [v["operator_address"] for v in validators[:2]]
+    rsp = cli.delegate_amount(
+        val_ops[0],
+        f"{delegated_vesting_amt}{LEGACY_DENOM}",
+        _from="scammer",
+        gas_prices=gas_prices,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    delegations_bf = cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]
+    assert int(delegations_bf) == delegated_vesting_amt
+
+    msg = {
+        "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
+        "authority": module_address("gov"),
+        "blacklist_accounts": [scam_addr],
+    }
+    proposal_src = {
+        "title": "Blacklist scam address",
+        "summary": "Add scam vesting account to blacklist",
+        "deposit": f"1{LEGACY_DENOM}",
+        "messages": [msg],
+    }
+    proposal_file = tmp_path / "blacklist_proposal_recent.json"
+    proposal_file.write_text(json.dumps(proposal_src))
+    gov_rsp = cli.submit_gov_proposal(
+        proposal_file, from_="community", gas_prices=gas_prices
+    )
+    assert gov_rsp["code"] == 0, gov_rsp["raw_log"]
+    approve_proposal(c, gov_rsp["events"], gas_prices=gas_prices)
+    assert scam_addr in cli.query_blacklist()
 
     def cb(cli):
         wait_for_new_blocks(cli, 2)
@@ -85,6 +130,11 @@ async def exec(c):
     cli = do_upgrade(
         c, "v8.0.0-rc0", cli.block_height() + wait_height, scale=SCALE_FACTOR
     )
+    assert int(cli.delegation(scam_addr, val_ops[0])["balance"]["amount"]) == 0
+    unbonding = cli.undelegation(scam_addr, val_ops[0])
+    assert unbonding.get("entries")
+    total_unbonding = sum(int(entry["balance"]) for entry in unbonding["entries"])
+    assert total_unbonding == delegated_vesting_amt * SCALE_FACTOR
 
     await verify_provider(cli)
 
@@ -184,6 +234,6 @@ async def verify_provider(cli):
     assert cli.provider_consumer_genesis(consumer_id) is not None
 
 
-async def test_cosmovisor_upgrade(custom_mantra: Mantra):
-    await exec(custom_mantra)
+async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
+    await exec(custom_mantra, tmp_path)
     cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)
