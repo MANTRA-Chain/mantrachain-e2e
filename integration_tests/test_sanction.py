@@ -44,6 +44,13 @@ def test_blacklist(mantra, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
+    # should revoke this feegrant allowance once `user` is blacklisted
+    rsp = cli.grant_fee_allowance(user, grantee, from_=user)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    allowance_bf = cli.query_grant(user, grantee)
+    assert allowance_bf["granter"] == user
+    assert allowance_bf["grantee"] == grantee
+
     grants_bf = cli.query_grants(user, grantee)
     assert any(
         g["authorization"]["type"] == "/cosmos.bank.v1beta1.SendAuthorization"
@@ -72,6 +79,9 @@ def test_blacklist(mantra, tmp_path):
     approve_proposal(mantra, gov_rsp["events"])
     assert user in cli.query_blacklist()
     assert cli.query_grants(user, grantee) == []
+
+    with pytest.raises(AssertionError, match="fee-grant not found"):
+        cli.query_grant(user, grantee)
 
     err = f"{bech32_to_eth(user)} is blacklisted"
     with pytest.raises(web3.exceptions.Web3RPCError, match=err):
