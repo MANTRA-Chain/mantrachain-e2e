@@ -150,24 +150,51 @@ DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
 
 
-async def _tx_params(w3: AsyncWeb3, *, gas: int = DOCUMENT_GAS) -> dict:
+async def _tx_params(
+    w3: AsyncWeb3,
+    *,
+    gas: int = DOCUMENT_GAS,
+    sender: str | None = None,
+    to: str = DOCUMENT_ADDRESS,
+    data=None,
+) -> dict:
+    gas_limit = gas
+    if sender is not None and data is not None:
+        try:
+            estimated = int(
+                await w3.eth.estimate_gas(
+                    {
+                        "to": to,
+                        "from": sender,
+                        "data": data,
+                    }
+                )
+            )
+            gas_limit = max(gas_limit, int(estimated * 1.2) + 30_000)
+        except Exception:
+            pass
+
+    # try EIP-1559 fee
     try:
         block = await w3.eth.get_block("latest")
         base_fee = block.get("baseFeePerGas")
-        if base_fee:
+        if base_fee is not None:
             base_fee = int(base_fee)
             priority_fee = 2_000_000_000  # 2 gwei
             return {
-                "gas": gas,
+                "gas": gas_limit,
                 "maxFeePerGas": base_fee * 2 + priority_fee,
                 "maxPriorityFeePerGas": priority_fee,
             }
     except Exception:
         pass
+
+    # fallback to legacy gasPrice
     try:
-        return {"gas": gas, "gasPrice": int(await w3.eth.gas_price)}
+        price = int(await w3.eth.gas_price)
+        return {"gas": gas_limit, "gasPrice": price}
     except Exception:
-        return {"gas": gas}
+        return {"gas": gas_limit}
 
 
 def _as_bytes(value) -> bytes:
@@ -483,10 +510,14 @@ async def ensure_registry_exists(
         return int(reg[0])
     accounts = get_accounts()
     admin = accounts["community"]
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata).transact(
-        w3, admin, to=DOCUMENT_ADDRESS, **txp
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata)
+    txp = await _tx_params(
+        w3,
+        sender=admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
     )
+    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"failed to create registry {name}"
 
     registry_id = await get_registry_id(w3, name)
@@ -513,10 +544,16 @@ async def ensure_registry_exists(
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     role_value = role.value if isinstance(role, Role) else str(role)
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.grantRole(
+    call = DOCUMENT_PRECOMPILE.fns.grantRole(
         registry_id, checksum, user.address, role_value
-    ).transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
+    )
+    txp = await _tx_params(
+        w3,
+        sender=sender.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed"
@@ -533,10 +570,16 @@ async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
 
 async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     role_value = role.value if isinstance(role, Role) else str(role)
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.revokeRole(
+    call = DOCUMENT_PRECOMPILE.fns.revokeRole(
         registry_id, checksum, user.address, role_value
-    ).transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
+    )
+    txp = await _tx_params(
+        w3,
+        sender=sender.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed"
@@ -567,10 +610,14 @@ async def add_record(
         index=0,
         isLatest=False,
     )
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc)).transact(
-        w3, admin, to=DOCUMENT_ADDRESS, **txp
+    call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc))
+    txp = await _tx_params(
+        w3,
+        sender=admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
     )
+    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"failed to add record {checksum} to registry {registry}"
@@ -592,13 +639,19 @@ async def update_record_status(
     status: str,
 ):
     registry_id = await get_registry_id(w3, record.registry)
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
+    call = DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
         registry_id,
         record.recordId,
         record.index,
         status,
-    ).transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
+    )
+    txp = await _tx_params(
+        w3,
+        sender=admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"updateRecordStatus({status}) failed"
 
     assert_document_event(
@@ -682,12 +735,18 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
     replacement_admin = accounts["signer2"]
     target = accounts["community"]
 
-    txp = await _tx_params(w3)
-    receipt = await DOCUMENT_PRECOMPILE.fns.addRegistry(
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(
         registry_name,
         registry_name,
         "{}",
-    ).transact(w3, registry_admin, to=DOCUMENT_ADDRESS, **txp)
+    )
+    txp = await _tx_params(
+        w3,
+        sender=registry_admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(w3, registry_admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt["status"] == 1, f"failed to create registry {registry_name}"
 
     registry_id = await get_registry_id(w3, registry_name)
@@ -957,10 +1016,14 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
             index=0,
             isLatest=False,
         )
-        txp = await _tx_params(w3)
-        receipt = await DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record)).transact(
-            w3, admin, to=DOCUMENT_ADDRESS, **txp
+        call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
+        txp = await _tx_params(
+            w3,
+            sender=admin.address,
+            to=DOCUMENT_ADDRESS,
+            data=call.data,
         )
+        receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
         assert receipt.status == 1, f"failed to add record to {name}"
 
         await _assert_add_record_event(
