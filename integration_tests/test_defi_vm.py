@@ -1,10 +1,18 @@
+import time
+
 import pytest
+from eth_contract.erc20 import ERC20
 from web3 import AsyncWeb3
 
-from .ibc_utils import prepare_network
+from .ibc_utils import ibc_denom_hash, prepare_network
 from .utils import (
     ACCOUNTS,
+    ADDRS,
+    WETH_ADDRESS,
+    assert_create_erc20_denom,
     build_and_deploy_contract_async,
+    eth_to_bech32,
+    wait_for_balance_change,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -12,8 +20,10 @@ pytestmark = pytest.mark.asyncio
 OP_PUSH_U256 = 0x01
 OP_PUSH_ADDR = 0x02
 OP_PUSH_BYTES = 0x03
+OP_SWAP = 0x05
 OP_POP = 0x06
 OP_ASSERT_GE = 0x23
+OP_ASSERT_LE = 0x24
 OP_CALL = 0x30
 OP_SELF_BAL = 0x32
 OP_DELTA_START = 0x33
@@ -41,11 +51,22 @@ def pop() -> bytes:
     return bytes([OP_POP])
 
 
+def swap() -> bytes:
+    return bytes([OP_SWAP])
+
+
 def assert_ge(msg: str = "") -> bytes:
     raw = msg.encode()
     if len(raw) > 255:
         raise ValueError("assert_ge message too long")
     return bytes([OP_ASSERT_GE, len(raw)]) + raw
+
+
+def assert_le(msg: str = "") -> bytes:
+    raw = msg.encode()
+    if len(raw) > 255:
+        raise ValueError("assert_le message too long")
+    return bytes([OP_ASSERT_LE, len(raw)]) + raw
 
 
 def self_bal() -> bytes:
@@ -118,7 +139,16 @@ async def test_flow(mantra):
 
 async def test_ibc_cb(ibc):
     w3: AsyncWeb3 = ibc.ibc1.async_w3
+    cli1 = ibc.ibc1.cosmos_cli()
+    cli2 = ibc.ibc2.cosmos_cli()
+
     deployer = ACCOUNTS["community"]
+    signer1 = ACCOUNTS["signer1"]
+    addr_signer2 = eth_to_bech32(ADDRS["signer2"])
+
+    erc20_denom, _ = await assert_create_erc20_denom(w3, signer1.address)
+    res = cli1.register_erc20(WETH_ADDRESS, _from="community", gas=400_000)
+    assert res["code"] == 0
 
     vm = await build_and_deploy_contract_async(w3, "DeFiVM")
     cb = await build_and_deploy_contract_async(w3, "CounterWithCallbacks")
@@ -165,3 +195,52 @@ async def test_ibc_cb(ibc):
     assert event_args["sequence"] == sequence
     assert event_args["data"] == payload
     assert event_args["acknowledgement"] == acknowledgement
+
+    send_amt = 10
+    cb_balance_base = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
+    fund_receipt = await ERC20.fns.transfer(cb.address, send_amt).transact(
+        w3, signer1, to=WETH_ADDRESS
+    )
+    assert fund_receipt["status"] == 1
+
+    timeout_height = (0, 0)
+    timeout_timestamp = int((time.time() + 600) * 10**9)
+    ibc_tx = await cb.functions.ibcTransfer(
+        "transfer",
+        "channel-0",
+        erc20_denom,
+        send_amt,
+        addr_signer2,
+        timeout_height,
+        timeout_timestamp,
+        "",
+    ).build_transaction({"from": deployer.address, "gas": 900_000})
+    ibc_calldata = bytes.fromhex(ibc_tx["data"][2:])
+
+    dst_denom = f"ibc/{ibc_denom_hash(f'transfer/channel-0/{erc20_denom}')}"
+    dst_balance_bf = cli2.balance(addr_signer2, dst_denom)
+
+    # SWAP opcode guard + DeFiVM-mediated cross-chain transfer.
+    program = (
+        push_u256(1)
+        + push_u256(2)
+        + swap()
+        + assert_le("swap failed")
+        + push_bytes(ibc_calldata)
+        + push_u256(0)
+        + push_addr(cb.address)
+        + push_u256(900_000)
+        + call(True)
+        + pop()
+    )
+    tx_hash = await vm.functions.execute(program).transact({"from": deployer.address})
+    receipt = await w3.eth.get_transaction_receipt(tx_hash)
+    assert receipt["status"] == 1
+
+    cb_balance_af = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
+    assert cb_balance_af == cb_balance_base
+
+    dst_balance_af = wait_for_balance_change(
+        cli2, addr_signer2, dst_denom, dst_balance_bf
+    )
+    assert dst_balance_af == dst_balance_bf + send_amt
