@@ -210,19 +210,17 @@ async def test_distribution_eth_call_state_override(mantra):
         }
     }
 
+    wait_for_block(cli, 2)
+
     base = await w3.eth.call(tx, "latest")
     with_empty_override = await w3.eth.call(tx, "latest", empty_override)
     with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
 
     decoded_base = [
-        (denom, int(amount))
-        for denom, amount in decode(["(string,uint256)[]"], base)[0]
+        (denom, int(amount), precision)
+        for denom, amount, precision in decode(["(string,uint256,uint8)[]"], base)[0]
     ]
-    expected = [
-        (denom, int(amount))
-        for denom, amount in await community_pool_call.call(w3, to=DISTRIBUTION)
-    ]
-
-    assert decoded_base == expected
+    call_result = await community_pool_call.call(w3, to=DISTRIBUTION)
+    assert tuple(decoded_base) == call_result
     assert with_empty_override == base
     assert with_unrelated_override == base
