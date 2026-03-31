@@ -899,6 +899,62 @@ async def test_add_registry(ibc, setup_consumer_accounts):
     )
 
 
+async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_accounts):
+    w3 = ibc.ibc2.async_w3
+
+    registry_name = "state_override"
+    await do_test_add_registry(
+        w3,
+        name=registry_name,
+        metadata='{"source":"state_override"}',
+    )
+
+    registries_call = DOCUMENT_PRECOMPILE.fns.registries(
+        0,
+        registry_name,
+        (b"", 0, 10, False, False),
+    )
+    tx = {
+        "to": DOCUMENT_ADDRESS,
+        "from": ADDRS["community"],
+        "data": registries_call.data,
+    }
+
+    unrelated_address = "0x000000000000000000000000000000000000dEaD"
+    empty_override = {unrelated_address: {}}
+    unrelated_override = {
+        unrelated_address: {
+            "stateDiff": {
+                "0x" + "0" * 64: "0x" + "01".zfill(64),
+            }
+        }
+    }
+
+    base = await w3.eth.call(tx, "latest")
+    with_empty_override = await w3.eth.call(tx, "latest", empty_override)
+    with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
+
+    decoded_registries, _ = await registries_call.call(w3, to=DOCUMENT_ADDRESS)
+    assert any(reg[1] == registry_name for reg in decoded_registries)
+
+    assert len(base) > 0
+    assert with_empty_override == base
+    assert with_unrelated_override == base
+
+    identity_tx = {
+        "to": "0x0000000000000000000000000000000000000004",
+        "from": ADDRS["community"],
+        "data": registries_call.data,
+    }
+    identity_base = await w3.eth.call(identity_tx, "latest")
+    identity_empty = await w3.eth.call(identity_tx, "latest", empty_override)
+    identity_unrelated = await w3.eth.call(identity_tx, "latest", unrelated_override)
+    expected_identity_output = bytes(registries_call.data)
+
+    assert identity_base == expected_identity_output
+    assert identity_base == identity_empty == identity_unrelated
+
+
 async def test_contract_cannot_call_anchoring_sensitive_methods(
     ibc, setup_consumer_accounts
 ):
