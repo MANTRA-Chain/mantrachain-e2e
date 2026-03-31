@@ -36,6 +36,7 @@ from .doc_utils import (
     do_test_add_record_same_checksum_maintains_record_id,
     do_test_add_registry,
     do_test_checksum_only_query_respects_limit,
+    do_test_constructor_bypass_ensure_eoa_caller,
     do_test_contract_cannot_call_anchoring_sensitive_methods,
     do_test_disallow_last_admin_self_revoke,
     do_test_grant_and_revoke_role_as_admin,
@@ -757,7 +758,6 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_receipt.status == 1
 
 
-@pytest.mark.skip(reason="test_ccv_rewards_buffer_rejects_user_bank_send")
 async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
@@ -783,7 +783,6 @@ async def test_distribution_claim_precompile_rejects_user_bank_send(ibc):
     assert "not allowed" in raw_log, rsp
 
 
-@pytest.mark.skip(reason="test_ccv_rewards_buffer_rejects_user_bank_send")
 async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     w3 = ibc.ibc2.w3
@@ -904,6 +903,12 @@ async def test_contract_cannot_call_anchoring_sensitive_methods(
     ibc, setup_consumer_accounts
 ):
     await do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
+
+
+async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(
+    ibc, setup_consumer_accounts
+):
+    await do_test_constructor_bypass_ensure_eoa_caller(ibc.ibc2.w3)
 
 
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])
