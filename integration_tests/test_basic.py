@@ -31,6 +31,7 @@ from .utils import (
     contract_address,
     create_periodic_vesting_acct,
     do_multisig,
+    module_address,
     recover_community,
     send_transaction,
     transfer_via_cosmos,
@@ -152,6 +153,67 @@ async def test_send_transaction_mempool_mix(mantra, connect_mantra, tmp_path):
         connect_mantra.async_w3, ACCOUNTS["community"], **tx
     )
     assert receipt.status == 1
+
+
+async def test_patch_txindex(mantra):
+    w3 = mantra.async_w3
+    block = await w3.eth.get_block("latest")
+    gas = 21000
+    blocked_module_bech32 = module_address("distribution")
+    blocked_module_eth = bech32_to_eth(blocked_module_bech32)
+    gas_price = await w3.eth.gas_price
+    base_fee = int(block.get("baseFeePerGas") or 0)
+    max_priority_fee = int(await w3.eth.max_priority_fee)
+    eip1559_fee_cap = max(int(gas_price), base_fee + max_priority_fee) * 20 + 1
+    sender = ACCOUNTS["community"]
+    nonce = await w3.eth.get_transaction_count(sender.address)
+    # tx0 fails on commit (blocked distribution); tx1 succeeds.
+    eth_hash = await broadcast_transaction(
+        w3,
+        sender,
+        to=blocked_module_eth,
+        value=1,
+        gas=gas,
+        maxFeePerGas=eip1559_fee_cap,
+        maxPriorityFeePerGas=max_priority_fee,
+        nonce=nonce,
+    )
+    print("mm-eth_hash", eth_hash.hex())
+    follow_eth_hash = await broadcast_transaction(
+        w3,
+        sender,
+        to=ADDRS["signer2"],
+        value=1,
+        gas=21000,
+        maxFeePerGas=eip1559_fee_cap,
+        maxPriorityFeePerGas=max_priority_fee,
+        nonce=nonce + 1,
+    )
+
+    follow_receipt = await asyncio.wait_for(
+        w3.eth.wait_for_transaction_receipt(follow_eth_hash), timeout=60
+    )
+    block_number = follow_receipt["blockNumber"]
+
+    # avoid eth_getBlockByNumber: buggy path may fail when materializing receipts.
+    follow_index = int(follow_receipt["transactionIndex"])
+    follow_tx_by_index = await w3.eth.get_transaction_by_block(
+        block_number, follow_index
+    )
+    assert (
+        follow_tx_by_index is not None
+    ), f"no tx at block={block_number} idx={follow_index} for follow tx"
+    index_lookup_matches_follow = follow_tx_by_index["hash"] == follow_eth_hash
+
+    assert int(follow_receipt["transactionIndex"]) == follow_index, (
+        f"receipt txIndex mismatch: block={block_number}: "
+        f"receipt={follow_receipt['transactionIndex']} expected={follow_index}"
+    )
+
+    assert index_lookup_matches_follow, (
+        f"follow txIndex mismatch: block={block_number} idx={follow_index}: "
+        f"expected {follow_eth_hash.hex()}, got {follow_tx_by_index['hash'].hex()}"
+    )
 
 
 @pytest.mark.connect

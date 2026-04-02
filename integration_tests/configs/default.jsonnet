@@ -13,11 +13,15 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
     config: {
       mempool: {
         version: 'v1',
+        type: 'app',
       },
     },
     'app-config': {
       evm: {
         'evm-chain-id': chain.evm_chain_id,
+        mempool: {
+          'operate-exclusively': true,
+        },
       },
       grpc: {
         'skip-check-header': true,

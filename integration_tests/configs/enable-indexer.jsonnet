@@ -4,12 +4,12 @@ config {
   'mantra-canary-net-1'+: {
     config+: {
       tx_index+: {
-        indexer: 'null',
+        // indexer: 'null',
       },
     },
     'app-config'+: {
       'json-rpc'+: {
-        'enable-indexer': true,
+        // 'enable-indexer': true,
       },
     },
   },
