@@ -378,7 +378,23 @@ async def exec(c, tmp_path):
         c, "v8.0.0-rc2", cli.block_height() + wait_height, scale=SCALE_FACTOR
     )
 
+    cli = do_upgrade(
+        c, "v8.0.0-rc3", cli.block_height() + wait_height, scale=SCALE_FACTOR
+    )
+    verify_removed_modules(cli)
+
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     await exec(custom_mantra, tmp_path)
     cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)
+
+
+def verify_removed_modules(cli):
+    assert not cli.has_module("oracle")
+    assert not cli.has_module("marketmap")
+
+    with pytest.raises(AssertionError):
+        cli.get_params("oracle")
+
+    with pytest.raises(AssertionError):
+        cli.get_params("marketmap")

@@ -68,7 +68,6 @@ async def test_transfers_not_allowed(custom_mantra):
         "transfer",
     ]
     modules2 = [
-        "oracle",
         "sanction",
         "wasm",
     ]

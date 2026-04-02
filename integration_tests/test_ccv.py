@@ -229,7 +229,7 @@ def ibc(request, tmp_path_factory):
             rsp = ibc1.cosmos_cli(i=i).provider_opt_in(consumer_id, from_="validator")
             assert rsp["code"] == 0, rsp["raw_log"]
 
-        authority = cli.get_params("marketmap").get("admin")
+        authority = module_address("gov")
         port = "transfer"
         channel = TRANSFER_CHANNEL_ID
         denom = WMANTRAUSD_CONSUMER_IBC_DENOM
