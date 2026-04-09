@@ -479,6 +479,36 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
     await assert_reverted(revoke_role_call.data)
 
 
+async def do_test_constructor_bypass_ensure_eoa_caller(
+    w3,
+    *,
+    sender=ADDRS["community"],
+):
+    artifact = build_contract("AnchoringConstructorCaller")
+    contract = w3.eth.contract(abi=artifact["abi"], bytecode=artifact["bytecode"])
+
+    registry_name = f"ccv-constructor-bypass-{int(time.time() * 1000)}"
+    deploy_tx = contract.constructor(registry_name).build_transaction(
+        {
+            "from": sender,
+            "gas": 2_000_000,
+        }
+    )
+    deploy_receipt = send_transaction(w3, deploy_tx, KEYS["community"])
+    assert deploy_receipt.status == 1
+
+    deployed = w3.eth.contract(
+        address=deploy_receipt.contractAddress, abi=artifact["abi"]
+    )
+    registry_created = deployed.functions.registryCreated().call()
+    created_registry_id = int(deployed.functions.createdRegistryId().call())
+
+    assert not registry_created, "constructor call should not bypass ensureEOACaller"
+    assert (
+        created_registry_id == 0
+    ), "expected no registry created from constructor call"
+
+
 async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
     registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
         0, name, (b"", 0, 10, False, False)

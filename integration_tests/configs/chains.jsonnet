@@ -74,11 +74,11 @@
       },
     },
   },
-  inveniamd: {
-    'account-prefix': 'inveniam',
+  nvnmchaind: {
+    'account-prefix': 'nvnm',
     evm_denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
-    cmd: 'inveniamd',
-    chain_id: 'inveniam_58886-1',
+    cmd: 'nvnmchaind',
+    chain_id: 'nvnm_58886-1',
     evm_chain_id: 58886,
     bank: {
       denom_metadata: [{
@@ -108,7 +108,7 @@
     },
     anchoring: {
       params: {
-        admin: 'inveniam1nk2e2mhmz6qe8s44htqyxvdm48cey82d9hhzv7',  // reserve
+        admin: 'nvnm1nk2e2mhmz6qe8s44htqyxvdm48cey82dyntvry',  // reserve
       },
     },
     feemarket: {

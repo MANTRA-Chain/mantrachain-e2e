@@ -29,6 +29,7 @@ from .doc_utils import (
     DOCUMENT_PRECOMPILE,
     Record,
     Role,
+    _tx_params,
     add_record,
     clear_accounts_override,
     do_test_add_and_query_records,
@@ -36,6 +37,7 @@ from .doc_utils import (
     do_test_add_record_same_checksum_maintains_record_id,
     do_test_add_registry,
     do_test_checksum_only_query_respects_limit,
+    do_test_constructor_bypass_ensure_eoa_caller,
     do_test_contract_cannot_call_anchoring_sensitive_methods,
     do_test_disallow_last_admin_self_revoke,
     do_test_grant_and_revoke_role_as_admin,
@@ -55,6 +57,7 @@ from .doc_utils import (
     do_test_shared_checksum_in_multi_registries,
     ensure_registry_exists,
     get_accounts,
+    get_add_registry_event_registry_id,
     set_accounts_override,
 )
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
@@ -123,6 +126,54 @@ def ibc_timeout_ns(minutes: int = 10) -> int:
     )
 
 
+def intrinsic_calldata_gas(tx_data: str | bytes) -> int:
+    if isinstance(tx_data, str):
+        raw = tx_data[2:] if tx_data.startswith("0x") else tx_data
+        data = bytes.fromhex(raw)
+    else:
+        data = bytes(tx_data)
+
+    intrinsic = 21_000
+    for b in data:
+        intrinsic += 4 if b == 0 else 16
+    return intrinsic
+
+
+async def run_method(
+    async_w3,
+    sender_account,
+    *,
+    call,
+    gas: int,
+    method: str,
+    deltas: dict | None = None,
+):
+    txp = await _tx_params(
+        async_w3,
+        gas=gas,
+        sender=sender_account.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(
+        async_w3,
+        sender_account,
+        to=DOCUMENT_ADDRESS,
+        **txp,
+    )
+    assert receipt.status == 1
+    intrinsic = intrinsic_calldata_gas(call.data)
+    gas_used = int(receipt["gasUsed"])
+    delta = gas_used - intrinsic
+    assert (
+        gas_used > intrinsic
+    ), f"expected gasUsed={gas_used} > intrinsic={intrinsic} for {method}"
+    assert delta > 0, f"expected positive delta for {method}, got {delta}"
+    if deltas is not None:
+        deltas[method] = delta
+    return receipt, delta
+
+
 def find_open_transfer_channel_id(cli) -> str | None:
     try:
         for ch in cli.ibc_query_all_channels():
@@ -148,20 +199,20 @@ def setup_consumer_accounts(ibc):
 
 @pytest.fixture(scope="module")
 def ibc(request, tmp_path_factory):
-    b_chain_cmd = "inveniamd"
+    b_chain_cmd = "nvnmchaind"
     if shutil.which(b_chain_cmd) is None:
         pytest.skip(f"{b_chain_cmd} not enabled")
     chain = request.config.getoption("chain_config")
-    name = "configs/ibc_inveniamd.jsonnet"
-    path = tmp_path_factory.mktemp("ibc_inveniamd")
-    b_chain = "inveniam-canary-net-1"
+    name = "configs/ibc_nvnmchaind.jsonnet"
+    path = tmp_path_factory.mktemp("ibc_nvnmchaind")
+    b_chain = "nvnm-canary-net-1"
     with contextmanager(setup_custom_mantra)(
         path,
         27400,
         Path(__file__).parent / name,
         relayer=cluster.Relayer.HERMES.value,
         chain=chain,
-        chain_binary=f"{b_chain_cmd},{CMD}",
+        chain_binary=f"{CMD},{b_chain_cmd}",
     ) as ibc1:
         num_nodes = 3
         ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary=b_chain_cmd)
@@ -178,7 +229,7 @@ def ibc(request, tmp_path_factory):
             rsp = ibc1.cosmos_cli(i=i).provider_opt_in(consumer_id, from_="validator")
             assert rsp["code"] == 0, rsp["raw_log"]
 
-        authority = cli.get_params("marketmap").get("admin")
+        authority = module_address("gov")
         port = "transfer"
         channel = TRANSFER_CHANNEL_ID
         denom = WMANTRAUSD_CONSUMER_IBC_DENOM
@@ -757,12 +808,11 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_receipt.status == 1
 
 
-@pytest.mark.skip(reason="test_ccv_rewards_buffer_rejects_user_bank_send")
 async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
         "cons_to_send_to_provider",
-        prefix="inveniam",
+        prefix="nvnm",
     )
     rsp = consumer_cli.transfer(
         consumer_cli.address("community"),
@@ -783,12 +833,11 @@ async def test_distribution_claim_precompile_rejects_user_bank_send(ibc):
     assert "not allowed" in raw_log, rsp
 
 
-@pytest.mark.skip(reason="test_ccv_rewards_buffer_rejects_user_bank_send")
 async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     w3 = ibc.ibc2.w3
 
-    precompile_bech32 = eth_to_bech32(DOCUMENT_ADDRESS, prefix="inveniam")
+    precompile_bech32 = eth_to_bech32(DOCUMENT_ADDRESS, prefix="nvnm")
     sender_bech32 = consumer_cli.address("community")
 
     rsp = consumer_cli.transfer(
@@ -820,7 +869,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
         "cons_to_send_to_provider",
-        prefix="inveniam",
+        prefix="nvnm",
     )
 
     buffer_bf = consumer_cli.balance(
@@ -900,10 +949,154 @@ async def test_add_registry(ibc, setup_consumer_accounts):
     )
 
 
+async def test_anchoring_state_changing_methods_gas_delta_non_zero(
+    ibc, setup_consumer_accounts
+):
+    async_w3 = ibc.ibc2.async_w3
+    accounts = get_accounts()
+    sender_account = accounts["community"]
+    target = accounts["signer1"].address
+
+    deltas = {}
+    registry_name = "ccv-gas-methods"
+    add_registry_call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        registry_name,
+        "ccv gas method matrix",
+        json.dumps({"source": "ccv-gas-matrix", "kind": "registry"}),
+    )
+    add_registry_receipt, _ = await run_method(
+        async_w3,
+        sender_account,
+        call=add_registry_call,
+        gas=220_000,
+        method="addRegistry",
+        deltas=deltas,
+    )
+
+    registry_id = get_add_registry_event_registry_id(
+        add_registry_receipt, caller=sender_account.address
+    )
+    assert registry_id > 0
+
+    checksum = f"ccv-gas-{registry_id}"
+    record = Record(
+        registry=registry_name,
+        uri=f"ipfs://{checksum}",
+        checksum=checksum,
+        checksumAlgo="sha256",
+        metadata=json.dumps({"document": "ccv-gas-matrix", "kind": "record"}),
+        timestamp="",
+        status="active",
+        recordId=0,
+        index=0,
+        isLatest=False,
+    )
+    add_record_call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
+    await run_method(
+        async_w3,
+        sender_account,
+        call=add_record_call,
+        gas=700_000,
+        method="addRecord",
+        deltas=deltas,
+    )
+
+    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
+        registry_name,
+        checksum,
+        0,
+        0,
+        (b"", 0, 10, False, False),
+    ).call(async_w3, to=DOCUMENT_ADDRESS)
+    assert records, "expected record after addRecord"
+    added = Record.from_tuple(records[0])
+
+    update_status_call = DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
+        registry_id,
+        added.recordId,
+        added.index,
+        "verified",
+    )
+    await run_method(
+        async_w3,
+        sender_account,
+        call=update_status_call,
+        gas=260_000,
+        method="updateRecordStatus",
+        deltas=deltas,
+    )
+
+    grant_role_call = DOCUMENT_PRECOMPILE.fns.grantRole(
+        registry_id,
+        "",
+        target,
+        "editor",
+    )
+    await run_method(
+        async_w3,
+        sender_account,
+        call=grant_role_call,
+        gas=260_000,
+        method="grantRole",
+        deltas=deltas,
+    )
+
+    revoke_role_call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id,
+        "",
+        target,
+        "editor",
+    )
+    await run_method(
+        async_w3,
+        sender_account,
+        call=revoke_role_call,
+        gas=260_000,
+        method="revokeRole",
+        deltas=deltas,
+    )
+
+    assert len(deltas) == 5
+    assert all(delta > 0 for delta in deltas.values()), f"non-positive deltas: {deltas}"
+
+
+async def test_anchoring_gas_delta_scales_with_metadata_size(
+    ibc, setup_consumer_accounts
+):
+    async_w3 = ibc.ibc2.async_w3
+    sender_account = get_accounts()["community"]
+    metadata_sizes = [100, 1000]
+    deltas = {}
+
+    for size in metadata_sizes:
+        call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+            f"ccv-gas-scale-{size}",
+            "ccv gas delta scaling",
+            "m" * size,
+        )
+
+        _, delta = await run_method(
+            async_w3,
+            sender_account,
+            call=call,
+            gas=300_000,
+            method=f"addRegistry_metadata_{size}",
+        )
+        deltas[size] = delta
+
+    assert deltas[1000] > deltas[100], "gas delta should scale with metadata size"
+
+
 async def test_contract_cannot_call_anchoring_sensitive_methods(
     ibc, setup_consumer_accounts
 ):
     await do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
+
+
+async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(
+    ibc, setup_consumer_accounts
+):
+    await do_test_constructor_bypass_ensure_eoa_caller(ibc.ibc2.w3)
 
 
 @pytest.mark.parametrize("checksum", ["", "abc123def456"])
