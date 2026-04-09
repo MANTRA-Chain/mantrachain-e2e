@@ -8,8 +8,8 @@ import web3
 from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import broadcast_transaction
 from eth_contract.utils import send_transaction as send_transaction_async
+from eth_contract.utils import sign_transaction
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 
@@ -253,7 +253,8 @@ async def test_transaction(mantra, connect_mantra):
         await send_transaction_async(w3, acct, **data)
 
     data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
-    txhash = await broadcast_transaction(w3, acct, **data)
+    signed = await sign_transaction(w3, acct, **data)
+    txhash = await w3.eth.send_raw_transaction(signed.raw_transaction)
 
     data["nonce"] = await w3.eth.get_transaction_count(sender)
     receipt = await send_transaction_async(w3, acct, **data)
