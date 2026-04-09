@@ -199,20 +199,20 @@ def setup_consumer_accounts(ibc):
 
 @pytest.fixture(scope="module")
 def ibc(request, tmp_path_factory):
-    b_chain_cmd = "inveniamd"
+    b_chain_cmd = "nvnmchaind"
     if shutil.which(b_chain_cmd) is None:
         pytest.skip(f"{b_chain_cmd} not enabled")
     chain = request.config.getoption("chain_config")
-    name = "configs/ibc_inveniamd.jsonnet"
-    path = tmp_path_factory.mktemp("ibc_inveniamd")
-    b_chain = "inveniam-canary-net-1"
+    name = "configs/ibc_nvnmchaind.jsonnet"
+    path = tmp_path_factory.mktemp("ibc_nvnmchaind")
+    b_chain = "nvnm-canary-net-1"
     with contextmanager(setup_custom_mantra)(
         path,
         27400,
         Path(__file__).parent / name,
         relayer=cluster.Relayer.HERMES.value,
         chain=chain,
-        chain_binary=f"{b_chain_cmd},{CMD}",
+        chain_binary=f"{CMD},{b_chain_cmd}",
     ) as ibc1:
         num_nodes = 3
         ibc2 = Mantra(ibc1.base_dir.parent / b_chain, chain_binary=b_chain_cmd)
@@ -812,7 +812,7 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
         "cons_to_send_to_provider",
-        prefix="inveniam",
+        prefix="nvnm",
     )
     rsp = consumer_cli.transfer(
         consumer_cli.address("community"),
@@ -837,7 +837,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     w3 = ibc.ibc2.w3
 
-    precompile_bech32 = eth_to_bech32(DOCUMENT_ADDRESS, prefix="inveniam")
+    precompile_bech32 = eth_to_bech32(DOCUMENT_ADDRESS, prefix="nvnm")
     sender_bech32 = consumer_cli.address("community")
 
     rsp = consumer_cli.transfer(
@@ -869,7 +869,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
         "cons_to_send_to_provider",
-        prefix="inveniam",
+        prefix="nvnm",
     )
 
     buffer_bf = consumer_cli.balance(
