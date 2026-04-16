@@ -31,6 +31,7 @@ from .utils import (
     contract_address,
     create_periodic_vesting_acct,
     do_multisig,
+    module_address,
     recover_community,
     send_transaction,
     transfer_via_cosmos,
@@ -660,3 +661,71 @@ def test_coinbase(mantra):
     )
     proposer = res.get("block").get("header").get("proposer_address")
     assert proposer.lower() == pubkey.lower()
+
+
+async def test_patch_txindex(mantra):
+    w3 = mantra.async_w3
+    latest_block = await w3.eth.get_block("latest")
+    blocked_module_eth = bech32_to_eth(module_address("distribution"))
+
+    gas_limit = 21000
+    gas_price = int(await w3.eth.gas_price)
+    base_fee = int(latest_block.get("baseFeePerGas") or 0)
+    max_priority_fee = int(await w3.eth.max_priority_fee)
+    fee_cap = max(gas_price, base_fee + max_priority_fee) * 20 + 1
+
+    sender = ACCOUNTS["community"]
+    nonce = await w3.eth.get_transaction_count(sender.address)
+
+    # tx0 fails on commit (blocked distribution); tx1 succeeds.
+    failed_tx_hash = await w3.eth.send_raw_transaction(
+        (
+            await sign_transaction(
+                w3,
+                sender,
+                to=blocked_module_eth,
+                value=1,
+                gas=gas_limit,
+                maxFeePerGas=fee_cap,
+                maxPriorityFeePerGas=max_priority_fee,
+                nonce=nonce,
+            )
+        ).raw_transaction
+    )
+
+    follow_tx_hash = await w3.eth.send_raw_transaction(
+        (
+            await sign_transaction(
+                w3,
+                sender,
+                to=ADDRS["signer2"],
+                value=1,
+                gas=gas_limit,
+                maxFeePerGas=fee_cap,
+                maxPriorityFeePerGas=max_priority_fee,
+                nonce=nonce + 1,
+            )
+        ).raw_transaction
+    )
+
+    follow_receipt = await asyncio.wait_for(
+        w3.eth.wait_for_transaction_receipt(follow_tx_hash), timeout=60
+    )
+    block_number = follow_receipt["blockNumber"]
+    follow_index = int(follow_receipt["transactionIndex"])
+
+    block = await w3.eth.get_block(block_number)
+    follow_tx_by_index = await w3.eth.get_transaction_by_block(
+        block_number, follow_index
+    )
+    assert follow_tx_by_index["hash"] == follow_tx_hash
+    assert follow_tx_hash in block["transactions"]
+    assert failed_tx_hash not in block["transactions"]
+
+    # eth_getBlockReceipts should include only queryable tx receipts.
+    block_receipts = await w3.eth.get_block_receipts(block_number)
+    assert any(r["transactionHash"] == follow_tx_hash for r in block_receipts)
+    assert all(r["transactionHash"] != failed_tx_hash for r in block_receipts)
+
+    with pytest.raises(web3.exceptions.TransactionNotFound):
+        await w3.eth.get_transaction(failed_tx_hash)
