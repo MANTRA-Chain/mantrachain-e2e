@@ -808,6 +808,37 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_receipt.status == 1
 
 
+def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
+    cli = ibc.ibc2.cosmos_cli()
+    gov_addr = module_address("gov", prefix="nvnm")
+    receiver = cli.address("community")
+
+    proposal = {
+        "title": "arbitrary-msgsend-acceptance",
+        "summary": "arbitrary-msgsend-acceptance",
+        "deposit": f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        "messages": [
+            {
+                "@type": "/cosmos.bank.v1beta1.MsgSend",
+                "from_address": gov_addr,
+                "to_address": receiver,
+                "amount": [{"denom": WMANTRAUSD_CONSUMER_IBC_DENOM, "amount": "1"}],
+            }
+        ],
+    }
+    proposal_file = tmp_path / "gov_arbitrary_msgsend_proposal.json"
+    proposal_file.write_text(json.dumps(proposal))
+
+    rsp = cli.submit_gov_proposal(
+        proposal_file,
+        from_="community",
+        gas=400000,
+        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+    )
+    assert rsp["code"] != 0, rsp
+    assert "MsgSend" in rsp.get("raw_log", "")
+
+
 async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
