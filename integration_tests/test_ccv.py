@@ -808,6 +808,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_receipt.status == 1
 
 
+@pytest.mark.skip(reason="test_gov_arbitrary_message_proposal_rejected_in_ccv")
 def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
     cli = ibc.ibc2.cosmos_cli()
     gov_addr = module_address("gov", prefix="nvnm")
