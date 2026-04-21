@@ -59,6 +59,7 @@ from .doc_utils import (
     get_accounts,
     get_add_registry_event_registry_id,
     set_accounts_override,
+    sha256_hex,
 )
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
 from .network import Hermes, Mantra, setup_custom_mantra
@@ -1010,7 +1011,7 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
     )
     assert registry_id > 0
 
-    checksum = f"ccv-gas-{registry_id}"
+    checksum = sha256_hex(f"ccv-gas-{registry_id}")
     record = Record(
         registry=registry_name,
         uri=f"ipfs://{checksum}",
@@ -1131,7 +1132,7 @@ async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(
     await do_test_constructor_bypass_ensure_eoa_caller(ibc.ibc2.w3)
 
 
-@pytest.mark.parametrize("checksum", ["", "abc123def456"])
+@pytest.mark.parametrize("checksum", ["", sha256_hex("abc123def456")])
 async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, checksum):
     await do_test_grant_and_revoke_role_as_admin(ibc.ibc2.async_w3, checksum)
 
@@ -1156,7 +1157,7 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
     record = Record(
         registry=registry_name,
         uri="ipfs://oversize-algo",
-        checksum="abc123def456",
+        checksum=sha256_hex("abc123def456"),
         checksumAlgo=oversized_algo,
         metadata=json.dumps({"document": "oversize-algo"}),
         timestamp="",
@@ -1241,7 +1242,10 @@ async def test_revoke_record_checksum_missing_in_registry(ibc, setup_consumer_ac
     registry_name = "ccv-role-scope"
     registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
     await add_record(
-        w3, accounts["community"], "present-checksum", registry=registry_name
+        w3,
+        accounts["community"],
+        sha256_hex("present-checksum"),
+        registry=registry_name,
     )
     err = f"record with checksum no-checksum does not exist in registry {registry_id}"
     await do_test_role_scope_existence_validation(
