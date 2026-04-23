@@ -1213,7 +1213,7 @@ async def test_revoke_role_permissions(ibc, setup_consumer_accounts, is_admin):
                 "account": _accounts["signer1"],
                 "role": "editor",
                 "sender": _accounts["community"],
-                "expect_err": "registry 0 does not exist",
+                "expect_err": "registry ID cannot be zero",
             },
         ),
     ],
