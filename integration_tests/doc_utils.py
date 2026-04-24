@@ -787,8 +787,26 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
 
     registry_id = await get_registry_id(w3, registry_name)
 
-    # module admin can revoke the sole registry admin as an emergency override
-    await revoke_role(w3, registry_id, "", registry_admin, "admin", module_admin)
+    # module admin cannot orphan the registry by revoking the sole admin directly
+    # that would leave zero admins. Recovery must go grant-first, then revoke
+    revoke_sole_call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id, "", registry_admin.address, "admin"
+    )
+    await _assert_call_reverts_contains(
+        w3,
+        sender=module_admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=revoke_sole_call.data,
+        expect_err="cannot revoke the last registry admin",
+    )
+
+    # break-glass: module admin grants a replacement admin 1st (registry never orphaned)
+    await grant_role(w3, registry_id, "", replacement_admin, "admin", module_admin)
+
+    # the replacement admin — which now holds the registry admin role — revokes
+    # the original admin. module_admin was never granted admin on this registry,
+    # so the revoke must come from the replacement.
+    await revoke_role(w3, registry_id, "", registry_admin, "admin", replacement_admin)
 
     # removed registry admin should no longer be able to perform admin actions
     grant_editor_call = DOCUMENT_PRECOMPILE.fns.grantRole(
@@ -801,9 +819,6 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
         data=grant_editor_call.data,
         message="Expected removed registry admin to lose admin permissions",
     )
-
-    # module admin can restore admin access to recover from lockout
-    await grant_role(w3, registry_id, "", replacement_admin, "admin", module_admin)
 
     # recovered admin can perform admin actions
     await grant_role(w3, registry_id, "", target, Role.EDITOR, replacement_admin)
