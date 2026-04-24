@@ -21,6 +21,9 @@ config {
       coins: coins + evmd_chain.evm_denom,
     } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
     'app-config'+: {
+      'block-executor': 'block-stm',
+      'block-stm-workers': 4,
+      'block-stm-pre-estimate': true,
       evm+: {
         'evm-chain-id': evmd_chain.evm_chain_id,
       },
