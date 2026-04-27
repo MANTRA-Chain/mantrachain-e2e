@@ -9,7 +9,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
   dotenv: '../../scripts/.env',
   'mantra-canary-net-1': {
     cmd: chain.cmd,
-    'start-flags': '--trace --log_level debug',
+    'start-flags': '--trace',
     config: {
       mempool: {
         version: 'v1',
@@ -37,7 +37,7 @@ local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != 
         'allow-unprotected-txs': true,
       },
       mempool: {
-        'max-txs': -1,
+        'max-txs': 5000,
       },
     },
     validators: [{

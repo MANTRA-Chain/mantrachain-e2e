@@ -59,8 +59,8 @@ buildGoModule' rec {
   src = fetchFromGitHub {
     owner = "cosmos";
     repo = "evm";
-    rev = "20c00074a640d5ef7d4979f067f599a86badf2a3";
-    hash = "sha256-mpRvVZTTupMlWslEU53kLuf8R5kinXFZwsH9guuY2es=";
+    rev = "374f3d5c24387bf4e275ec430e6cf6e4bf5a093c";
+    hash = "sha256-dRIJNxYuVSqyeQYL140KZTVFE8DBnmXwhLDav+l25mw=";
   };
   
   vendorHash = "sha256-SIZI4mjHf/kYSi4MN9spxwb6YzUPmziywvcUInPhBn0=";
