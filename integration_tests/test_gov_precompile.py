@@ -10,7 +10,6 @@ from .utils import (
     WEI_PER_DENOM,
     build_contract,
     module_address,
-    w3_wait_for_new_blocks_async,
 )
 
 
@@ -79,7 +78,6 @@ async def test_gov_proposal(mantra):
         voter.address, pid, weighted_options, ""
     ).transact(w3, voter, to=GOV, gas=gas)
 
-    await w3_wait_for_new_blocks_async(w3, 1)
     prop = ProposalData.from_tuple(
         await PRECOMPILE.fns.getProposal(pid).call(w3, to=GOV)
     )

@@ -63,7 +63,7 @@ buildGoModule' rec {
     hash = "sha256-hMtlAA+LKml+xB3yn9S/NOUcyuxoUvomzlrQ+fuEFv4=";
   };
   
-  vendorHash = "sha256-2ExrGxegCcYS1Bq6I/S3vHaf/ES2rGgOJupFkxyhZvM=";
+  vendorHash = "sha256-Rr5jsoZQP9JrSdQtx4y/C7so4ft1B4mMFBPWGDiGyug=";
   proxyVendor = true;
   sourceRoot = "source/evmd";
   subPackages = [ "cmd/evmd" ];

@@ -1231,26 +1231,47 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
         return None
 
     mca_addr = tax_params["mca_address"]
-    modules = ["distribution", "fee_collector", "precisebank"]
-    addrs = [module_address(m) for m in modules]
+    distribution_addr = module_address("distribution")
+    fee_collector_addr = module_address("fee_collector")
+    precisebank_addr = module_address("precisebank")
     height_bf = height - 1
     denom_af = DEFAULT_DENOM if scale_factor > 1 else denom
 
     balances_bf = {
-        name: cli.balance(addr, denom=denom, height=height_bf)
-        for name, addr in zip(modules, addrs)
+        "distribution": cli.balance(distribution_addr, denom=denom, height=height_bf),
+        "fee_collector": cli.balance(fee_collector_addr, denom=denom, height=height_bf),
     }
     balances_bf["mca"] = cli.balance(mca_addr, denom=denom, height=height_bf)
 
     balances_af = {
-        name: cli.balance(addr, denom=denom_af, height=height)
-        for name, addr in zip(modules, addrs)
+        "distribution": cli.balance(distribution_addr, denom=denom_af, height=height),
+        "fee_collector": cli.balance(fee_collector_addr, denom=denom_af, height=height),
     }
     balances_af["mca"] = cli.balance(mca_addr, denom=denom_af, height=height)
-    assert balances_af["fee_collector"] == balances_af["precisebank"] == 0
 
-    fee_collector = addrs[1]
-    fee_frac = cli.query_precisebank_fraction(fee_collector, height=height_bf)
+    # v8 remove precisebank, keep backward compatibility
+    has_precisebank = True
+    fee_frac = 0
+    try:
+        fee_frac = cli.query_precisebank_fraction(fee_collector_addr, height=height_bf)
+        balances_bf["precisebank"] = cli.balance(
+            precisebank_addr,
+            denom=denom,
+            height=height_bf,
+        )
+        balances_af["precisebank"] = cli.balance(
+            precisebank_addr,
+            denom=denom_af,
+            height=height,
+        )
+    except Exception:
+        has_precisebank = False
+
+    if has_precisebank:
+        assert balances_af["fee_collector"] == 0
+        assert balances_af["precisebank"] == 0
+    else:
+        assert balances_af["fee_collector"] == 0
 
     rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
     block_mint = int(
@@ -1258,7 +1279,10 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
             rsp["result"]["finalize_block_events"], "mint", lambda a: "amount" in a
         )["amount"]
     )
-    print(f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac} in {height}")
+    print(
+        f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac}, "
+        f"precisebank={has_precisebank} in {height}"
+    )
 
     # verify tax split
     precision = 10**18
@@ -1272,7 +1296,7 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
 
         exp = (block_mint * rate) // precision
         # add fee_collector fractional: (frac * 4 * rate) / precision
-        if fee_frac > 0 and scale_factor > 1:
+        if has_precisebank and fee_frac > 0 and scale_factor > 1:
             fee_frac_scaled = fee_frac * 4
             frac_portion = (fee_frac_scaled * rate) // precision
             exp += frac_portion

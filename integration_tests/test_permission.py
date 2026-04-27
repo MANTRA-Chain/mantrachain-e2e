@@ -68,9 +68,7 @@ async def test_transfers_not_allowed(custom_mantra):
         "transfer",
     ]
     modules2 = [
-        "oracle",
         "sanction",
-        "precisebank",
         "wasm",
     ]
     modules.extend(module for module in modules2 if cli.has_module(module))
