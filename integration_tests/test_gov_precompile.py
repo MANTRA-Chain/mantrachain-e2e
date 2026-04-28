@@ -69,7 +69,6 @@ async def test_gov_proposal(mantra):
     await PRECOMPILE.fns.deposit(voter.address, pid, deposit).transact(
         w3, voter, to=GOV, gas=gas
     )
-
     weighted_options = [
         (1, "0.5"),  # yes
         (3, "0.3"),  # no
