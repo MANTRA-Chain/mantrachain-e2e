@@ -24,6 +24,7 @@
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
+          (_: pkgs: { mantrachaind-v8_0_0 = pkgs.callPackage ./nix/v8.0.0/default.nix { }; })
           (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
         ];
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
@@ -105,6 +106,7 @@
         in {
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
+          mantrachaind-v8_0_0 = pkgs.mantrachaind-v8_0_0;
           evmd = pkgs.evmd;
           hermes = pkgs.hermes;
           cosmovisor = pkgs.cosmovisor;
