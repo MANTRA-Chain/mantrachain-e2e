@@ -1,6 +1,7 @@
 import datetime
 import json
 import shutil
+import time
 from contextlib import contextmanager
 from dataclasses import astuple
 from pathlib import Path
@@ -24,6 +25,13 @@ from pystarport.utils import (
     wait_for_port,
 )
 
+from .blocksync_utils import (
+    V800_NIX,
+    V801_NIX,
+    nix_build_binary,
+    override_node_binary,
+    scan_log_for_apphash,
+)
 from .doc_utils import (
     DOCUMENT_ADDRESS,
     DOCUMENT_PRECOMPILE,
@@ -73,6 +81,7 @@ from .utils import (
     MockERC20_ARTIFACT,
     build_contract,
     create_consumer_chain,
+    edit_app_cfg,
     eth_to_bech32,
     module_address,
     send_transaction,
@@ -1342,3 +1351,59 @@ async def test_checksum_only_query_respects_limit(ibc, setup_consumer_accounts):
 
 async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
     await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
+
+
+@pytest.fixture(scope="module")
+def mantrad_v800():
+    return nix_build_binary(V800_NIX)
+
+
+@pytest.fixture(scope="module")
+def mantrad_v801():
+    return nix_build_binary(V801_NIX)
+
+
+def _spawn_observer(mantra, moniker, binary):
+    """Spawn a non-validator fullnode on mantra's chain using the given binary."""
+    data = Path(mantra.base_dir).parent
+    chain_id = mantra.config["chain_id"]
+    clustercli = cluster.ClusterCLI(data, cmd=CMD, chain_id=chain_id)
+    i = clustercli.create_node(moniker=moniker, statesync=False)
+    edit_app_cfg(clustercli, i, {})
+    override_node_binary(clustercli, i, binary)
+    proc = f"{chain_id}-node{i}"
+    clustercli.supervisor.startProcess(proc)
+    home = clustercli.home(i)
+    log_paths = [home.parent / f"node{i}.log", home.parent / f"node{i}.stderr.log"]
+    return clustercli, i, proc, log_paths
+
+
+def test_apphash_v800_vs_v801_on_ccv_rewards(ibc, mantrad_v800, mantrad_v801):
+    """Run pinned v8.0.0 and v8.0.1 fullnodes alongside the provider while
+    CCV reward packets carrying erc20:<addr> denoms flow through hermes;
+    fail if either observer's log shows an apphash mismatch / panic."""
+    provider = ibc.ibc1
+    cli = provider.cosmos_cli()
+
+    cl_v801, i_v801, proc_v801, logs_v801 = _spawn_observer(
+        provider, "observer-v801", mantrad_v801
+    )
+    cl_v800, i_v800, proc_v800, logs_v800 = _spawn_observer(
+        provider, "observer-v800", mantrad_v800
+    )
+
+    try:
+        wait_for_port(ports.rpc_port(cl_v801.base_port(i_v801)))
+        wait_for_port(ports.rpc_port(cl_v800.base_port(i_v800)))
+        wait_for_new_blocks(cli, 30)
+
+        deadline = time.time() + 1
+        hit_v801 = scan_log_for_apphash(logs_v801, deadline)
+        hit_v800 = scan_log_for_apphash(logs_v800, deadline)
+
+        assert hit_v801 is None, f"v8.0.1 observer diverged: {hit_v801}"
+        if hit_v800:
+            pytest.fail(f"v8.0.0 observer diverged from v8.0.1 cluster: {hit_v800}")
+    finally:
+        cl_v800.supervisor.stopProcess(proc_v800)
+        cl_v801.supervisor.stopProcess(proc_v801)
