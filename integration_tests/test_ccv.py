@@ -6,6 +6,7 @@ from dataclasses import astuple
 from pathlib import Path
 
 import pytest
+import requests
 import tomlkit
 from eth_abi.abi import decode, encode
 from eth_account import Account
@@ -74,6 +75,7 @@ from .utils import (
     build_contract,
     create_consumer_chain,
     eth_to_bech32,
+    find_log_event_attrs,
     module_address,
     send_transaction,
     update_consumer_chain,
@@ -101,6 +103,14 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
 
 # ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
+
+# tokenfactory denom used by test_provider_bank_hooks_fire_on_reward_distribution.
+# Pre-computed so it can be added to the consumer's allowlist at fixture setup
+# (the consumer's owner becomes gov after that, so further updates are gated).
+FACTORY_REWARD_SUBDENOM = "rewardhook"
+FACTORY_REWARD_DENOM = (
+    f"factory/{eth_to_bech32(ADDRS['validator'])}/{FACTORY_REWARD_SUBDENOM}"
+)
 # mantraUSD (6 decimals) <-> wmantraUSD (18 decimals)
 SCALAR = 10**12
 ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
@@ -239,9 +249,13 @@ def ibc(request, tmp_path_factory):
 
         # consumer native denom (as `ibc/<hash>` on the provider)
         # bridge wmantraUSD rewards that unwrap back to `erc20:<addr>` on provider
+        # FACTORY_REWARD_DENOM is included for the bank-hooks regression test;
+        # adding it here avoids a second update_consumer_chain call (which would
+        # be unauthorized once owner has been transferred to gov below).
         allowlisted_reward_denoms = [
             f"ibc/{denom_hash}",
             WMANTRAUSD_DENOM,
+            FACTORY_REWARD_DENOM,
         ]
         update_consumer_chain(
             cli,
@@ -1342,3 +1356,160 @@ async def test_checksum_only_query_respects_limit(ibc, setup_consumer_accounts):
 
 async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
     await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
+
+
+def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
+    """
+    Provider's SendCoinsFromModuleToModule must fire TokenFactory BeforeSend hooks.
+    """
+    provider_cli = ibc.ibc1.cosmos_cli()
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    rpc = provider_cli.node_rpc_http
+
+    # Resolve consumer_id from the provider (the fixture creates exactly one).
+    rsp = json.loads(
+        provider_cli.raw(
+            "q",
+            "provider",
+            "list-consumer-chains",
+            **provider_cli.get_base_kwargs(),
+        )
+    )
+    consumer_id = next(
+        c["consumer_id"]
+        for c in rsp.get("chains") or []
+        if c.get("chain_id") == "nvnm-canary-net-1"
+    )
+
+    validator = "validator"
+    validator_addr = provider_cli.address(validator)
+    gas = 2_500_000
+
+    factory_denom = FACTORY_REWARD_DENOM
+    factory_consumer_voucher = (
+        f"ibc/{ibc_denom_hash(f'transfer/{TRANSFER_CHANNEL_ID}/{factory_denom}')}"
+    )
+    rsp = provider_cli.create_tokenfactory_denom(
+        FACTORY_REWARD_SUBDENOM,
+        _from=validator,
+        gas=620_000,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = provider_cli.mint_tokenfactory_denom(
+        f"10000000000000{factory_denom}",
+        _from=validator,
+        gas=gas,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # Upload + instantiate track_before_send listener and wire it.
+    contract = Path(__file__).parent / "contracts/contracts/track_before_send.wasm"
+    rsp = provider_cli.wasm_store(
+        str(contract), validator_addr, _from=validator, gas=gas
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    store_attrs = find_log_event_attrs(
+        rsp["events"],
+        "store_code",
+        lambda a: "code_id" in a,
+    )
+    assert store_attrs, "store_code event missing"
+    code_id = store_attrs["code_id"]
+    rsp = provider_cli.wasm_instantiate(
+        code_id, validator_addr, _from=validator, gas=gas
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    inst_attrs = find_log_event_attrs(
+        rsp["events"],
+        "instantiate",
+        lambda a: "_contract_address" in a,
+    )
+    assert inst_attrs, "instantiate event missing"
+    listener_addr = inst_attrs["_contract_address"]
+    rsp = provider_cli.set_tokenfactory_before_send_hook(
+        factory_denom,
+        listener_addr,
+        _from=validator,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # Bridge factory denom to consumer so its voucher exists there.
+    rsp = provider_cli.ibc_transfer(
+        consumer_cli.address("community"),
+        f"1000000000000{factory_denom}",
+        TRANSFER_CHANNEL_ID,
+        _from=validator,
+        gas=gas,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    wait_for_new_blocks(consumer_cli, 5)
+    assert (
+        consumer_cli.balance(
+            consumer_cli.address("community"),
+            denom=factory_consumer_voucher,
+        )
+        > 0
+    )
+
+    # Mark observation window start.
+    start_height = provider_cli.block_height()
+
+    # IBC-deposit the factory voucher from consumer to provider's
+    # ConsumerRewardsPool. Pay gas in the consumer's evm_denom (WMANTRAUSD
+    # voucher); the consumer's MinGasPriceDecorator only accepts that.
+    consumer_rewards_pool = module_address("consumer_rewards_pool", prefix="mantra")
+    reward_memo = json.dumps(
+        {
+            "provider": {
+                "consumerId": consumer_id,
+                "chainId": "nvnm-canary-net-1",
+                "memo": "ICS rewards",
+            },
+        }
+    )
+    rsp = consumer_cli.ibc_transfer(
+        consumer_rewards_pool,
+        f"100000000000{factory_consumer_voucher}",
+        TRANSFER_CHANNEL_ID,
+        _from="community",
+        gas=500_000,
+        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        note=reward_memo,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # wait for IBC packet → allocation set → epoch end → AllocateTokens
+    wait_for_new_blocks(provider_cli, 30, timeout=120)
+    end_height = provider_cli.block_height()
+
+    # Only the validators portion goes through Provider.bankKeeper (bug-sensitive);
+    # the community portion goes through DistrKeeper (always-fires). Filter by
+    # amount to detect the bug-sensitive listener fire.
+    deposit = 100_000_000_000
+    expected_min_validator_amount = deposit * 8 // 10
+
+    listener_amounts = []
+    for h in range(start_height + 1, end_height + 1):
+        res = requests.get(f"{rpc}/block_results?height={h}").json().get("result") or {}
+        candidates = (res.get("end_block_events") or []) + [
+            ev
+            for ev in (res.get("finalize_block_events") or [])
+            if not any(a.get("key") == "txhash" for a in ev.get("attributes") or [])
+        ]
+        for ev in candidates:
+            if ev.get("type") != "wasm":
+                continue
+            attrs = {a.get("key"): a.get("value") for a in ev.get("attributes") or []}
+            if attrs.get("_contract_address") != listener_addr:
+                continue
+            amt = attrs.get("amount") or ""
+            # amt "20000000factory/.../rewardhook"
+            if amt.endswith(factory_denom):
+                try:
+                    listener_amounts.append((h, int(amt[: -len(factory_denom)])))
+                except ValueError:
+                    continue
+
+    assert any(
+        amount >= expected_min_validator_amount for _, amount in listener_amounts
+    ), f"validator-portion listener fire missing; observed: {listener_amounts}"
