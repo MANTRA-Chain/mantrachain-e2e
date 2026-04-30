@@ -374,7 +374,8 @@ async def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
 
     assert len(get_block_events()) == 0
-    cli = do_upgrade(c, "v8.0.0", cli.block_height() + wait_height, scale=SCALE_FACTOR)
+    cli = do_upgrade(c, "v8.0.1", cli.block_height() + wait_height, scale=SCALE_FACTOR)
+    cli = do_upgrade(c, "v8.1.0", cli.block_height() + wait_height, scale=SCALE_FACTOR)
     verify_removed_modules(cli)
 
 
