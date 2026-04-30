@@ -84,6 +84,7 @@ async def exec(c):
     )
 
     cli = do_upgrade(c, "v8.0.0", cli.block_height() + wait_height, scale=SCALE_FACTOR)
+    cli = do_upgrade(c, "v8.1.0", cli.block_height() + wait_height, scale=SCALE_FACTOR)
 
     await verify_provider(cli)
 
