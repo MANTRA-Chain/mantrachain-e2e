@@ -1,4 +1,4 @@
-// 4 validators + aggressive slashing for the v8.1.0 silent-slash repair test.
+// 4 validators + aggressive slashing for the v8.1.1 silent-slash repair test.
 local config = import 'cosmovisor_recent.jsonnet';
 local legacy_evm_denom = 'uom';
 

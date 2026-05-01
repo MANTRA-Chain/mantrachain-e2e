@@ -55,7 +55,7 @@ def _slashes(cli, validator, start_h=1, end_h=10**12):
 
 
 def test_silent_slash_repair(custom_mantra: Mantra):
-    """v7 jail records a ValidatorSlashEvent; v8 jail is silent. v8.1.0 must
+    """v7 jail records a ValidatorSlashEvent; v8 jail is silent. v8.1.1 must
     keep the recorded factor (no over-clamp) and clamp the silent residue."""
     c = custom_mantra
     cli = c.cosmos_cli()
@@ -96,8 +96,8 @@ def test_silent_slash_repair(custom_mantra: Mantra):
     c.supervisorctl("start", JAILED_NODE_NAME)
     wait_for_new_blocks(cli, 2, timeout=60)
 
-    # v8.1.0 clamp.
-    cli = do_upgrade(c, "v8.1.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
+    # v8.1.1 clamp.
+    cli = do_upgrade(c, "v8.1.1", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
     cli.distribution_rewards(signer1)
     cli.distribution_rewards(signer2)
     assert _slashes(cli, target_val) == v7_slashes
