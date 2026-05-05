@@ -207,6 +207,7 @@ async def test_ibc_cb(ibc):
     cli2 = ibc.ibc2.cosmos_cli()
     signer1 = ADDRS["signer1"]
     signer2 = ADDRS["signer2"]
+    addr_signer1 = eth_to_bech32(signer1)
     addr_signer2 = eth_to_bech32(signer2)
     erc20_denom, total = await assert_create_erc20_denom(w3, signer1)
 
@@ -280,6 +281,65 @@ async def test_ibc_cb(ibc):
     assert cli.balance(escrow_addr, erc20_denom) == 0
     assert cli2.balance(addr_signer2, dst_denom) == 0
 
+    # malformed dest_callback: dest chain writes error ack, sender voucher refunded
+    mal_amt = 10
+    print(f"chain1 signer1 -> chain2 signer2 {mal_amt}{erc20_denom} (mint vouchers)")
+    res = await PRECOMPILE.fns.transfer(
+        "transfer",
+        channel,
+        erc20_denom,
+        mal_amt,
+        signer1,
+        addr_signer2,
+        timeout_height,
+        int((time.time() + 600) * 10**9),
+        "",
+    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
+    assert res.status == 1
+    voucher_bf = wait_for_balance_change(cli2, addr_signer2, dst_denom, 0)
+    assert voucher_bf == mal_amt
+
+    cb_balance_pre_mal = await ERC20.fns.balanceOf(cb_contract).call(
+        w3, to=WETH_ADDRESS
+    )
+    escrow_pre_mal = cli.balance(escrow_addr, erc20_denom)
+
+    # calldata is not valid hex: must fail GetDestCallbackData on the dest chain.
+    mal_memo = json.dumps(
+        {"dest_callback": {"address": cb_contract, "calldata": "not_hex!"}}
+    )
+    print(f"chain2 signer2 -> chain1 (malformed dest_callback) {mal_amt}{dst_denom}")
+    run_hermes_transfer(
+        ibc.hermes,
+        cli2,
+        "signer2",
+        mal_amt,
+        cli,
+        addr_signer1,
+        denom=dst_denom,
+        memo=mal_memo,
+    )
+
+    # After error ack is relayed back, chain2 refunds signer2's voucher.
+    async def voucher_refunded():
+        bal = cli2.balance(addr_signer2, dst_denom)
+        return bal if bal == voucher_bf else None
+
+    refunded = await wait_for_fn_async("voucher refund", voucher_refunded)
+    assert refunded == voucher_bf
+
+    # chain1 escrow must be unchanged: error ack reverts the un-escrow on recv.
+    assert (
+        cli.balance(escrow_addr, erc20_denom) == escrow_pre_mal
+    ), "escrow on source chain changed after malformed dest_callback"
+    # cb contract must not have received any funds: callback never executed.
+    cb_balance_post_mal = await ERC20.fns.balanceOf(cb_contract).call(
+        w3, to=WETH_ADDRESS
+    )
+    assert (
+        cb_balance_post_mal == cb_balance_pre_mal
+    ), "cb contract balance changed despite malformed dest_callback"
+
 
 async def test_ibc_src_ack_callback(ibc):
     w3 = ibc.ibc2.async_w3
@@ -319,3 +379,60 @@ async def test_ibc_src_ack_callback(ibc):
 
     ack_counter = await wait_for_fn_async("ack callback", check_ack)
     assert ack_counter >= 1
+
+
+async def test_ibc_src_callback_malformed_memo(ibc):
+    """Malformed src_callback memos must fail at SendPacket time (EVM tx reverts)."""
+    w3 = ibc.ibc2.async_w3
+    signer2 = ADDRS["signer2"]
+
+    erc20_denom = f"erc20:{WETH_ADDRESS}"
+    send_amt = 10
+    cb, _ = await prepare_src_callback(w3, "signer2", send_amt)
+    cb_balance_bf = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
+
+    addr_signer1 = eth_to_bech32(ADDRS["signer1"])
+    timeout_height = (0, 0)
+
+    cases = [
+        ("empty-callback-address", '{"src_callback": {"address": ""}}'),
+        (
+            "gas-limit-not-string",
+            f'{{"src_callback": {{"address": "{cb.address}", "gas_limit": 500000}}}}',
+        ),
+        (
+            "calldata-not-hex",
+            f'{{"src_callback": {{"address": "{cb.address}", "calldata": "not_hex"}}}}',
+        ),
+    ]
+
+    for name, memo in cases:
+        print(f"case {name}: memo={memo}")
+        timeout_timestamp = int((time.time() + 600) * 10**9)
+
+        tx = await cb.functions.ibcTransfer(
+            "transfer",
+            "channel-0",
+            erc20_denom,
+            send_amt,
+            addr_signer1,
+            timeout_height,
+            timeout_timestamp,
+            memo,
+        ).build_transaction({"from": signer2, "gas": 900_000})
+
+        receipt = await send_transaction_async(
+            w3, ACCOUNTS["signer2"], check=False, **tx
+        )
+        assert receipt["status"] == 0, (
+            f"[{name}] expected revert at SendPacket for memo {memo!r}, "
+            f"got success: {receipt}"
+        )
+
+        # Contract WETH balance must be unchanged from the post-funding pin — the
+        # EVM revert should have rolled back any escrow attempt.
+        cb_balance = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
+        assert cb_balance == cb_balance_bf, (
+            f"[{name}] contract balance changed despite revert: "
+            f"{cb_balance} != {cb_balance_bf}"
+        )
