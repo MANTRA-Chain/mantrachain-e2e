@@ -36,10 +36,6 @@ config {
     'app-config'+: {
       evm+: {
         'evm-chain-id': nvnmchaind_chain.evm_chain_id,
-        'default-coin-denom': nvnmchaind_chain.evm_denom,
-        'default-coin-extended-denom': nvnmchaind_chain.evm_denom,
-        'default-coin-display-denom': 'wmantrausd',
-        'default-coin-decimals': 18,
       },
       'minimum-gas-prices': '0' + nvnmchaind_chain.evm_denom,
     },
