@@ -319,3 +319,64 @@ async def test_ibc_src_ack_callback(ibc):
 
     ack_counter = await wait_for_fn_async("ack callback", check_ack)
     assert ack_counter >= 1
+
+
+async def test_ibc_src_callback_malformed_memo(ibc):
+    """Malformed src_callback memos must fail at SendPacket time (EVM tx reverts)"""
+    w3 = ibc.ibc2.async_w3
+    cli = ibc.ibc2.cosmos_cli()
+    signer2 = ADDRS["signer2"]
+
+    erc20_denom, total = await assert_create_erc20_denom(w3, signer2)
+
+    res = cli.register_erc20(WETH_ADDRESS, _from="community", gas=400_000)
+    assert res["code"] == 0, res
+
+    send_amt = total // 10
+    cb, _ = await prepare_src_callback(w3, "signer2", send_amt)
+
+    addr_signer1 = eth_to_bech32(ADDRS["signer1"])
+    timeout_height = (0, 0)
+
+    cases = [
+        ("empty-callback-address", '{"src_callback": {"address": ""}}'),
+        (
+            "gas-limit-not-string",
+            f'{{"src_callback": {{"address": "{cb.address}", "gas_limit": 500000}}}}',
+        ),
+        (
+            "calldata-not-hex",
+            f'{{"src_callback": {{"address": "{cb.address}", "calldata": "not_hex"}}}}',
+        ),
+    ]
+
+    for name, memo in cases:
+        print(f"case {name}: memo={memo}")
+        timeout_timestamp = int((time.time() + 600) * 10**9)
+
+        tx = await cb.functions.ibcTransfer(
+            "transfer",
+            "channel-0",
+            erc20_denom,
+            send_amt,
+            addr_signer1,
+            timeout_height,
+            timeout_timestamp,
+            memo,
+        ).build_transaction({"from": signer2, "gas": 900_000})
+
+        receipt = await send_transaction_async(
+            w3, ACCOUNTS["signer2"], check=False, **tx
+        )
+        assert receipt["status"] == 0, (
+            f"[{name}] expected revert at SendPacket for memo {memo!r}, "
+            f"got success: {receipt}"
+        )
+
+        # Contract WETH balance must be unchanged — the EVM revert should have
+        # rolled back any escrow attempt.
+        cb_balance = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
+        assert cb_balance == send_amt, (
+            f"[{name}] contract balance changed despite revert: "
+            f"{cb_balance} != {send_amt}"
+        )
