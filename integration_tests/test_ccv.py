@@ -1,6 +1,7 @@
 import datetime
 import json
 import shutil
+import subprocess
 from contextlib import contextmanager
 from dataclasses import astuple
 from pathlib import Path
@@ -853,6 +854,42 @@ def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
     )
     assert rsp["code"] != 0, rsp
     assert "MsgSend" in rsp.get("raw_log", "")
+
+
+def test_nvnmchaind_evm_default_coin_info_flags(ibc):
+    """--evm.default-coin-* flags are wired from app.toml, genesis evm_denom wins."""
+    help_out = subprocess.run(
+        ["nvnmchaind", "start", "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    for flag in (
+        "--evm.default-coin-denom",
+        "--evm.default-coin-extended-denom",
+        "--evm.default-coin-display-denom",
+        "--evm.default-coin-decimals",
+    ):
+        assert flag in help_out, f"{flag} not registered on nvnmchaind start"
+
+    for i in range(3):
+        app_cfg = ibc.ibc2.base_dir / f"node{i}" / "config" / "app.toml"
+        with open(app_cfg) as f:
+            doc = tomlkit.parse(f.read())
+        evm_cfg = doc.get("evm", {})
+        assert evm_cfg.get("default-coin-denom") == WMANTRAUSD_CONSUMER_IBC_DENOM
+        assert (
+            evm_cfg.get("default-coin-extended-denom")
+            == WMANTRAUSD_CONSUMER_IBC_DENOM
+        )
+        assert evm_cfg.get("default-coin-display-denom") == "wmantrausd"
+        assert int(evm_cfg.get("default-coin-decimals")) == 18
+
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    res = json.loads(
+        consumer_cli.raw("q", "evm", "params", **consumer_cli.get_base_kwargs())
+    )
+    assert res["params"]["evm_denom"] == WMANTRAUSD_CONSUMER_IBC_DENOM
 
 
 async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):

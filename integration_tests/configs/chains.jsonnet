@@ -82,21 +82,21 @@
     evm_chain_id: 58886,
     bank: {
       denom_metadata: [{
-        description: 'Native 18-decimal denom metadata for Cosmos EVM chain',
+        description: 'The wrapped version of MantraUSD, which is the ERC20 token bridged from the provider chain and used as the gas token on the consumer chain.',
         denom_units: [
           {
             denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
             exponent: 0,
           },
           {
-            denom: 'nvnm',
+            denom: 'wmantrausd',
             exponent: 18,
           },
         ],
         base: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
-        display: 'nvnm',
-        name: 'nvnm',
-        symbol: 'NVNM',
+        display: 'wmantrausd',
+        name: 'transfer/channel-1/wmantraUSD IBC token',
+        symbol: 'wmantraUSD',
       }],
     },
     evm: {
