@@ -1,5 +1,6 @@
 import pytest
 import requests
+from eth_abi.abi import decode
 from eth_contract.contract import Contract
 from pystarport.utils import parse_amount, wait_for_block, wait_for_new_blocks
 
@@ -185,3 +186,42 @@ async def test_validator_rewards_pool_funding(mantra, connect_mantra, tmp_path):
         rsp["events"], "rewards", lambda attrs: "amount" in attrs
     )
     assert parse_amount(data["amount"]) == fund_amount
+
+
+@pytest.mark.skip(reason="https://github.com/MANTRA-Chain/mantrachain/pull/659")
+async def test_distribution_eth_call_state_override(mantra):
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+
+    sender = bech32_to_eth(cli.address("signer1"))
+    community_pool_call = PRECOMPILE.fns.communityPool()
+    tx = {
+        "to": DISTRIBUTION,
+        "from": sender,
+        "data": community_pool_call.data,
+    }
+
+    unrelated_address = "0x000000000000000000000000000000000000dEaD"
+    empty_override = {unrelated_address: {}}
+    unrelated_override = {
+        unrelated_address: {
+            "stateDiff": {
+                "0x" + "0" * 64: "0x" + "01".zfill(64),
+            }
+        }
+    }
+
+    wait_for_block(cli, 2)
+
+    base = await w3.eth.call(tx, "latest")
+    with_empty_override = await w3.eth.call(tx, "latest", empty_override)
+    with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
+
+    decoded_base = [
+        (denom, int(amount), precision)
+        for denom, amount, precision in decode(["(string,uint256,uint8)[]"], base)[0]
+    ]
+    call_result = await community_pool_call.call(w3, to=DISTRIBUTION)
+    assert tuple(decoded_base) == call_result
+    assert with_empty_override == base
+    assert with_unrelated_override == base
