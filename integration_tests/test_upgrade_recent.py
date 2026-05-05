@@ -22,6 +22,7 @@ from .utils import (
     assert_withdraw_rewards,
     call_with_retry_async,
     create_consumer_chain,
+    module_address,
     update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
@@ -82,9 +83,8 @@ async def exec(c):
         scale_factor=SCALE_FACTOR,
     )
 
-    cli = do_upgrade(
-        c, "v8.0.0-rc2", cli.block_height() + wait_height, scale=SCALE_FACTOR
-    )
+    cli = do_upgrade(c, "v8.0.0", cli.block_height() + wait_height, scale=SCALE_FACTOR)
+    cli = do_upgrade(c, "v8.1.1", cli.block_height() + wait_height, scale=SCALE_FACTOR)
 
     await verify_provider(cli)
 
@@ -169,7 +169,7 @@ async def verify_provider(cli):
     rsp = cli.provider_opt_in(consumer_id, from_="validator")
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    authority = cli.get_params("marketmap").get("admin")
+    authority = module_address("gov")
     owner_address = cli.address("validator")
     update_consumer_chain(
         cli,

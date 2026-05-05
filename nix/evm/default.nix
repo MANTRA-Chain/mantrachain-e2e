@@ -59,11 +59,11 @@ buildGoModule' rec {
   src = fetchFromGitHub {
     owner = "cosmos";
     repo = "evm";
-    rev = "5a7f5358d5d607c407781304219aae34db027d8d";
-    hash = "sha256-Du7v2qEFTavEP9rOg4Vzww0YKGTX8uA/9LRyBYMbLLE=";
+    rev = "374f3d5c24387bf4e275ec430e6cf6e4bf5a093c";
+    hash = "sha256-dRIJNxYuVSqyeQYL140KZTVFE8DBnmXwhLDav+l25mw=";
   };
   
-  vendorHash = "sha256-Rr5jsoZQP9JrSdQtx4y/C7so4ft1B4mMFBPWGDiGyug=";
+  vendorHash = "sha256-SIZI4mjHf/kYSi4MN9spxwb6YzUPmziywvcUInPhBn0=";
   proxyVendor = true;
   sourceRoot = "source/evmd";
   subPackages = [ "cmd/evmd" ];

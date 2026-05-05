@@ -11,18 +11,28 @@ from typing import NamedTuple
 import tomlkit
 from eth_contract.erc20 import ERC20
 from pystarport import cluster, ports
-from pystarport.utils import parse_amount, wait_for_new_blocks, wait_for_port
+from pystarport.utils import (
+    parse_amount,
+    wait_for_fn_async,
+    wait_for_new_blocks,
+    wait_for_port,
+)
+from web3 import AsyncWeb3
 
 from .cosmoscli import CosmosCLI
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
+    ACCOUNTS,
     ADDRESS_PREFIX,
     ADDRS,
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
+    KEYS,
     SCALE_FACTOR,
+    WETH_ADDRESS,
+    build_and_deploy_contract_async,
     escrow_address,
     find_duplicate,
     find_fee,
@@ -491,3 +501,37 @@ async def assert_ibc_transfer_flow(
     )
     assert_receiver_events(cli1, cli2, eth_community)
     return ibc_erc20_addr
+
+
+async def wait_for_balance_change_async(
+    w3: AsyncWeb3, addr, token_addr: str, init_balance: int
+):
+    async def check_balance():
+        current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
+        return current_balance if current_balance != init_balance else None
+
+    return await wait_for_fn_async("balance change", check_balance)
+
+
+async def prepare_src_callback(w3, funder_name: str, amt: int, gas=400_000):
+    contract = await build_and_deploy_contract_async(
+        w3, "CounterWithCallbacks", key=KEYS[funder_name]
+    )
+    cb_balance_bf = await ERC20.fns.balanceOf(contract.address).call(
+        w3, to=WETH_ADDRESS
+    )
+    receipt = await ERC20.fns.transfer(contract.address, amt).transact(
+        w3, ACCOUNTS[funder_name], to=WETH_ADDRESS, gas=gas
+    )
+    assert receipt["status"] == 1
+    await wait_for_balance_change_async(
+        w3, contract.address, WETH_ADDRESS, cb_balance_bf
+    )
+    # send from contract via ICS20 with src_callback memo pointing to itself.
+    src_cb = {
+        "src_callback": {
+            "address": contract.address,
+            "gas_limit": "1000000",
+        }
+    }
+    return contract, json.dumps(src_cb)

@@ -634,8 +634,9 @@ wheels = [
 [[package]]
 name = "eth-contract"
 version = "0.3.0"
-source = { git = "https://github.com/mmsqe/eth-contract.git?rev=event#0867e968689b361be2075d2fe268aa42c01e2d29" }
+source = { git = "https://github.com/yihuang/eth-contract.git?rev=main#1a3946ca22f50b591d9fdeb80ac2477f44fa72e1" }
 dependencies = [
+    { name = "eth-abi" },
     { name = "web3" },
 ]
 
@@ -980,7 +981,7 @@ requires-dist = [
     { name = "cprotobuf", specifier = ">=0.1.12" },
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "eth-bloom", specifier = ">=3.0" },
-    { name = "eth-contract", git = "https://github.com/mmsqe/eth-contract.git?rev=event" },
+    { name = "eth-contract", git = "https://github.com/yihuang/eth-contract.git?rev=main" },
     { name = "flake8-black", specifier = ">=0.3.6" },
     { name = "flake8-isort", specifier = ">=6.1.2" },
     { name = "flaky", specifier = ">=3.8.1" },

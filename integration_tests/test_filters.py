@@ -113,19 +113,23 @@ async def test_event_log_filter(mantra):
     contract = greeter.contract
     assert "Hello" == await greeter.greet()
     current_height = hex(await w3.eth.get_block_number())
-    event_filter = await contract.events.ChangeGreeting.create_filter(
-        w3, from_block=current_height
+    filter_params = contract.events.ChangeGreeting.build_filter(
+        from_block=current_height
     )
+    event_filter = await w3.eth.filter(filter_params)
     res = await greeter.set_greeting("world")
-    log = contract.events.ChangeGreeting().process_receipt(res)[0]
-    assert log["event"] == "ChangeGreeting"
-    new_entries = await event_filter.get_new_entries()
+    receipt_log = contract.events.ChangeGreeting.parse_log(res["logs"][0])
+    assert receipt_log["event"] == "ChangeGreeting"
+    new_raw = await event_filter.get_new_entries()
+    new_entries = [contract.events.ChangeGreeting.parse_log(e) for e in new_raw]
     assert len(new_entries) == 1
-    assert new_entries[0] == log
+    assert new_entries[0]["transactionHash"] == receipt_log["transactionHash"]
     assert "world" == await greeter.greet()
-    # without new txs since last call``
+    # without new txs since last call
     assert await event_filter.get_new_entries() == []
-    assert await event_filter.get_all_entries() == new_entries
+    all_raw = await event_filter.get_all_entries()
+    all_entries = [contract.events.ChangeGreeting.parse_log(e) for e in all_raw]
+    assert all_entries == new_entries
     # Uninstall
     assert await w3.eth.uninstall_filter(event_filter.filter_id)
     assert not await w3.eth.uninstall_filter(event_filter.filter_id)

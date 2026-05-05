@@ -36,6 +36,22 @@ contract CounterWithCallbacks is ICallbacks {
     );
 
     event IBCTransferSent(uint64 sequence);
+    struct NestedAckForwardConfig {
+        string sourcePort;
+        string sourceChannel;
+        string denom;
+        uint256 amount;
+        string receiver;
+        Height timeoutHeight;
+        uint64 timeoutTimestamp;
+        string memo;
+    }
+
+    NestedAckForwardConfig private nestedAckForwardCfg;
+    bool public nestedAckForwardEnabled;
+    bool public nestedAckForwardAttempted;
+    bool public nestedAckForwardSucceeded;
+    uint64 public nestedAckForwardSequence;
 
     /**
      * @dev Increment the counter and deposit ERC20 tokens
@@ -91,6 +107,27 @@ contract CounterWithCallbacks is ICallbacks {
         // Emit event when packet is acknowledged
         emit PacketAcknowledged(channelId, portId, sequence, data, acknowledgement);
 
+        if (nestedAckForwardEnabled) {
+            nestedAckForwardAttempted = true;
+            try ICS20_CONTRACT.transfer(
+                nestedAckForwardCfg.sourcePort,
+                nestedAckForwardCfg.sourceChannel,
+                nestedAckForwardCfg.denom,
+                nestedAckForwardCfg.amount,
+                address(this),
+                nestedAckForwardCfg.receiver,
+                nestedAckForwardCfg.timeoutHeight,
+                nestedAckForwardCfg.timeoutTimestamp,
+                nestedAckForwardCfg.memo
+            ) returns (uint64 nextSequence) {
+                nestedAckForwardSucceeded = true;
+                nestedAckForwardSequence = nextSequence;
+            } catch {
+                nestedAckForwardSucceeded = false;
+                nestedAckForwardSequence = 0;
+            }
+        }
+
         counter += 1; // Increment counter on acknowledgement
     }
 
@@ -114,6 +151,36 @@ contract CounterWithCallbacks is ICallbacks {
      */
     function resetCounter() external {
         counter = 0;
+    }
+
+    function configureNestedAckForward(
+        string memory sourcePort,
+        string memory sourceChannel,
+        string memory denom,
+        uint256 amount,
+        string memory receiver,
+        Height memory timeoutHeight,
+        uint64 timeoutTimestamp,
+        string memory memo
+    ) external {
+        nestedAckForwardCfg = NestedAckForwardConfig({
+            sourcePort: sourcePort,
+            sourceChannel: sourceChannel,
+            denom: denom,
+            amount: amount,
+            receiver: receiver,
+            timeoutHeight: timeoutHeight,
+            timeoutTimestamp: timeoutTimestamp,
+            memo: memo
+        });
+        nestedAckForwardEnabled = true;
+        nestedAckForwardAttempted = false;
+        nestedAckForwardSucceeded = false;
+        nestedAckForwardSequence = 0;
+    }
+
+    function disableNestedAckForward() external {
+        nestedAckForwardEnabled = false;
     }
 
     function ibcTransfer(

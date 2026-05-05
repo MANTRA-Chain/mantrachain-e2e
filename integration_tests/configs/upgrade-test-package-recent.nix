@@ -8,7 +8,8 @@ let
   releases = {
     genesis = pkgs.callPackage ../../nix/v6.1.3/default.nix {};
     "v7.0.0" = pkgs.callPackage ../../nix/v7.0.0/default.nix {};
-    "v8.0.0-rc2" = if useLiteMode
+    "v8.0.0" = pkgs.callPackage ../../nix/v8.0.0/default.nix {};
+    "v8.1.1" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };

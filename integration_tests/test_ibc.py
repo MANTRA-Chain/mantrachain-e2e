@@ -5,14 +5,15 @@ import pytest
 from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_fn_async
-from web3 import AsyncWeb3
 
 from .ibc_utils import (
     assert_hermes_transfer,
     assert_ibc_transfer_flow,
     ibc_denom_hash,
     prepare_network,
+    prepare_src_callback,
     run_hermes_transfer,
+    wait_for_balance_change_async,
 )
 from .utils import (
     ACCOUNTS,
@@ -95,16 +96,6 @@ async def assert_tokenfactory_flow(cli, w3, signer1, receiver):
     signer1_balance_eth = await ERC20.fns.balanceOf(receiver).call(w3, to=tf_erc20_addr)
     assert balance == signer1_balance_eth == transfer_amt
     return tf_denom, tf_erc20_addr
-
-
-async def wait_for_balance_change_async(
-    w3: AsyncWeb3, addr, token_addr: str, init_balance: int
-):
-    async def check_balance():
-        current_balance = await ERC20.fns.balanceOf(addr).call(w3, to=token_addr)
-        return current_balance if current_balance != init_balance else None
-
-    return await wait_for_fn_async("balance change", check_balance)
 
 
 async def test_ibc_transfer(ibc):
@@ -208,30 +199,6 @@ async def prepare_dest_callback(w3, sender, amt):
         }
     }
     return contract.address, json.dumps(dest_cb)
-
-
-async def prepare_src_callback(w3, funder_name: str, amt: int):
-    contract = await build_and_deploy_contract_async(
-        w3, "CounterWithCallbacks", key=KEYS[funder_name]
-    )
-    cb_balance_bf = await ERC20.fns.balanceOf(contract.address).call(
-        w3, to=WETH_ADDRESS
-    )
-    receipt = await ERC20.fns.transfer(contract.address, amt).transact(
-        w3, ACCOUNTS[funder_name], to=WETH_ADDRESS, gas=gas
-    )
-    assert receipt["status"] == 1
-    await wait_for_balance_change_async(
-        w3, contract.address, WETH_ADDRESS, cb_balance_bf
-    )
-    # send from contract via ICS20 with src_callback memo pointing to itself.
-    src_cb = {
-        "src_callback": {
-            "address": contract.address,
-            "gas_limit": "1000000",
-        }
-    }
-    return contract, json.dumps(src_cb)
 
 
 async def test_ibc_cb(ibc):

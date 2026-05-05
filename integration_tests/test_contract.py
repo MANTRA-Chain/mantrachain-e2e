@@ -34,9 +34,9 @@ from eth_contract.multicall3 import (
 from eth_contract.utils import (
     ZERO_ADDRESS,
     balance_of,
-    broadcast_transaction,
     get_initcode,
     send_transaction,
+    sign_transaction,
 )
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_hash.auto import keccak
@@ -395,7 +395,8 @@ async def test_replace_underpriced(mantra):
         "gasPrice": gas_price,
     }
     tx2 = {**tx1, "to": ADDRS["signer2"], "value": 2000}
-    hash1 = await broadcast_transaction(w3, acct, **tx1)
+    signed1 = await sign_transaction(w3, acct, **tx1)
+    hash1 = await w3.eth.send_raw_transaction(signed1.raw_transaction)
     for _ in range(5):
         pending = await w3.geth.txpool.content()
         owner_pending = next(
@@ -417,7 +418,8 @@ async def test_replace_underpriced(mantra):
     with pytest.raises(
         web3.exceptions.Web3RPCError, match="replacement transaction underpriced"
     ):
-        await broadcast_transaction(w3, acct, **tx2)
+        signed2 = await sign_transaction(w3, acct, **tx2)
+        await w3.eth.send_raw_transaction(signed2.raw_transaction)
     await w3.eth.wait_for_transaction_receipt(hash1)
 
 
