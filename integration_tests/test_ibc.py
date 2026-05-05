@@ -382,18 +382,14 @@ async def test_ibc_src_ack_callback(ibc):
 
 
 async def test_ibc_src_callback_malformed_memo(ibc):
-    """Malformed src_callback memos must fail at SendPacket time (EVM tx reverts)"""
+    """Malformed src_callback memos must fail at SendPacket time (EVM tx reverts)."""
     w3 = ibc.ibc2.async_w3
-    cli = ibc.ibc2.cosmos_cli()
     signer2 = ADDRS["signer2"]
 
-    erc20_denom, total = await assert_create_erc20_denom(w3, signer2)
-
-    res = cli.register_erc20(WETH_ADDRESS, _from="community", gas=400_000)
-    assert res["code"] == 0, res
-
-    send_amt = total // 10
+    erc20_denom = f"erc20:{WETH_ADDRESS}"
+    send_amt = 10
     cb, _ = await prepare_src_callback(w3, "signer2", send_amt)
+    cb_balance_bf = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
 
     addr_signer1 = eth_to_bech32(ADDRS["signer1"])
     timeout_height = (0, 0)
@@ -433,10 +429,10 @@ async def test_ibc_src_callback_malformed_memo(ibc):
             f"got success: {receipt}"
         )
 
-        # Contract WETH balance must be unchanged — the EVM revert should have
-        # rolled back any escrow attempt.
+        # Contract WETH balance must be unchanged from the post-funding pin — the
+        # EVM revert should have rolled back any escrow attempt.
         cb_balance = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
-        assert cb_balance == send_amt, (
+        assert cb_balance == cb_balance_bf, (
             f"[{name}] contract balance changed despite revert: "
-            f"{cb_balance} != {send_amt}"
+            f"{cb_balance} != {cb_balance_bf}"
         )
