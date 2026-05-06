@@ -55,3 +55,24 @@ def test_blacklist(mantra, tmp_path):
     msg["@type"] = "/mantrachain.sanction.v1.MsgRemoveBlacklistAccounts"
     submit_gov_proposal(mantra, tmp_path, messages=[msg])
     assert_transfer(cli, user, community)
+
+
+def test_single_msg_exec_per_tx(mantra):
+    cli = mantra.cosmos_cli()
+    granter = cli.address("signer1")
+    grantee = cli.address("signer2")
+    receiver = cli.address("community")
+
+    tx = cli.transfer(granter, receiver, f"1{DEFAULT_DENOM}", generate_only=True)
+    send_msg = tx["body"]["messages"][0]
+    exec_msg = {
+        "@type": "/cosmos.authz.v1beta1.MsgExec",
+        "grantee": grantee,
+        "msgs": [send_msg],
+    }
+    tx["body"]["messages"] = [exec_msg, exec_msg]
+
+    signed = cli.sign_tx_json(tx, "signer2")
+    rsp = cli.broadcast_tx_json(signed)
+    assert rsp.get("code") != 0, rsp
+    assert "only a single MsgExec" in rsp.get("raw_log", ""), rsp
