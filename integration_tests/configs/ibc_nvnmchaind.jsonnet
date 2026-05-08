@@ -124,7 +124,7 @@ config {
         id: 'nvnm-canary-net-1',
         ccv_consumer_chain: true,
         gas_price+: {
-          price: 10000000000,
+          price: 87600000000,
           denom: nvnmchaind_chain.evm_denom,
         },
       },

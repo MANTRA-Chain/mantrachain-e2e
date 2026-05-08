@@ -113,8 +113,8 @@
     },
     feemarket: {
       params: {
-        base_fee: '1000000000',
-        min_gas_price: '0',
+        base_fee: '87600000000',
+        min_gas_price: '87600000000',
       },
     },
   },

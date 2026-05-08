@@ -10,7 +10,26 @@ from eth_contract.contract import Contract as ContractAsync
 from eth_hash.auto import keccak
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS, ADDRS, KEYS, build_contract, send_transaction
+from .utils import (
+    ACCOUNTS,
+    ADDRS,
+    CONSUMER_GAS_AMT,
+    KEYS,
+    build_contract,
+    send_transaction,
+)
+
+
+def consumer_eip1559_fees(w3) -> dict:
+    # base_fee can decay below min_gas_price in empty blocks, raise priority
+    # so effective_gas_price = base_fee + priority >= min_gas_price.
+    base_fee = int(w3.eth.get_block("latest")["baseFeePerGas"])
+    floor = int(CONSUMER_GAS_AMT)
+    priority_fee = max(2_000_000_000, floor - base_fee)
+    return {
+        "maxFeePerGas": (base_fee + priority_fee) * 2,
+        "maxPriorityFeePerGas": priority_fee,
+    }
 
 
 def sha256_hex(s: str) -> str:
@@ -186,10 +205,12 @@ async def _tx_params(
         base_fee = block.get("baseFeePerGas")
         if base_fee is not None:
             base_fee = int(base_fee)
-            priority_fee = 2_000_000_000  # 2 gwei
+            # raise priority so base_fee + priority >= consumer min_gas_price,
+            # otherwise empty-block base_fee decay starves the floor.
+            priority_fee = max(2_000_000_000, int(CONSUMER_GAS_AMT) - base_fee)
             return {
                 "gas": gas_limit,
-                "maxFeePerGas": base_fee * 2 + priority_fee,
+                "maxFeePerGas": (base_fee + priority_fee) * 2,
                 "maxPriorityFeePerGas": priority_fee,
             }
     except Exception:
@@ -396,6 +417,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
             "from": sender,
             "data": artifact["bytecode"],
             "gas": 2_000_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -434,6 +456,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
             "from": sender,
             "data": eoa_add_registry_call.data,
             "gas": 1_000_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -498,6 +521,7 @@ async def do_test_constructor_bypass_ensure_eoa_caller(
         {
             "from": sender,
             "gas": 2_000_000,
+            **consumer_eip1559_fees(w3),
         }
     )
     deploy_receipt = send_transaction(w3, deploy_tx, KEYS["community"])

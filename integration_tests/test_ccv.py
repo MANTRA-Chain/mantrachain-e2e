@@ -33,6 +33,7 @@ from .doc_utils import (
     _tx_params,
     add_record,
     clear_accounts_override,
+    consumer_eip1559_fees,
     do_test_add_and_query_records,
     do_test_add_record,
     do_test_add_record_same_checksum_maintains_record_id,
@@ -67,8 +68,8 @@ from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
     ADDRS,
     CMD,
+    CONSUMER_GAS_AMT,
     DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
     KEYS,
     MNEMONICS,
     MockERC20_ARTIFACT,
@@ -295,7 +296,8 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"]["params"][
                 "transfer_timeout_period"
             ] = "10s"
-            genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
+            genesis["app_state"]["feemarket"]["params"]["base_fee"] = "87600000000"
+            genesis["app_state"]["feemarket"]["params"]["min_gas_price"] = "87600000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
             (cons_cfg / "edited_genesis.json").replace(genesis_path)
@@ -412,6 +414,7 @@ async def test_ccv(ibc):
             "from": sender,
             "to": receiver,
             "value": amt,
+            **consumer_eip1559_fees(w3),
         },
         KEYS[community],
     )
@@ -424,7 +427,7 @@ async def test_ccv(ibc):
         cli2.address(community),
         cli2.address(signer),
         f"{amt}{denom}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{denom}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{denom}",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     assert w3.eth.get_balance(receiver) - balance == amt
@@ -551,12 +554,16 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         timeout_ns,
         "",
     )
+    base_fee = int(w3.eth.get_block("latest")["baseFeePerGas"])
+    priority_fee = 2_000_000_000
     ics20_receipt = send_transaction(
         w3,
         {
             "to": ICS20_ADDRESS,
             "data": ics20_call.data,
             "gas": 3_000_000,
+            "maxFeePerGas": base_fee * 2 + priority_fee,
+            "maxPriorityFeePerGas": priority_fee,
         },
         sender_key,
     )
@@ -602,6 +609,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
             "to": ICS20_ADDRESS,
             "data": ics20_return_call.data,
             "gas": 3_000_000,
+            **consumer_eip1559_fees(ibc.ibc2.w3),
         },
         KEYS[receiver_name],
     )
@@ -849,7 +857,7 @@ def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
         proposal_file,
         from_="community",
         gas=400000,
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
     assert "MsgSend" in rsp.get("raw_log", "")
@@ -884,7 +892,7 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
@@ -910,7 +918,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
         sender_bech32,
         precompile_bech32,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
     assert "unauthorized" in rsp["raw_log"].lower(), rsp
@@ -923,6 +931,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
             "to": DOCUMENT_ADDRESS,
             "value": 1,
             "gas": 100_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -952,7 +961,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
             sender,
             sender,
             f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-            gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+            gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
         )
         assert rsp["code"] == 0, rsp["raw_log"]
 
@@ -991,7 +1000,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
 
@@ -1548,7 +1557,7 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
         TRANSFER_CHANNEL_ID,
         _from="community",
         gas=500_000,
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
         note=reward_memo,
     )
     assert rsp["code"] == 0, rsp["raw_log"]

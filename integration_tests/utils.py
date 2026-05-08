@@ -73,6 +73,8 @@ EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 40000000000))
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+# consumer-chain (nvnmchaind) gas price floor, pinned to feemarket min_gas_price
+CONSUMER_GAS_AMT = float(os.getenv("CONSUMER_GAS_AMT", 87600000000))
 DEFAULT_GAS = 200000
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
