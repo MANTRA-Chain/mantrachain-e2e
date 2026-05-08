@@ -564,23 +564,13 @@ def test_failed_transfer_tx(mantra):
             }
 
 
-@pytest.mark.connect
-def test_connect_multisig(connect_mantra, tmp_path):
-    test_multisig(None, connect_mantra, tmp_path)
-
-
-def test_multisig(mantra, connect_mantra, tmp_path):
-    cli = connect_mantra.cosmos_cli(tmp_path)
+def test_multisig(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
     do_multisig(cli, tmp_path, "signer1", "signer2", "multitest1")
 
 
-@pytest.mark.connect
-def test_connect_multisig_cosmos(connect_mantra, tmp_path):
-    test_multisig_cosmos(None, connect_mantra, tmp_path)
-
-
-def test_multisig_cosmos(mantra, connect_mantra, tmp_path):
-    cli = connect_mantra.cosmos_cli(tmp_path)
+def test_multisig_cosmos(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
     recover1 = "recover1"
     recover2 = "recover2"
     amt = 6_000_000_000_000_000_000 // WEI_PER_DENOM

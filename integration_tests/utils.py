@@ -935,44 +935,82 @@ def fund_acc(w3, acc, fund=4_000_000_000_000_000_000):
         assert w3.eth.get_balance(addr, "latest") == fund
 
 
-def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
-    # prepare multisig and accounts
-    signer1 = cli.address(signer1_name)
-    signer2 = cli.address(signer2_name)
+def setup_multisig(
+    cli,
+    signer1_name,
+    signer2_name,
+    multisig_name,
+    denom=DEFAULT_DENOM,
+    gas_prices=None,
+    fund_amt=9_000_000_000_000_000,
+):
+    """Create a 2-of-2 multisig from the given signer keys and fund it."""
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
-    rsp = cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
+    extra = {"gas_prices": gas_prices} if gas_prices else {}
+    amt = fund_amt // WEI_PER_DENOM
+    rsp = cli.transfer(cli.address(signer1_name), multi_addr, f"{amt}{denom}", **extra)
     assert rsp["code"] == 0, rsp["raw_log"]
     acc = cli.account(multi_addr)
     res = cli.account_by_num(acc["account"]["value"]["account_number"])
     assert res["account_address"] == multi_addr
+    return multi_addr
 
+
+def multisig_sign_and_broadcast(
+    cli,
+    tmp_path,
+    unsigned_tx,
+    multisig_name,
+    multi_addr,
+    signer1_name,
+    signer2_name,
+):
     m_txt = tmp_path / "m.json"
     p1_txt = tmp_path / "p1.json"
     p2_txt = tmp_path / "p2.json"
     tx_txt = tmp_path / "tx.json"
-    amt = 1
-    multi_tx = cli.transfer(
-        multi_addr,
-        signer2,
-        f"{amt}{DEFAULT_DENOM}",
-        generate_only=True,
-    )
-    json.dump(multi_tx, m_txt.open("w"))
+    json.dump(unsigned_tx, m_txt.open("w"))
     signature1 = cli.sign_multisig_tx(m_txt, multi_addr, signer1_name)
     json.dump(signature1, p1_txt.open("w"))
     signature2 = cli.sign_multisig_tx(m_txt, multi_addr, signer2_name)
     json.dump(signature2, p2_txt.open("w"))
-    final_multi_tx = cli.combine_multisig_tx(
-        m_txt,
-        multisig_name,
-        p1_txt,
-        p2_txt,
-    )
+    final_multi_tx = cli.combine_multisig_tx(m_txt, multisig_name, p1_txt, p2_txt)
     json.dump(final_multi_tx, tx_txt.open("w"))
     rsp = cli.broadcast_tx(tx_txt)
     assert rsp["code"] == 0, rsp["raw_log"]
+    return rsp
+
+
+def do_multisig(
+    cli,
+    tmp_path,
+    signer1_name,
+    signer2_name,
+    multisig_name,
+    denom=DEFAULT_DENOM,
+    gas_prices=None,
+):
+    multi_addr = setup_multisig(
+        cli, signer1_name, signer2_name, multisig_name, denom, gas_prices
+    )
+    extra = {"gas_prices": gas_prices} if gas_prices else {}
+    unsigned = cli.transfer(
+        multi_addr,
+        cli.address(signer2_name),
+        f"1{denom}",
+        generate_only=True,
+        **extra,
+    )
+    multisig_sign_and_broadcast(
+        cli,
+        tmp_path,
+        unsigned,
+        multisig_name,
+        multi_addr,
+        signer1_name,
+        signer2_name,
+    )
     assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
 
 

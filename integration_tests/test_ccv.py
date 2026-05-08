@@ -78,7 +78,9 @@ from .utils import (
     eth_to_bech32,
     find_log_event_attrs,
     module_address,
+    multisig_sign_and_broadcast,
     send_transaction,
+    setup_multisig,
     update_consumer_chain,
 )
 
@@ -1597,3 +1599,86 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
     assert any(
         amount >= expected_min_validator_amount for _, amount in listener_amounts
     ), f"validator-portion listener fire missing; observed: {listener_amounts}"
+
+
+def test_consumer_multisig(ibc, tmp_path):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    gas_prices = f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
+    multisig_name = "multitest_anchor"
+    gas_limit = 3_000_000
+    fee_amt = int(CONSUMER_GAS_AMT) * gas_limit
+    multi_addr = setup_multisig(
+        consumer_cli,
+        "community",
+        "signer2",
+        multisig_name,
+        denom=WMANTRAUSD_CONSUMER_IBC_DENOM,
+        gas_prices=gas_prices,
+        fund_amt=fee_amt * 2,
+    )
+
+    registry_name = "multisig-whitepaper"
+    checksum = sha256_hex("multisig-anchoring-payload")
+    fee = f"{fee_amt}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
+    common = {
+        "from_": multi_addr,
+        "fees": fee,
+        "gas": str(gas_limit),
+        "chain_id": consumer_cli.chain_id,
+        "keyring_backend": "test",
+        "home": consumer_cli.data_dir,
+        "node": consumer_cli.node_rpc,
+        "output": "json",
+    }
+    add_registry_tx = json.loads(
+        consumer_cli.raw(
+            "tx",
+            "anchoring",
+            "add-registry",
+            "--generate-only",
+            name=registry_name,
+            description="registry created via multisig",
+            metadata='{"owner":"NVNM Foundation"}',
+            **common,
+        )
+    )
+    add_record_tx = json.loads(
+        consumer_cli.raw(
+            "tx",
+            "anchoring",
+            "add-record",
+            "--generate-only",
+            record=json.dumps(
+                {
+                    "registry": registry_name,
+                    "uri": "ipfs://",
+                    "checksum": checksum,
+                    "checksum_algo": "sha256",
+                    "metadata": '{"version":"1.0"}',
+                    "status": "active",
+                }
+            ),
+            **common,
+        )
+    )
+    unsigned_tx = add_registry_tx
+    unsigned_tx["body"]["messages"].extend(add_record_tx["body"]["messages"])
+
+    multisig_sign_and_broadcast(
+        consumer_cli,
+        tmp_path,
+        unsigned_tx,
+        multisig_name,
+        multi_addr,
+        "community",
+        "signer2",
+    )
+
+    registries = consumer_cli.raw(
+        "q",
+        "anchoring",
+        "registries",
+        node=consumer_cli.node_rpc,
+        output="json",
+    )
+    assert registry_name in registries.decode("utf-8")
