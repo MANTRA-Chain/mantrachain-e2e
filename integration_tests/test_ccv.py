@@ -77,6 +77,7 @@ from .utils import (
     create_consumer_chain,
     eth_to_bech32,
     find_log_event_attrs,
+    ibc_denom_address,
     module_address,
     multisig_sign_and_broadcast,
     send_transaction,
@@ -1080,6 +1081,45 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
 
     assert identity_base == expected_identity_output
     assert identity_base == identity_empty == identity_unrelated
+
+
+@pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")
+async def test_erc20_precompile_state_override(ibc):
+    """eth_call balanceOf on a native ERC20 precompile must return the same
+    value under no override, empty `{}`, and an unrelated stateDiff override.
+    """
+    cli = ibc.ibc2.cosmos_cli()
+    w3 = ibc.ibc2.async_w3
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
+    holder = ADDRS["community"]
+    pair_addr = ibc_denom_address(denom)
+
+    pair = cli.query_erc20_token_pair(denom)
+    if pair.get("contract_owner") != "OWNER_MODULE" or not pair.get("enabled"):
+        pytest.skip(f"{denom} not registered as enabled OWNER_MODULE pair: {pair}")
+    assert w3.to_checksum_address(pair["erc20_address"]) == pair_addr
+
+    expected = cli.balance(cli.address("community"), denom=denom)
+    assert expected > 0, "community need have balance"
+
+    tx = {
+        "to": pair_addr,
+        "from": holder,
+        "data": "0x"
+        + (keccak(b"balanceOf(address)")[:4] + encode(["address"], [holder])).hex(),
+    }
+
+    base = await w3.eth.call(tx, "latest")
+    (decoded,) = decode(["uint256"], bytes(base))
+    assert decoded == expected, (decoded, expected)
+
+    # Any non-nil override must not bypass the keeper-backed precompile.
+    dead = "0x000000000000000000000000000000000000dEaD"
+    for override in (
+        {dead: {}},
+        {dead: {"stateDiff": {"0x" + "0" * 64: "0x" + "01".zfill(64)}}},
+    ):
+        assert await w3.eth.call(tx, "latest", override) == base, override
 
 
 async def test_anchoring_state_changing_methods_gas_delta_non_zero(
