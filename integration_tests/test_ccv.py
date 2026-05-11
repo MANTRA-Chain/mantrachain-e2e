@@ -301,11 +301,8 @@ def ibc(request, tmp_path_factory):
             ] = "10s"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "87600000000"
             genesis["app_state"]["feemarket"]["params"]["min_gas_price"] = "87600000000"
-            # cap denom must match the consumer chain's fee denom
-            genesis["app_state"]["anchoring"]["params"]["anchoring_fee"] = {
-                "denom": WMANTRAUSD_CONSUMER_IBC_DENOM,
-                "amount": str(ANCHORING_FEE),
-            }
+            # AnchoringFee.Denom is left at the sentinel ("") so the chain's
+            # InitGenesis fills it from evm_denom (the IBC mantraUSD denom).
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
             (cons_cfg / "edited_genesis.json").replace(genesis_path)
@@ -1492,9 +1489,9 @@ async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
 ANCHORING_FEE = 10_000_000_000_000_000  # 0.01 mantraUSD at 18 decimals = 1¢
 
 
-def _cap_test_add_record_call(checksum: str):
+def _cap_test_add_record_call(checksum: str, registry: str = "test-registry"):
     record = Record(
-        registry="test-registry",
+        registry=registry,
         uri=f"ipfs://{checksum}",
         checksum=checksum,
         checksumAlgo="sha256",
@@ -1600,6 +1597,40 @@ async def test_anchoring_fee_cap_no_refund_when_natural_below_cap(
         f"expected deducted == natural fee {res['natural']} (no refund), "
         f"got {res['deducted']}"
     )
+
+
+async def test_anchoring_fee_cap_no_refund_on_evm_revert(ibc, setup_consumer_accounts):
+    """No refund for reverted addRecord: full natural fee debited even when above cap"""
+    w3 = ibc.ibc2.w3
+    sender = ADDRS["community"]
+
+    # Force a revert: write to a registry that does not exist. The precompile
+    # surfaces ErrNotFound which the EVM materialises as a status-0 receipt.
+    call = _cap_test_add_record_call(
+        sha256_hex("fee_cap_revert"),
+        registry="cap-revert-registry-does-not-exist",
+    )
+    fees = consumer_eip1559_fees(w3, priority_multiplier=20)
+
+    balance_bf = w3.eth.get_balance(sender)
+    receipt = send_transaction(
+        w3,
+        {"to": DOCUMENT_ADDRESS, "data": call.data, "gas": 500_000, **fees},
+        KEYS["community"],
+    )
+    assert (
+        receipt.status == 0
+    ), f"setup invalid: expected revert on missing registry, got success ({receipt})"
+
+    deducted = balance_bf - w3.eth.get_balance(sender)
+    natural = receipt.gasUsed * receipt.effectiveGasPrice
+    assert natural > ANCHORING_FEE, (
+        f"setup invalid: natural {natural} <= cap {ANCHORING_FEE}; "
+        "raise priority_multiplier so natural fee exceeds the cap"
+    )
+    assert (
+        deducted == natural
+    ), f"no refund for reverted tx: deducted {deducted} != natural {natural}"
 
 
 def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
