@@ -26,10 +26,12 @@ from pystarport.utils import (
 )
 
 from .doc_utils import (
+    ANCHORING_FEE,
     DOCUMENT_ADDRESS,
     DOCUMENT_PRECOMPILE,
     Record,
     Role,
+    _assert_within_cap,
     _tx_params,
     add_record,
     clear_accounts_override,
@@ -170,6 +172,7 @@ async def run_method(
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await async_w3.eth.get_balance(sender_account.address)
     receipt = await call.transact(
         async_w3,
         sender_account,
@@ -177,6 +180,7 @@ async def run_method(
         **txp,
     )
     assert receipt.status == 1
+    await _assert_within_cap(async_w3, sender_account.address, balance_bf)
     intrinsic = intrinsic_calldata_gas(call.data)
     gas_used = int(receipt["gasUsed"])
     delta = gas_used - intrinsic
@@ -1486,9 +1490,6 @@ async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
     await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
 
 
-ANCHORING_FEE = 10_000_000_000_000_000  # 0.01 mantraUSD at 18 decimals = 1¢
-
-
 def _cap_test_add_record_call(checksum: str, registry: str = "test-registry"):
     record = Record(
         registry=registry,
@@ -1597,6 +1598,38 @@ async def test_anchoring_fee_cap_no_refund_when_natural_below_cap(
         f"expected deducted == natural fee {res['natural']} (no refund), "
         f"got {res['deducted']}"
     )
+
+
+async def test_anchoring_fee_cap_cosmos_msg_add_registry(ibc, setup_consumer_accounts):
+    """Inflated Cosmos MsgAddRegistry fee is capped — confirms the cap applies
+    to all user-facing anchoring msg types, not just MsgAddRecord."""
+    cli = ibc.ibc2.cosmos_cli()
+    sender_bech = cli.address("community")
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
+    inflated_fee = ANCHORING_FEE * 10
+
+    balance_bf = int(cli.balance(sender_bech, denom=denom))
+    rsp = cli.add_registry(
+        "fee-cap-registry",
+        "fee cap scope test",
+        '{"source":"fee_cap_test"}',
+        from_="community",
+        fees=f"{inflated_fee}{denom}",
+        gas="400000",
+        gas_prices=None,  # avoid reject by fees+gas-prices
+        broadcast_mode="sync",
+    )
+    assert rsp["code"] == 0, rsp.get("raw_log")
+
+    wait_for_fn(
+        "MsgAddRegistry included",
+        lambda: int(cli.balance(sender_bech, denom=denom)) != balance_bf,
+        timeout=30,
+    )
+    deducted = balance_bf - int(cli.balance(sender_bech, denom=denom))
+    assert (
+        deducted == ANCHORING_FEE
+    ), f"deducted {deducted} != cap {ANCHORING_FEE} (paid {inflated_fee})"
 
 
 async def test_anchoring_fee_cap_no_refund_on_evm_revert(ibc, setup_consumer_accounts):

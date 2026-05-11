@@ -173,6 +173,13 @@ DOCUMENT_PRECOMPILE = ContractAsync.from_abi(DOCUMENT_PRECOMPILE_ABI)
 DOCUMENT_ADDRESS = "0x0000000000000000000000000000000000000A00"
 DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000
+ANCHORING_FEE = 10_000_000_000_000_000  # 0.01 mantraUSD at 18 decimals = 1¢
+
+
+async def _assert_within_cap(w3: AsyncWeb3, sender: str, balance_bf: int):
+    # callers send no value, so balance delta == fee paid after any refund.
+    deducted = balance_bf - await w3.eth.get_balance(sender)
+    assert deducted <= ANCHORING_FEE, f"deducted {deducted} > cap {ANCHORING_FEE}"
 
 
 async def _tx_params(
@@ -577,8 +584,10 @@ async def ensure_registry_exists(
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await w3.eth.get_balance(admin.address)
     receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"failed to create registry {name}"
+    await _assert_within_cap(w3, admin.address, balance_bf)
 
     registry_id = await get_registry_id(w3, name)
     assert_document_event(
@@ -613,10 +622,12 @@ async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await w3.eth.get_balance(sender.address)
     receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed"
+    await _assert_within_cap(w3, sender.address, balance_bf)
 
     assert_document_event(
         receipt,
@@ -639,10 +650,12 @@ async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await w3.eth.get_balance(sender.address)
     receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed"
+    await _assert_within_cap(w3, sender.address, balance_bf)
 
     assert_document_event(
         receipt,
@@ -677,10 +690,12 @@ async def add_record(
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await w3.eth.get_balance(admin.address)
     receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert (
         receipt.status == 1
     ), f"failed to add record {checksum} to registry {registry}"
+    await _assert_within_cap(w3, admin.address, balance_bf)
 
     await _assert_add_record_event(
         w3,
@@ -711,8 +726,10 @@ async def update_record_status(
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await w3.eth.get_balance(admin.address)
     receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"updateRecordStatus({status}) failed"
+    await _assert_within_cap(w3, admin.address, balance_bf)
 
     assert_document_event(
         receipt,
