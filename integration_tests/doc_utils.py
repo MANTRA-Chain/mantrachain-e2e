@@ -20,12 +20,12 @@ from .utils import (
 )
 
 
-def consumer_eip1559_fees(w3) -> dict:
+def consumer_eip1559_fees(w3, *, priority_multiplier: int = 1) -> dict:
     # base_fee can decay below min_gas_price in empty blocks, raise priority
     # so effective_gas_price = base_fee + priority >= min_gas_price.
     base_fee = int(w3.eth.get_block("latest")["baseFeePerGas"])
     floor = int(CONSUMER_GAS_AMT)
-    priority_fee = max(2_000_000_000, floor - base_fee)
+    priority_fee = max(2_000_000_000, floor - base_fee) * priority_multiplier
     return {
         "maxFeePerGas": (base_fee + priority_fee) * 2,
         "maxPriorityFeePerGas": priority_fee,
