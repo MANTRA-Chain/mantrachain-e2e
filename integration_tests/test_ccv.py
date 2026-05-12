@@ -1523,7 +1523,16 @@ async def _send_cap_test_evm_tx(ibc, *, label: str, fees: dict):
     return {
         "deducted": balance_bf - w3.eth.get_balance(sender),
         "natural": receipt.gasUsed * receipt.effectiveGasPrice,
+        "receipt": receipt,
     }
+
+
+# check duplicate hook event
+def _count_refund_events(consumer_cli, eth_tx_hash: str) -> int:
+    txs = consumer_cli.tx_search_rpc(f"ethereum_tx.ethereumTxHash='{eth_tx_hash}'")
+    assert len(txs) == 1, f"expected 1 cosmos tx for {eth_tx_hash}, got {len(txs)}"
+    events = txs[0]["tx_result"]["events"]
+    return sum(1 for ev in events if ev["type"] == "anchoring_fee_refunded")
 
 
 async def test_anchoring_fee_cap_evm_direct_precompile(ibc, setup_consumer_accounts):
@@ -1540,6 +1549,12 @@ async def test_anchoring_fee_cap_evm_direct_precompile(ibc, setup_consumer_accou
         f"deducted {res['deducted']} != cap {ANCHORING_FEE} "
         f"(natural {res['natural']})"
     )
+
+    eth_tx_hash = res["receipt"].transactionHash.hex()
+    if not eth_tx_hash.startswith("0x"):
+        eth_tx_hash = "0x" + eth_tx_hash
+    count = _count_refund_events(ibc.ibc2.cosmos_cli(), eth_tx_hash)
+    assert count == 1, f"anchoring_fee_refunded emitted {count}× (expected 1)"
 
 
 async def test_anchoring_fee_cap_cosmos_msg_add_record(ibc, setup_consumer_accounts):
