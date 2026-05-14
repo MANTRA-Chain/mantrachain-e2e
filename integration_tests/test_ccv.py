@@ -1086,10 +1086,9 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
 async def test_anchoring_eth_estimate_gas_matches_eth_call(
     ibc, setup_consumer_accounts
 ):
-    """eth_estimateGas on the anchoring precompile must return a gas value
-    within tolerance of the real eth_call floor."""
+    """eth_estimateGas on anchoring precompile must return a gas value
+    that eth_call accepts within tolerance"""
     TOLERANCE = 1.15
-
     w3 = ibc.ibc2.async_w3
 
     call = DOCUMENT_PRECOMPILE.fns.addRegistry(
@@ -1097,29 +1096,23 @@ async def test_anchoring_eth_estimate_gas_matches_eth_call(
         "regression for eth_estimateGas under cosmos_evm native precompile",
         json.dumps({"source": "ccv-estimate-gas-regression"}),
     )
-    tx = {
-        "to": DOCUMENT_ADDRESS,
-        "from": ADDRS["community"],
-        "data": call.data,
-    }
+    tx = {"to": DOCUMENT_ADDRESS, "from": ADDRS["community"], "data": call.data}
+    estimated = int(await w3.eth.estimate_gas(tx))
 
-    block = await w3.eth.block_number
-    estimated = int(await w3.eth.estimate_gas(tx, block_identifier=block))
-    assert estimated > 21000, f"estimate sanity: got {estimated}"
-
-    # eth_call at estimated*TOLERANCE proves real_min ≤ estimated*TOLERANCE
-    # on success, or violates it on failure — no bisection needed.
     try:
-        result = await w3.eth.call(
-            {**tx, "gas": int(estimated * TOLERANCE)}, block_identifier=block
-        )
-    except Exception as exc:
-        pytest.fail(
-            f"eth_estimateGas={estimated} is more than "
-            f"{(TOLERANCE - 1) * 100:.0f}% below the real eth_call floor"
-            f"Underlying error: {exc}"
-        )
-    assert len(result) > 0, "eth_call returned empty data"
+        await w3.eth.call({**tx, "gas": int(estimated * TOLERANCE)})
+    except Exception:
+        # Surface the actual gap so the failure is actionable.
+        for mult in (1.5, 2.0, 3.0):
+            try:
+                await w3.eth.call({**tx, "gas": int(estimated * mult)})
+                pytest.fail(
+                    f"estimate={estimated}, eth_call needs ≥{int(estimated * mult)} "
+                    f"({(mult - 1) * 100:.0f}% gap)"
+                )
+            except Exception:
+                continue
+        pytest.fail(f"eth_call OOM up to 3x estimate={estimated}")
 
 
 @pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")

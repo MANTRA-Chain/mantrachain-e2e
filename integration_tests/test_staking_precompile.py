@@ -375,3 +375,34 @@ async def test_min_self_delegation(custom_mantra):
     wait_for_new_blocks(cli, 2)
     res = await VALIDATOR(addr).call(w3, to=STAKING)
     assert res[3] == BondStatus.UNBONDING.to_int()
+
+
+@pytest.mark.skip(reason="https://github.com/MANTRA-Chain/evm/pull/31")
+async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
+    """eth_estimateGas on staking precompile must return a gas value
+    that eth_call accepts within tolerance"""
+    TOLERANCE = 1.15
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    val_bz = (await get_validators(w3))[0][0]
+    validator = cli.debug_addr(val_bz, bech="val")
+    delegator = ACCOUNTS["community"]
+
+    call = DELEGATE(delegator.address, validator, 1)
+    tx = {"to": STAKING, "from": delegator.address, "data": call.data}
+    estimated = int(await w3.eth.estimate_gas(tx))
+
+    try:
+        await w3.eth.call({**tx, "gas": int(estimated * TOLERANCE)})
+    except Exception:
+        # Surface the actual gap so the failure is actionable.
+        for mult in (1.5, 2.0, 3.0):
+            try:
+                await w3.eth.call({**tx, "gas": int(estimated * mult)})
+                pytest.fail(
+                    f"estimate={estimated}, eth_call needs ≥{int(estimated * mult)} "
+                    f"({(mult - 1) * 100:.0f}% gap)"
+                )
+            except Exception:
+                continue
+        pytest.fail(f"eth_call OOM up to 3x estimate={estimated}")
