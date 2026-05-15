@@ -74,6 +74,8 @@ from .utils import (
     KEYS,
     MNEMONICS,
     MockERC20_ARTIFACT,
+    assert_estimate_covers_receipt,
+    assert_gas_estimate_within_floor,
     build_contract,
     create_consumer_chain,
     eth_to_bech32,
@@ -1129,40 +1131,29 @@ async def test_anchoring_eth_estimate_gas_matches_eth_call(
     w3 = ibc.ibc2.async_w3
     sender = get_accounts()["community"]
 
+    block_number = await w3.eth.block_number
+    registry_name = f"ccv-estimate-gas-regression-{block_number}"
     call = DOCUMENT_PRECOMPILE.fns.addRegistry(
-        "ccv-estimate-gas-regression",
+        registry_name,
         "regression for eth_estimateGas under cosmos_evm native precompile",
-        json.dumps({"source": "ccv-estimate-gas-regression"}),
+        json.dumps(
+            {
+                "source": "ccv-estimate-gas-regression",
+                "block": block_number,
+            }
+        ),
     )
     tx = {"to": DOCUMENT_ADDRESS, "from": sender.address, "data": call.data}
-    estimated = int(await w3.eth.estimate_gas(tx))
 
-    # Find the smallest multiplier of `estimated` that eth_call accepts.
-    eth_call_floor = None
-    for mult in (1.0, 1.05, 1.10, 1.15, 1.25, 1.5, 2.0, 3.0):
-        gas_try = int(estimated * mult)
-        try:
-            await w3.eth.call({**tx, "gas": gas_try})
-            eth_call_floor = gas_try
-            break
-        except Exception:
-            continue
-    if eth_call_floor is None:
-        pytest.fail(f"eth_call OOM up to 3x estimate={estimated}")
+    # Estimate + floor check BEFORE broadcast — addRegistry writes state, so a
+    # post-broadcast estimate would revert with "registry already exists".
+    estimated = await assert_gas_estimate_within_floor(w3, tx)
 
-    # Broadcast a real tx with generous gas to get receipt gas_used.
-    # Consumer chain enforces a min_gas_price floor; transact() doesn't auto-set
-    # EIP-1559 fees, so inject them via the sync w3 helper.
+    # Broadcast: consumer chain enforces a min_gas_price floor and transact()
+    # doesn't auto-set EIP-1559 fees, so inject them via the sync w3 helper.
     fees = consumer_eip1559_fees(ibc.ibc2.w3)
     receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, gas=700_000, **fees)
-    receipt_gas_used = int(receipt["gasUsed"])
-
-    TOLERANCE = 1.15
-    ratio = max(estimated, receipt_gas_used) / min(estimated, receipt_gas_used)
-    assert ratio <= TOLERANCE, (
-        f"estimate={estimated} vs receipt={receipt_gas_used} "
-        f"diverge by {(ratio - 1) * 100:.1f}% (tolerance {(TOLERANCE - 1) * 100:.0f}%)"
-    )
+    assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
 
 
 @pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")
