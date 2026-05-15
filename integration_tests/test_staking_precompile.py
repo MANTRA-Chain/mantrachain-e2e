@@ -377,11 +377,8 @@ async def test_min_self_delegation(custom_mantra):
     assert res[3] == BondStatus.UNBONDING.to_int()
 
 
-@pytest.mark.skip(reason="https://github.com/MANTRA-Chain/evm/pull/31")
 async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
-    """eth_estimateGas on staking precompile must return a gas value
-    that eth_call accepts within tolerance"""
-    TOLERANCE = 1.15
+    """Check eth_estimateGas matches receipt gas_used for staking precompile call."""
     cli = mantra.cosmos_cli()
     w3 = mantra.async_w3
     val_bz = (await get_validators(w3))[0][0]
@@ -392,17 +389,28 @@ async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
     tx = {"to": STAKING, "from": delegator.address, "data": call.data}
     estimated = int(await w3.eth.estimate_gas(tx))
 
-    try:
-        await w3.eth.call({**tx, "gas": int(estimated * TOLERANCE)})
-    except Exception:
-        # Surface the actual gap so the failure is actionable.
-        for mult in (1.5, 2.0, 3.0):
-            try:
-                await w3.eth.call({**tx, "gas": int(estimated * mult)})
-                pytest.fail(
-                    f"estimate={estimated}, eth_call needs ≥{int(estimated * mult)} "
-                    f"({(mult - 1) * 100:.0f}% gap)"
-                )
-            except Exception:
-                continue
+    # Find the smallest multiplier of `estimated` that eth_call accepts.
+    eth_call_floor = None
+    for mult in (1.0, 1.05, 1.10, 1.15, 1.25, 1.5, 2.0, 3.0):
+        gas_try = int(estimated * mult)
+        try:
+            await w3.eth.call({**tx, "gas": gas_try})
+            eth_call_floor = gas_try
+            break
+        except Exception:
+            continue
+    if eth_call_floor is None:
         pytest.fail(f"eth_call OOM up to 3x estimate={estimated}")
+
+    # Broadcast a real tx with the module-level generous gas to get receipt gas_used.
+    receipt = await DELEGATE(delegator.address, validator, 1).transact(
+        w3, delegator, to=STAKING, gas=gas
+    )
+    receipt_gas_used = int(receipt["gasUsed"])
+
+    TOLERANCE = 1.15
+    ratio = max(estimated, receipt_gas_used) / min(estimated, receipt_gas_used)
+    assert ratio <= TOLERANCE, (
+        f"estimate={estimated} vs receipt={receipt_gas_used} "
+        f"diverge by {(ratio - 1) * 100:.1f}% (tolerance {(TOLERANCE - 1) * 100:.0f}%)"
+    )
