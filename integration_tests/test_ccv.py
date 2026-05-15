@@ -24,6 +24,7 @@ from pystarport.utils import (
     wait_for_new_blocks,
     wait_for_port,
 )
+from web3.logs import DISCARD
 
 from .doc_utils import (
     DOCUMENT_ADDRESS,
@@ -572,6 +573,29 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert ics20_receipt.status == 1
 
+    # Assert convert ERC20 Transfer and precompile's IBCTransfer event
+    transfer_logs = wmantrausd.events.Transfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert any(
+        ev.args["from"].lower() == sender.lower() and ev.args.value == amt_wmantrausd
+        for ev in transfer_logs
+    ), "wmantraUSD Transfer from sender not emitted during convert"
+
+    ics20_contract = w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    ibc_logs = ics20_contract.events.IBCTransfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert len(ibc_logs) == 1, f"expected 1 IBCTransfer event, got {len(ibc_logs)}"
+    ev = ibc_logs[0].args
+    assert ev.sender.lower() == sender.lower()
+    assert ev.sourcePort == "transfer"
+    assert ev.sourceChannel == provider_transfer_channel
+    assert ev.denom == erc20_denom
+    assert ev.amount == amt_wmantrausd
+
     def received() -> bool:
         return consumer_cli.balance(receiver_bech32, denom=ibc_denom) >= expected
 
@@ -617,6 +641,21 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         KEYS[receiver_name],
     )
     assert ics20_return_receipt.status == 1
+
+    # Consumer-side precompile emitted the return-leg IBCTransfer event.
+    consumer_ics20 = ibc.ibc2.w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    return_logs = consumer_ics20.events.IBCTransfer().process_receipt(
+        ics20_return_receipt, errors=DISCARD
+    )
+    assert len(return_logs) == 1
+    rev = return_logs[0].args
+    assert rev.sender.lower() == receiver_evm.lower()
+    assert rev.sourceChannel == consumer_transfer_channel
+    assert rev.denom == ibc_denom
+    assert rev.amount == return_amt_wmantrausd
+    assert rev.memo == unwrap_memo
 
     # Consumer spent at least `return_amt_wmantrausd` (plus fees).
     assert (
