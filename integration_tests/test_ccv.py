@@ -74,6 +74,8 @@ from .utils import (
     KEYS,
     MNEMONICS,
     MockERC20_ARTIFACT,
+    assert_estimate_covers_receipt,
+    assert_gas_estimate_within_floor,
     build_contract,
     create_consumer_chain,
     eth_to_bech32,
@@ -1120,6 +1122,38 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
 
     assert identity_base == expected_identity_output
     assert identity_base == identity_empty == identity_unrelated
+
+
+async def test_anchoring_eth_estimate_gas_matches_eth_call(
+    ibc, setup_consumer_accounts
+):
+    """Check eth_estimateGas matches receipt gas_used for anchoring precompile call."""
+    w3 = ibc.ibc2.async_w3
+    sender = get_accounts()["community"]
+
+    block_number = await w3.eth.block_number
+    registry_name = f"ccv-estimate-gas-regression-{block_number}"
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        registry_name,
+        "regression for eth_estimateGas under cosmos_evm native precompile",
+        json.dumps(
+            {
+                "source": "ccv-estimate-gas-regression",
+                "block": block_number,
+            }
+        ),
+    )
+    tx = {"to": DOCUMENT_ADDRESS, "from": sender.address, "data": call.data}
+
+    # Estimate + floor check BEFORE broadcast — addRegistry writes state, so a
+    # post-broadcast estimate would revert with "registry already exists".
+    estimated = await assert_gas_estimate_within_floor(w3, tx)
+
+    # Broadcast: consumer chain enforces a min_gas_price floor and transact()
+    # doesn't auto-set EIP-1559 fees, so inject them via the sync w3 helper.
+    fees = consumer_eip1559_fees(ibc.ibc2.w3)
+    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, gas=700_000, **fees)
+    assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
 
 
 @pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")
