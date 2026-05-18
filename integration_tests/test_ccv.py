@@ -24,6 +24,7 @@ from pystarport.utils import (
     wait_for_new_blocks,
     wait_for_port,
 )
+from web3.logs import DISCARD
 
 from .doc_utils import (
     ANCHORING_FEE,
@@ -75,6 +76,8 @@ from .utils import (
     KEYS,
     MNEMONICS,
     MockERC20_ARTIFACT,
+    assert_estimate_covers_receipt,
+    assert_gas_estimate_within_floor,
     build_contract,
     create_consumer_chain,
     eth_to_bech32,
@@ -578,6 +581,29 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     )
     assert ics20_receipt.status == 1
 
+    # Assert convert ERC20 Transfer and precompile's IBCTransfer event
+    transfer_logs = wmantrausd.events.Transfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert any(
+        ev.args["from"].lower() == sender.lower() and ev.args.value == amt_wmantrausd
+        for ev in transfer_logs
+    ), "wmantraUSD Transfer from sender not emitted during convert"
+
+    ics20_contract = w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    ibc_logs = ics20_contract.events.IBCTransfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert len(ibc_logs) == 1, f"expected 1 IBCTransfer event, got {len(ibc_logs)}"
+    ev = ibc_logs[0].args
+    assert ev.sender.lower() == sender.lower()
+    assert ev.sourcePort == "transfer"
+    assert ev.sourceChannel == provider_transfer_channel
+    assert ev.denom == erc20_denom
+    assert ev.amount == amt_wmantrausd
+
     def received() -> bool:
         return consumer_cli.balance(receiver_bech32, denom=ibc_denom) >= expected
 
@@ -623,6 +649,21 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         KEYS[receiver_name],
     )
     assert ics20_return_receipt.status == 1
+
+    # Consumer-side precompile emitted the return-leg IBCTransfer event.
+    consumer_ics20 = ibc.ibc2.w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    return_logs = consumer_ics20.events.IBCTransfer().process_receipt(
+        ics20_return_receipt, errors=DISCARD
+    )
+    assert len(return_logs) == 1
+    rev = return_logs[0].args
+    assert rev.sender.lower() == receiver_evm.lower()
+    assert rev.sourceChannel == consumer_transfer_channel
+    assert rev.denom == ibc_denom
+    assert rev.amount == return_amt_wmantrausd
+    assert rev.memo == unwrap_memo
 
     # Consumer spent at least `return_amt_wmantrausd` (plus fees).
     assert (
@@ -1087,6 +1128,38 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
 
     assert identity_base == expected_identity_output
     assert identity_base == identity_empty == identity_unrelated
+
+
+async def test_anchoring_eth_estimate_gas_matches_eth_call(
+    ibc, setup_consumer_accounts
+):
+    """Check eth_estimateGas matches receipt gas_used for anchoring precompile call."""
+    w3 = ibc.ibc2.async_w3
+    sender = get_accounts()["community"]
+
+    block_number = await w3.eth.block_number
+    registry_name = f"ccv-estimate-gas-regression-{block_number}"
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        registry_name,
+        "regression for eth_estimateGas under cosmos_evm native precompile",
+        json.dumps(
+            {
+                "source": "ccv-estimate-gas-regression",
+                "block": block_number,
+            }
+        ),
+    )
+    tx = {"to": DOCUMENT_ADDRESS, "from": sender.address, "data": call.data}
+
+    # Estimate + floor check BEFORE broadcast — addRegistry writes state, so a
+    # post-broadcast estimate would revert with "registry already exists".
+    estimated = await assert_gas_estimate_within_floor(w3, tx)
+
+    # Broadcast: consumer chain enforces a min_gas_price floor and transact()
+    # doesn't auto-set EIP-1559 fees, so inject them via the sync w3 helper.
+    fees = consumer_eip1559_fees(ibc.ibc2.w3)
+    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, gas=700_000, **fees)
+    assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
 
 
 @pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")

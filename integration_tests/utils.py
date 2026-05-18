@@ -1540,3 +1540,74 @@ async def wait_for_unconfirmed_txs(url: str, min_txs: int = 1, timeout_s: float 
             return n
         await asyncio.sleep(0.1)
     raise AssertionError(f"expected >= {min_txs} unconfirmed txs, last={last}")
+
+
+async def assert_gas_estimate_within_floor(
+    w3,
+    tx: dict,
+    *,
+    tolerance: float = 1.10,
+) -> int:
+    """Run eth_estimateGas on ``tx``, binary-search the eth_call floor at the
+    same block, and assert ``estimated * tolerance >= eth_call_floor``.
+    Returns the estimate.
+
+    MUST be called BEFORE broadcasting any state-changing tx, since both
+    eth_estimateGas and eth_call are pinned to the current block — a
+    subsequent broadcast can invalidate the simulation (e.g. by writing the
+    record the call would create).
+    """
+    block_number = await w3.eth.block_number
+    estimated = int(await w3.eth.estimate_gas(tx, block_identifier=block_number))
+
+    async def call_ok(gas_limit: int) -> bool:
+        try:
+            await w3.eth.call(
+                {**tx, "gas": gas_limit},
+                block_identifier=block_number,
+            )
+            return True
+        except Exception:
+            return False
+
+    if await call_ok(estimated):
+        eth_call_floor = estimated
+    else:
+        upper = estimated * 3
+        if not await call_ok(upper):
+            raise AssertionError(f"eth_call OOM up to 3x estimate={estimated}")
+        lo, hi = estimated + 1, upper
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if await call_ok(mid):
+                hi = mid
+            else:
+                lo = mid + 1
+        eth_call_floor = lo
+
+    assert estimated * tolerance >= eth_call_floor, (
+        f"under-estimate vs eth_call floor: estimate={estimated}, "
+        f"eth_call_floor={eth_call_floor}, "
+        f"required x{eth_call_floor / estimated:.2f}"
+    )
+    return estimated
+
+
+def assert_estimate_covers_receipt(
+    estimated: int,
+    receipt_gas_used: int,
+    *,
+    tolerance: float = 0.95,
+) -> None:
+    """Assert eth_estimateGas reported a safe gas limit (``>= receipt.gasUsed``).
+
+    Catches the cosmos-evm KV under-count regression where the simulator's
+    estimate is below what the real broadcast actually consumes. Over-estimate
+    is allowed: precompile-only txs commonly reserve more gas than they
+    consume because of the precompile's pre-charge at
+    https://github.com/MANTRA-Chain/evm/blob/v0.6.0-v8-mantra-1/precompiles/common/precompile.go#L96
+    """
+    assert estimated >= receipt_gas_used * tolerance, (
+        f"under-estimate: estimate={estimated} below receipt={receipt_gas_used} "
+        f"by {(receipt_gas_used / estimated - 1) * 100:.1f}%"
+    )
