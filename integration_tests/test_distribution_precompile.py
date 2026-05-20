@@ -188,7 +188,6 @@ async def test_validator_rewards_pool_funding(mantra, connect_mantra, tmp_path):
     assert parse_amount(data["amount"]) == fund_amount
 
 
-@pytest.mark.skip(reason="https://github.com/MANTRA-Chain/mantrachain/pull/659")
 async def test_distribution_eth_call_state_override(mantra):
     cli = mantra.cosmos_cli()
     w3 = mantra.async_w3

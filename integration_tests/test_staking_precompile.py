@@ -379,7 +379,6 @@ async def test_min_self_delegation(custom_mantra):
     assert res[3] == BondStatus.UNBONDING.to_int()
 
 
-@pytest.mark.skip(reason="https://github.com/MANTRA-Chain/evm/pull/31")
 async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
     """Check eth_estimateGas matches receipt gas_used for staking precompile call."""
     cli = mantra.cosmos_cli()
