@@ -346,7 +346,9 @@ def selectors(artifact) -> list[bytes]:
     return [HexBytes(sel) for sel in artifact["methodIdentifiers"].values()]
 
 
-def build_contract(name, dir="contracts", contract=None) -> dict:
+def build_contract(
+    name, dir="contracts", contract=None, optimize_runs=100000, via_ir=True
+) -> dict:
     contract = contract or name
     if contract in CONTRACTS:
         return CONTRACTS[contract]
@@ -367,8 +369,11 @@ def build_contract(name, dir="contracts", contract=None) -> dict:
         "--overwrite",
         "--optimize",
         "--optimize-runs",
-        "100000",
-        "--via-ir",
+        str(optimize_runs),
+    ]
+    if via_ir:
+        cmd.append("--via-ir")
+    cmd += [
         "--metadata-hash",
         "none",
         "--no-cbor-metadata",
@@ -404,8 +409,12 @@ async def build_and_deploy_contract_async(
     key=KEYS["community"],
     dir="contracts",
     contract=None,
+    optimize_runs=100000,
+    via_ir=True,
 ):
-    res = build_contract(name, dir=dir, contract=contract)
+    res = build_contract(
+        name, dir=dir, contract=contract, optimize_runs=optimize_runs, via_ir=via_ir
+    )
     tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])
