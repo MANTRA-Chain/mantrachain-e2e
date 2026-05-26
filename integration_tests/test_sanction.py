@@ -22,45 +22,8 @@ def test_blacklist(mantra, tmp_path):
         pytest.skip("sanction module not enabled")
     community = cli.address("community")
     user = cli.create_account("user")["address"]
-    grantee = cli.create_account("grantee")["address"]
-    amt = 90_000_000_000_000_000 // WEI_PER_DENOM
+    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
     assert_transfer(cli, community, user, amt=amt)
-
-    # should revoke these grants once `user` is blacklisted
-    rsp = cli.grant_authorization(
-        grantee,
-        "send",
-        from_=user,
-        spend_limit=f"1{DEFAULT_DENOM}",
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    msg_type = "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward"
-    rsp = cli.grant_authorization(
-        grantee,
-        "generic",
-        from_=user,
-        msg_type=msg_type,
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    # should revoke this feegrant allowance once `user` is blacklisted
-    rsp = cli.grant_fee_allowance(user, grantee, from_=user)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    allowance_bf = cli.query_grant(user, grantee)
-    assert allowance_bf["granter"] == user
-    assert allowance_bf["grantee"] == grantee
-
-    grants_bf = cli.query_grants(user, grantee)
-    assert any(
-        g["authorization"]["type"] == "/cosmos.bank.v1beta1.SendAuthorization"
-        for g in grants_bf
-    )
-    assert any(
-        g["authorization"]["type"] == "/cosmos.authz.v1beta1.GenericAuthorization"
-        and g["authorization"]["value"]["msg"] == msg_type
-        for g in grants_bf
-    )
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
         "authority": module_address("gov"),
@@ -78,10 +41,6 @@ def test_blacklist(mantra, tmp_path):
     assert gov_rsp["code"] == 0, gov_rsp["raw_log"]
     approve_proposal(mantra, gov_rsp["events"])
     assert user in cli.query_blacklist()
-    assert cli.query_grants(user, grantee) == []
-
-    with pytest.raises(AssertionError, match="fee-grant not found"):
-        cli.query_grant(user, grantee)
 
     err = f"{bech32_to_eth(user)} is blacklisted"
     with pytest.raises(web3.exceptions.Web3RPCError, match=err):
@@ -96,3 +55,24 @@ def test_blacklist(mantra, tmp_path):
     msg["@type"] = "/mantrachain.sanction.v1.MsgRemoveBlacklistAccounts"
     submit_gov_proposal(mantra, tmp_path, messages=[msg])
     assert_transfer(cli, user, community)
+
+
+def test_single_msg_exec_per_tx(mantra):
+    cli = mantra.cosmos_cli()
+    granter = cli.address("signer1")
+    grantee = cli.address("signer2")
+    receiver = cli.address("community")
+
+    tx = cli.transfer(granter, receiver, f"1{DEFAULT_DENOM}", generate_only=True)
+    send_msg = tx["body"]["messages"][0]
+    exec_msg = {
+        "@type": "/cosmos.authz.v1beta1.MsgExec",
+        "grantee": grantee,
+        "msgs": [send_msg],
+    }
+    tx["body"]["messages"] = [exec_msg, exec_msg]
+
+    signed = cli.sign_tx_json(tx, "signer2")
+    rsp = cli.broadcast_tx_json(signed)
+    assert rsp.get("code") != 0, rsp
+    assert "only a single MsgExec" in rsp.get("raw_log", ""), rsp

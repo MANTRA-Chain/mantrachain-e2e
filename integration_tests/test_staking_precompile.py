@@ -31,6 +31,8 @@ from .utils import (
     WEI_PER_DENOM,
     WEI_PER_ETH,
     address_to_bytes32,
+    assert_estimate_covers_receipt,
+    assert_gas_estimate_within_floor,
     bech32_to_eth,
     build_contract,
     duration,
@@ -375,3 +377,25 @@ async def test_min_self_delegation(custom_mantra):
     wait_for_new_blocks(cli, 2)
     res = await VALIDATOR(addr).call(w3, to=STAKING)
     assert res[3] == BondStatus.UNBONDING.to_int()
+
+
+async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
+    """Check eth_estimateGas matches receipt gas_used for staking precompile call."""
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    val_bz = (await get_validators(w3))[0][0]
+    validator = cli.debug_addr(val_bz, bech="val")
+    delegator = ACCOUNTS["community"]
+
+    call = DELEGATE(delegator.address, validator, 1)
+    tx = {"to": STAKING, "from": delegator.address, "data": call.data}
+
+    # Estimate + floor check BEFORE broadcast — delegate writes state, and
+    # keeping both calls pinned to the same pre-broadcast block makes the
+    # comparison deterministic.
+    estimated = await assert_gas_estimate_within_floor(w3, tx)
+
+    receipt = await DELEGATE(delegator.address, validator, 1).transact(
+        w3, delegator, to=STAKING, gas=gas
+    )
+    assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))

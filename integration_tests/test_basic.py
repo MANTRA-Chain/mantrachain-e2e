@@ -8,8 +8,8 @@ import web3
 from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import broadcast_transaction
 from eth_contract.utils import send_transaction as send_transaction_async
+from eth_contract.utils import sign_transaction
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 
@@ -31,6 +31,7 @@ from .utils import (
     contract_address,
     create_periodic_vesting_acct,
     do_multisig,
+    module_address,
     recover_community,
     send_transaction,
     transfer_via_cosmos,
@@ -253,7 +254,8 @@ async def test_transaction(mantra, connect_mantra):
         await send_transaction_async(w3, acct, **data)
 
     data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
-    txhash = await broadcast_transaction(w3, acct, **data)
+    signed = await sign_transaction(w3, acct, **data)
+    txhash = await w3.eth.send_raw_transaction(signed.raw_transaction)
 
     data["nonce"] = await w3.eth.get_transaction_count(sender)
     receipt = await send_transaction_async(w3, acct, **data)
@@ -562,23 +564,13 @@ def test_failed_transfer_tx(mantra):
             }
 
 
-@pytest.mark.connect
-def test_connect_multisig(connect_mantra, tmp_path):
-    test_multisig(None, connect_mantra, tmp_path)
-
-
-def test_multisig(mantra, connect_mantra, tmp_path):
-    cli = connect_mantra.cosmos_cli(tmp_path)
+def test_multisig(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
     do_multisig(cli, tmp_path, "signer1", "signer2", "multitest1")
 
 
-@pytest.mark.connect
-def test_connect_multisig_cosmos(connect_mantra, tmp_path):
-    test_multisig_cosmos(None, connect_mantra, tmp_path)
-
-
-def test_multisig_cosmos(mantra, connect_mantra, tmp_path):
-    cli = connect_mantra.cosmos_cli(tmp_path)
+def test_multisig_cosmos(mantra, tmp_path):
+    cli = mantra.cosmos_cli()
     recover1 = "recover1"
     recover2 = "recover2"
     amt = 6_000_000_000_000_000_000 // WEI_PER_DENOM
@@ -659,3 +651,71 @@ def test_coinbase(mantra):
     )
     proposer = res.get("block").get("header").get("proposer_address")
     assert proposer.lower() == pubkey.lower()
+
+
+async def test_patch_txindex(mantra):
+    w3 = mantra.async_w3
+    latest_block = await w3.eth.get_block("latest")
+    blocked_module_eth = bech32_to_eth(module_address("distribution"))
+
+    gas_limit = 21000
+    gas_price = int(await w3.eth.gas_price)
+    base_fee = int(latest_block.get("baseFeePerGas") or 0)
+    max_priority_fee = int(await w3.eth.max_priority_fee)
+    fee_cap = max(gas_price, base_fee + max_priority_fee) * 20 + 1
+
+    sender = ACCOUNTS["community"]
+    nonce = await w3.eth.get_transaction_count(sender.address)
+
+    # tx0 fails on commit (blocked distribution); tx1 succeeds.
+    failed_tx_hash = await w3.eth.send_raw_transaction(
+        (
+            await sign_transaction(
+                w3,
+                sender,
+                to=blocked_module_eth,
+                value=1,
+                gas=gas_limit,
+                maxFeePerGas=fee_cap,
+                maxPriorityFeePerGas=max_priority_fee,
+                nonce=nonce,
+            )
+        ).raw_transaction
+    )
+
+    follow_tx_hash = await w3.eth.send_raw_transaction(
+        (
+            await sign_transaction(
+                w3,
+                sender,
+                to=ADDRS["signer2"],
+                value=1,
+                gas=gas_limit,
+                maxFeePerGas=fee_cap,
+                maxPriorityFeePerGas=max_priority_fee,
+                nonce=nonce + 1,
+            )
+        ).raw_transaction
+    )
+
+    follow_receipt = await asyncio.wait_for(
+        w3.eth.wait_for_transaction_receipt(follow_tx_hash), timeout=60
+    )
+    block_number = follow_receipt["blockNumber"]
+    follow_index = int(follow_receipt["transactionIndex"])
+
+    block = await w3.eth.get_block(block_number)
+    follow_tx_by_index = await w3.eth.get_transaction_by_block(
+        block_number, follow_index
+    )
+    assert follow_tx_by_index["hash"] == follow_tx_hash
+    assert follow_tx_hash in block["transactions"]
+    assert failed_tx_hash not in block["transactions"]
+
+    # eth_getBlockReceipts should include only queryable tx receipts.
+    block_receipts = await w3.eth.get_block_receipts(block_number)
+    assert any(r["transactionHash"] == follow_tx_hash for r in block_receipts)
+    assert all(r["transactionHash"] != failed_tx_hash for r in block_receipts)
+
+    with pytest.raises(web3.exceptions.TransactionNotFound):
+        await w3.eth.get_transaction(failed_tx_hash)

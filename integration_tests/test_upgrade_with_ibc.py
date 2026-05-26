@@ -71,7 +71,9 @@ async def exec(c):
         denom=LEGACY_DENOM,
         upgrade_cb=upgrade,
     )
-    cli = do_upgrade(c.ibc1, "v8.0.0-rc2", cli.block_height() + 15, scale=SCALE_FACTOR)
+    cli = do_upgrade(c.ibc1, "v8.0.0", cli.block_height() + 15, scale=SCALE_FACTOR)
+    cli = do_upgrade(c.ibc1, "v8.1.1", cli.block_height() + 15, scale=SCALE_FACTOR)
+    cli = do_upgrade(c.ibc1, "v8.2.0", cli.block_height() + 15, scale=SCALE_FACTOR)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

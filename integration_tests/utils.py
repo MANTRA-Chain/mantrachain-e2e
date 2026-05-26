@@ -73,6 +73,8 @@ EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", 7888))
 # the default initial base fee used by integration tests
 DEFAULT_GAS_AMT = float(os.getenv("DEFAULT_GAS_AMT", 40000000000))
 DEFAULT_GAS_PRICE = f"{DEFAULT_GAS_AMT}{DEFAULT_DENOM}"
+# consumer-chain (nvnmchaind) gas price floor, pinned to feemarket min_gas_price
+CONSUMER_GAS_AMT = float(os.getenv("CONSUMER_GAS_AMT", 87600000000))
 DEFAULT_GAS = 200000
 WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
@@ -344,7 +346,9 @@ def selectors(artifact) -> list[bytes]:
     return [HexBytes(sel) for sel in artifact["methodIdentifiers"].values()]
 
 
-def build_contract(name, dir="contracts", contract=None) -> dict:
+def build_contract(
+    name, dir="contracts", contract=None, optimize_runs=100000, via_ir=True
+) -> dict:
     contract = contract or name
     if contract in CONTRACTS:
         return CONTRACTS[contract]
@@ -365,8 +369,11 @@ def build_contract(name, dir="contracts", contract=None) -> dict:
         "--overwrite",
         "--optimize",
         "--optimize-runs",
-        "100000",
-        "--via-ir",
+        str(optimize_runs),
+    ]
+    if via_ir:
+        cmd.append("--via-ir")
+    cmd += [
         "--metadata-hash",
         "none",
         "--no-cbor-metadata",
@@ -402,8 +409,12 @@ async def build_and_deploy_contract_async(
     key=KEYS["community"],
     dir="contracts",
     contract=None,
+    optimize_runs=100000,
+    via_ir=True,
 ):
-    res = build_contract(name, dir=dir, contract=contract)
+    res = build_contract(
+        name, dir=dir, contract=contract, optimize_runs=optimize_runs, via_ir=via_ir
+    )
     tx = await create_contract_transaction(w3, res, args, key, dir=dir)
     txreceipt = await send_transaction_async(w3, Account.from_key(key), **tx)
     return w3.eth.contract(address=txreceipt.contractAddress, abi=res["abi"])
@@ -933,44 +944,82 @@ def fund_acc(w3, acc, fund=4_000_000_000_000_000_000):
         assert w3.eth.get_balance(addr, "latest") == fund
 
 
-def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
-    # prepare multisig and accounts
-    signer1 = cli.address(signer1_name)
-    signer2 = cli.address(signer2_name)
+def setup_multisig(
+    cli,
+    signer1_name,
+    signer2_name,
+    multisig_name,
+    denom=DEFAULT_DENOM,
+    gas_prices=None,
+    fund_amt=9_000_000_000_000_000,
+):
+    """Create a 2-of-2 multisig from the given signer keys and fund it."""
     cli.make_multisig(multisig_name, signer1_name, signer2_name)
     multi_addr = cli.address(multisig_name)
-    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
-    rsp = cli.transfer(signer1, multi_addr, f"{amt}{DEFAULT_DENOM}")
+    extra = {"gas_prices": gas_prices} if gas_prices else {}
+    amt = fund_amt // WEI_PER_DENOM
+    rsp = cli.transfer(cli.address(signer1_name), multi_addr, f"{amt}{denom}", **extra)
     assert rsp["code"] == 0, rsp["raw_log"]
     acc = cli.account(multi_addr)
     res = cli.account_by_num(acc["account"]["value"]["account_number"])
     assert res["account_address"] == multi_addr
+    return multi_addr
 
+
+def multisig_sign_and_broadcast(
+    cli,
+    tmp_path,
+    unsigned_tx,
+    multisig_name,
+    multi_addr,
+    signer1_name,
+    signer2_name,
+):
     m_txt = tmp_path / "m.json"
     p1_txt = tmp_path / "p1.json"
     p2_txt = tmp_path / "p2.json"
     tx_txt = tmp_path / "tx.json"
-    amt = 1
-    multi_tx = cli.transfer(
-        multi_addr,
-        signer2,
-        f"{amt}{DEFAULT_DENOM}",
-        generate_only=True,
-    )
-    json.dump(multi_tx, m_txt.open("w"))
+    json.dump(unsigned_tx, m_txt.open("w"))
     signature1 = cli.sign_multisig_tx(m_txt, multi_addr, signer1_name)
     json.dump(signature1, p1_txt.open("w"))
     signature2 = cli.sign_multisig_tx(m_txt, multi_addr, signer2_name)
     json.dump(signature2, p2_txt.open("w"))
-    final_multi_tx = cli.combine_multisig_tx(
-        m_txt,
-        multisig_name,
-        p1_txt,
-        p2_txt,
-    )
+    final_multi_tx = cli.combine_multisig_tx(m_txt, multisig_name, p1_txt, p2_txt)
     json.dump(final_multi_tx, tx_txt.open("w"))
     rsp = cli.broadcast_tx(tx_txt)
     assert rsp["code"] == 0, rsp["raw_log"]
+    return rsp
+
+
+def do_multisig(
+    cli,
+    tmp_path,
+    signer1_name,
+    signer2_name,
+    multisig_name,
+    denom=DEFAULT_DENOM,
+    gas_prices=None,
+):
+    multi_addr = setup_multisig(
+        cli, signer1_name, signer2_name, multisig_name, denom, gas_prices
+    )
+    extra = {"gas_prices": gas_prices} if gas_prices else {}
+    unsigned = cli.transfer(
+        multi_addr,
+        cli.address(signer2_name),
+        f"1{denom}",
+        generate_only=True,
+        **extra,
+    )
+    multisig_sign_and_broadcast(
+        cli,
+        tmp_path,
+        unsigned,
+        multisig_name,
+        multi_addr,
+        signer1_name,
+        signer2_name,
+    )
     assert cli.account(multi_addr)["account"]["value"]["address"] == multi_addr
 
 
@@ -1500,3 +1549,74 @@ async def wait_for_unconfirmed_txs(url: str, min_txs: int = 1, timeout_s: float 
             return n
         await asyncio.sleep(0.1)
     raise AssertionError(f"expected >= {min_txs} unconfirmed txs, last={last}")
+
+
+async def assert_gas_estimate_within_floor(
+    w3,
+    tx: dict,
+    *,
+    tolerance: float = 1.10,
+) -> int:
+    """Run eth_estimateGas on ``tx``, binary-search the eth_call floor at the
+    same block, and assert ``estimated * tolerance >= eth_call_floor``.
+    Returns the estimate.
+
+    MUST be called BEFORE broadcasting any state-changing tx, since both
+    eth_estimateGas and eth_call are pinned to the current block — a
+    subsequent broadcast can invalidate the simulation (e.g. by writing the
+    record the call would create).
+    """
+    block_number = await w3.eth.block_number
+    estimated = int(await w3.eth.estimate_gas(tx, block_identifier=block_number))
+
+    async def call_ok(gas_limit: int) -> bool:
+        try:
+            await w3.eth.call(
+                {**tx, "gas": gas_limit},
+                block_identifier=block_number,
+            )
+            return True
+        except Exception:
+            return False
+
+    if await call_ok(estimated):
+        eth_call_floor = estimated
+    else:
+        upper = estimated * 3
+        if not await call_ok(upper):
+            raise AssertionError(f"eth_call OOM up to 3x estimate={estimated}")
+        lo, hi = estimated + 1, upper
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if await call_ok(mid):
+                hi = mid
+            else:
+                lo = mid + 1
+        eth_call_floor = lo
+
+    assert estimated * tolerance >= eth_call_floor, (
+        f"under-estimate vs eth_call floor: estimate={estimated}, "
+        f"eth_call_floor={eth_call_floor}, "
+        f"required x{eth_call_floor / estimated:.2f}"
+    )
+    return estimated
+
+
+def assert_estimate_covers_receipt(
+    estimated: int,
+    receipt_gas_used: int,
+    *,
+    tolerance: float = 0.95,
+) -> None:
+    """Assert eth_estimateGas reported a safe gas limit (``>= receipt.gasUsed``).
+
+    Catches the cosmos-evm KV under-count regression where the simulator's
+    estimate is below what the real broadcast actually consumes. Over-estimate
+    is allowed: precompile-only txs commonly reserve more gas than they
+    consume because of the precompile's pre-charge at
+    https://github.com/MANTRA-Chain/evm/blob/v0.6.0-v8-mantra-1/precompiles/common/precompile.go#L96
+    """
+    assert estimated >= receipt_gas_used * tolerance, (
+        f"under-estimate: estimate={estimated} below receipt={receipt_gas_used} "
+        f"by {(receipt_gas_used / estimated - 1) * 100:.1f}%"
+    )

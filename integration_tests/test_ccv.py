@@ -6,6 +6,7 @@ from dataclasses import astuple
 from pathlib import Path
 
 import pytest
+import requests
 import tomlkit
 from eth_abi.abi import decode, encode
 from eth_account import Account
@@ -23,6 +24,7 @@ from pystarport.utils import (
     wait_for_new_blocks,
     wait_for_port,
 )
+from web3.logs import DISCARD
 
 from .doc_utils import (
     DOCUMENT_ADDRESS,
@@ -32,6 +34,7 @@ from .doc_utils import (
     _tx_params,
     add_record,
     clear_accounts_override,
+    consumer_eip1559_fees,
     do_test_add_and_query_records,
     do_test_add_record,
     do_test_add_record_same_checksum_maintains_record_id,
@@ -59,22 +62,29 @@ from .doc_utils import (
     get_accounts,
     get_add_registry_event_registry_id,
     set_accounts_override,
+    sha256_hex,
 )
 from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
     ADDRS,
     CMD,
+    CONSUMER_GAS_AMT,
     DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
     KEYS,
     MNEMONICS,
     MockERC20_ARTIFACT,
+    assert_estimate_covers_receipt,
+    assert_gas_estimate_within_floor,
     build_contract,
     create_consumer_chain,
     eth_to_bech32,
+    find_log_event_attrs,
+    ibc_denom_address,
     module_address,
+    multisig_sign_and_broadcast,
     send_transaction,
+    setup_multisig,
     update_consumer_chain,
 )
 
@@ -100,6 +110,14 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
 
 # ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
+
+# tokenfactory denom used by test_provider_bank_hooks_fire_on_reward_distribution.
+# Pre-computed so it can be added to the consumer's allowlist at fixture setup
+# (the consumer's owner becomes gov after that, so further updates are gated).
+FACTORY_REWARD_SUBDENOM = "rewardhook"
+FACTORY_REWARD_DENOM = (
+    f"factory/{eth_to_bech32(ADDRS['validator'])}/{FACTORY_REWARD_SUBDENOM}"
+)
 # mantraUSD (6 decimals) <-> wmantraUSD (18 decimals)
 SCALAR = 10**12
 ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
@@ -238,9 +256,13 @@ def ibc(request, tmp_path_factory):
 
         # consumer native denom (as `ibc/<hash>` on the provider)
         # bridge wmantraUSD rewards that unwrap back to `erc20:<addr>` on provider
+        # FACTORY_REWARD_DENOM is included for the bank-hooks regression test;
+        # adding it here avoids a second update_consumer_chain call (which would
+        # be unauthorized once owner has been transferred to gov below).
         allowlisted_reward_denoms = [
             f"ibc/{denom_hash}",
             WMANTRAUSD_DENOM,
+            FACTORY_REWARD_DENOM,
         ]
         update_consumer_chain(
             cli,
@@ -280,7 +302,8 @@ def ibc(request, tmp_path_factory):
             genesis["app_state"]["ccvconsumer"]["params"][
                 "transfer_timeout_period"
             ] = "10s"
-            genesis["app_state"]["feemarket"]["params"]["base_fee"] = "10000000000"
+            genesis["app_state"]["feemarket"]["params"]["base_fee"] = "87600000000"
+            genesis["app_state"]["feemarket"]["params"]["min_gas_price"] = "87600000000"
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
             (cons_cfg / "edited_genesis.json").replace(genesis_path)
@@ -397,6 +420,7 @@ async def test_ccv(ibc):
             "from": sender,
             "to": receiver,
             "value": amt,
+            **consumer_eip1559_fees(w3),
         },
         KEYS[community],
     )
@@ -409,7 +433,7 @@ async def test_ccv(ibc):
         cli2.address(community),
         cli2.address(signer),
         f"{amt}{denom}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{denom}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{denom}",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     assert w3.eth.get_balance(receiver) - balance == amt
@@ -536,16 +560,43 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         timeout_ns,
         "",
     )
+    base_fee = int(w3.eth.get_block("latest")["baseFeePerGas"])
+    priority_fee = 2_000_000_000
     ics20_receipt = send_transaction(
         w3,
         {
             "to": ICS20_ADDRESS,
             "data": ics20_call.data,
             "gas": 3_000_000,
+            "maxFeePerGas": base_fee * 2 + priority_fee,
+            "maxPriorityFeePerGas": priority_fee,
         },
         sender_key,
     )
     assert ics20_receipt.status == 1
+
+    # Assert convert ERC20 Transfer and precompile's IBCTransfer event
+    transfer_logs = wmantrausd.events.Transfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert any(
+        ev.args["from"].lower() == sender.lower() and ev.args.value == amt_wmantrausd
+        for ev in transfer_logs
+    ), "wmantraUSD Transfer from sender not emitted during convert"
+
+    ics20_contract = w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    ibc_logs = ics20_contract.events.IBCTransfer().process_receipt(
+        ics20_receipt, errors=DISCARD
+    )
+    assert len(ibc_logs) == 1, f"expected 1 IBCTransfer event, got {len(ibc_logs)}"
+    ev = ibc_logs[0].args
+    assert ev.sender.lower() == sender.lower()
+    assert ev.sourcePort == "transfer"
+    assert ev.sourceChannel == provider_transfer_channel
+    assert ev.denom == erc20_denom
+    assert ev.amount == amt_wmantrausd
 
     def received() -> bool:
         return consumer_cli.balance(receiver_bech32, denom=ibc_denom) >= expected
@@ -587,10 +638,26 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
             "to": ICS20_ADDRESS,
             "data": ics20_return_call.data,
             "gas": 3_000_000,
+            **consumer_eip1559_fees(ibc.ibc2.w3),
         },
         KEYS[receiver_name],
     )
     assert ics20_return_receipt.status == 1
+
+    # Consumer-side precompile emitted the return-leg IBCTransfer event.
+    consumer_ics20 = ibc.ibc2.w3.eth.contract(
+        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
+    )
+    return_logs = consumer_ics20.events.IBCTransfer().process_receipt(
+        ics20_return_receipt, errors=DISCARD
+    )
+    assert len(return_logs) == 1
+    rev = return_logs[0].args
+    assert rev.sender.lower() == receiver_evm.lower()
+    assert rev.sourceChannel == consumer_transfer_channel
+    assert rev.denom == ibc_denom
+    assert rev.amount == return_amt_wmantrausd
+    assert rev.memo == unwrap_memo
 
     # Consumer spent at least `return_amt_wmantrausd` (plus fees).
     assert (
@@ -808,6 +875,57 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert claim_receipt.status == 1
 
 
+@pytest.mark.skip(reason="test_gov_arbitrary_message_proposal_rejected_in_ccv")
+def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
+    cli = ibc.ibc2.cosmos_cli()
+    gov_addr = module_address("gov", prefix="nvnm")
+    receiver = cli.address("community")
+
+    proposal = {
+        "title": "arbitrary-msgsend-acceptance",
+        "summary": "arbitrary-msgsend-acceptance",
+        "deposit": f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        "messages": [
+            {
+                "@type": "/cosmos.bank.v1beta1.MsgSend",
+                "from_address": gov_addr,
+                "to_address": receiver,
+                "amount": [{"denom": WMANTRAUSD_CONSUMER_IBC_DENOM, "amount": "1"}],
+            }
+        ],
+    }
+    proposal_file = tmp_path / "gov_arbitrary_msgsend_proposal.json"
+    proposal_file.write_text(json.dumps(proposal))
+
+    rsp = cli.submit_gov_proposal(
+        proposal_file,
+        from_="community",
+        gas=400000,
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+    )
+    assert rsp["code"] != 0, rsp
+    assert "MsgSend" in rsp.get("raw_log", "")
+
+
+def test_nvnmchaind_evm_coin_info_from_bank_metadata(ibc):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    base = consumer_cli.get_base_kwargs()
+
+    params = json.loads(consumer_cli.raw("q", "evm", "params", **base))
+    assert params["params"]["evm_denom"] == WMANTRAUSD_CONSUMER_IBC_DENOM
+
+    match = consumer_cli.query_bank_denom_metadata(WMANTRAUSD_CONSUMER_IBC_DENOM)
+    assert (
+        match and match["base"] == WMANTRAUSD_CONSUMER_IBC_DENOM
+    ), "miss bank denom_metadata entry for evm_denom"
+    assert match["display"] == "wmantrausd"
+    decimals = next(
+        (u["exponent"] for u in match["denom_units"] if u["denom"] == match["display"]),
+        None,
+    )
+    assert decimals == 18
+
+
 async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
     buffer_addr = module_address(
@@ -818,7 +936,7 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
@@ -844,7 +962,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
         sender_bech32,
         precompile_bech32,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
     assert "unauthorized" in rsp["raw_log"].lower(), rsp
@@ -857,6 +975,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
             "to": DOCUMENT_ADDRESS,
             "value": 1,
             "gas": 100_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -886,7 +1005,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
             sender,
             sender,
             f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-            gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+            gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
         )
         assert rsp["code"] == 0, rsp["raw_log"]
 
@@ -925,7 +1044,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{DEFAULT_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
     )
     assert rsp["code"] != 0, rsp
 
@@ -947,6 +1066,133 @@ async def test_add_registry(ibc, setup_consumer_accounts):
         ibc.ibc2.async_w3,
         metadata=metadata,
     )
+
+
+async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_accounts):
+    w3 = ibc.ibc2.async_w3
+
+    registry_name = "state_override"
+    await do_test_add_registry(
+        w3,
+        name=registry_name,
+        metadata='{"source":"state_override"}',
+    )
+
+    registries_call = DOCUMENT_PRECOMPILE.fns.registries(
+        0,
+        registry_name,
+        (b"", 0, 10, False, False),
+    )
+    tx = {
+        "to": DOCUMENT_ADDRESS,
+        "from": ADDRS["community"],
+        "data": registries_call.data,
+    }
+
+    unrelated_address = "0x000000000000000000000000000000000000dEaD"
+    empty_override = {unrelated_address: {}}
+    unrelated_override = {
+        unrelated_address: {
+            "stateDiff": {
+                "0x" + "0" * 64: "0x" + "01".zfill(64),
+            }
+        }
+    }
+
+    base = await w3.eth.call(tx, "latest")
+    with_empty_override = await w3.eth.call(tx, "latest", empty_override)
+    with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
+
+    decoded_registries, _ = await registries_call.call(w3, to=DOCUMENT_ADDRESS)
+    assert any(reg[1] == registry_name for reg in decoded_registries)
+
+    assert len(base) > 0
+    assert with_empty_override == base
+    assert with_unrelated_override == base
+
+    identity_tx = {
+        "to": "0x0000000000000000000000000000000000000004",
+        "from": ADDRS["community"],
+        "data": registries_call.data,
+    }
+    identity_base = await w3.eth.call(identity_tx, "latest")
+    identity_empty = await w3.eth.call(identity_tx, "latest", empty_override)
+    identity_unrelated = await w3.eth.call(identity_tx, "latest", unrelated_override)
+    expected_identity_output = bytes(registries_call.data)
+
+    assert identity_base == expected_identity_output
+    assert identity_base == identity_empty == identity_unrelated
+
+
+async def test_anchoring_eth_estimate_gas_matches_eth_call(
+    ibc, setup_consumer_accounts
+):
+    """Check eth_estimateGas matches receipt gas_used for anchoring precompile call."""
+    w3 = ibc.ibc2.async_w3
+    sender = get_accounts()["community"]
+
+    block_number = await w3.eth.block_number
+    registry_name = f"ccv-estimate-gas-regression-{block_number}"
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        registry_name,
+        "regression for eth_estimateGas under cosmos_evm native precompile",
+        json.dumps(
+            {
+                "source": "ccv-estimate-gas-regression",
+                "block": block_number,
+            }
+        ),
+    )
+    tx = {"to": DOCUMENT_ADDRESS, "from": sender.address, "data": call.data}
+
+    # Estimate + floor check BEFORE broadcast — addRegistry writes state, so a
+    # post-broadcast estimate would revert with "registry already exists".
+    estimated = await assert_gas_estimate_within_floor(w3, tx)
+
+    # Broadcast: consumer chain enforces a min_gas_price floor and transact()
+    # doesn't auto-set EIP-1559 fees, so inject them via the sync w3 helper.
+    fees = consumer_eip1559_fees(ibc.ibc2.w3)
+    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, gas=700_000, **fees)
+    assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
+
+
+@pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")
+async def test_erc20_precompile_state_override(ibc):
+    """eth_call balanceOf on a native ERC20 precompile must return the same
+    value under no override, empty `{}`, and an unrelated stateDiff override.
+    """
+    cli = ibc.ibc2.cosmos_cli()
+    w3 = ibc.ibc2.async_w3
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
+    holder = ADDRS["community"]
+    pair_addr = ibc_denom_address(denom)
+
+    pair = cli.query_erc20_token_pair(denom)
+    if pair.get("contract_owner") != "OWNER_MODULE" or not pair.get("enabled"):
+        pytest.skip(f"{denom} not registered as enabled OWNER_MODULE pair: {pair}")
+    assert w3.to_checksum_address(pair["erc20_address"]) == pair_addr
+
+    expected = cli.balance(cli.address("community"), denom=denom)
+    assert expected > 0, "community need have balance"
+
+    tx = {
+        "to": pair_addr,
+        "from": holder,
+        "data": "0x"
+        + (keccak(b"balanceOf(address)")[:4] + encode(["address"], [holder])).hex(),
+    }
+
+    base = await w3.eth.call(tx, "latest")
+    (decoded,) = decode(["uint256"], bytes(base))
+    assert decoded == expected, (decoded, expected)
+
+    # Any non-nil override must not bypass the keeper-backed precompile.
+    dead = "0x000000000000000000000000000000000000dEaD"
+    for override in (
+        {dead: {}},
+        {dead: {"stateDiff": {"0x" + "0" * 64: "0x" + "01".zfill(64)}}},
+    ):
+        assert await w3.eth.call(tx, "latest", override) == base, override
 
 
 async def test_anchoring_state_changing_methods_gas_delta_non_zero(
@@ -978,7 +1224,7 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
     )
     assert registry_id > 0
 
-    checksum = f"ccv-gas-{registry_id}"
+    checksum = sha256_hex(f"ccv-gas-{registry_id}")
     record = Record(
         registry=registry_name,
         uri=f"ipfs://{checksum}",
@@ -1099,7 +1345,7 @@ async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(
     await do_test_constructor_bypass_ensure_eoa_caller(ibc.ibc2.w3)
 
 
-@pytest.mark.parametrize("checksum", ["", "abc123def456"])
+@pytest.mark.parametrize("checksum", ["", sha256_hex("abc123def456")])
 async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, checksum):
     await do_test_grant_and_revoke_role_as_admin(ibc.ibc2.async_w3, checksum)
 
@@ -1124,7 +1370,7 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
     record = Record(
         registry=registry_name,
         uri="ipfs://oversize-algo",
-        checksum="abc123def456",
+        checksum=sha256_hex("abc123def456"),
         checksumAlgo=oversized_algo,
         metadata=json.dumps({"document": "oversize-algo"}),
         timestamp="",
@@ -1180,7 +1426,7 @@ async def test_revoke_role_permissions(ibc, setup_consumer_accounts, is_admin):
                 "account": _accounts["signer1"],
                 "role": "editor",
                 "sender": _accounts["community"],
-                "expect_err": "registry 0 does not exist",
+                "expect_err": "registry ID cannot be zero",
             },
         ),
     ],
@@ -1209,7 +1455,10 @@ async def test_revoke_record_checksum_missing_in_registry(ibc, setup_consumer_ac
     registry_name = "ccv-role-scope"
     registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
     await add_record(
-        w3, accounts["community"], "present-checksum", registry=registry_name
+        w3,
+        accounts["community"],
+        sha256_hex("present-checksum"),
+        registry=registry_name,
     )
     err = f"record with checksum no-checksum does not exist in registry {registry_id}"
     await do_test_role_scope_existence_validation(
@@ -1306,3 +1555,243 @@ async def test_checksum_only_query_respects_limit(ibc, setup_consumer_accounts):
 
 async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
     await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
+
+
+def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
+    """
+    Provider's SendCoinsFromModuleToModule must fire TokenFactory BeforeSend hooks.
+    """
+    provider_cli = ibc.ibc1.cosmos_cli()
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    rpc = provider_cli.node_rpc_http
+
+    # Resolve consumer_id from the provider (the fixture creates exactly one).
+    rsp = json.loads(
+        provider_cli.raw(
+            "q",
+            "provider",
+            "list-consumer-chains",
+            **provider_cli.get_base_kwargs(),
+        )
+    )
+    consumer_id = next(
+        c["consumer_id"]
+        for c in rsp.get("chains") or []
+        if c.get("chain_id") == "nvnm-canary-net-1"
+    )
+
+    validator = "validator"
+    validator_addr = provider_cli.address(validator)
+    gas = 2_500_000
+
+    factory_denom = FACTORY_REWARD_DENOM
+    factory_consumer_voucher = (
+        f"ibc/{ibc_denom_hash(f'transfer/{TRANSFER_CHANNEL_ID}/{factory_denom}')}"
+    )
+    rsp = provider_cli.create_tokenfactory_denom(
+        FACTORY_REWARD_SUBDENOM,
+        _from=validator,
+        gas=620_000,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = provider_cli.mint_tokenfactory_denom(
+        f"10000000000000{factory_denom}",
+        _from=validator,
+        gas=gas,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # Upload + instantiate track_before_send listener and wire it.
+    contract = Path(__file__).parent / "contracts/contracts/track_before_send.wasm"
+    rsp = provider_cli.wasm_store(
+        str(contract), validator_addr, _from=validator, gas=gas
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    store_attrs = find_log_event_attrs(
+        rsp["events"],
+        "store_code",
+        lambda a: "code_id" in a,
+    )
+    assert store_attrs, "store_code event missing"
+    code_id = store_attrs["code_id"]
+    rsp = provider_cli.wasm_instantiate(
+        code_id, validator_addr, _from=validator, gas=gas
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    inst_attrs = find_log_event_attrs(
+        rsp["events"],
+        "instantiate",
+        lambda a: "_contract_address" in a,
+    )
+    assert inst_attrs, "instantiate event missing"
+    listener_addr = inst_attrs["_contract_address"]
+    rsp = provider_cli.set_tokenfactory_before_send_hook(
+        factory_denom,
+        listener_addr,
+        _from=validator,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # Bridge factory denom to consumer so its voucher exists there.
+    rsp = provider_cli.ibc_transfer(
+        consumer_cli.address("community"),
+        f"1000000000000{factory_denom}",
+        TRANSFER_CHANNEL_ID,
+        _from=validator,
+        gas=gas,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    wait_for_new_blocks(consumer_cli, 5)
+    assert (
+        consumer_cli.balance(
+            consumer_cli.address("community"),
+            denom=factory_consumer_voucher,
+        )
+        > 0
+    )
+
+    # Mark observation window start.
+    start_height = provider_cli.block_height()
+
+    # IBC-deposit the factory voucher from consumer to provider's
+    # ConsumerRewardsPool. Pay gas in the consumer's evm_denom (WMANTRAUSD
+    # voucher); the consumer's MinGasPriceDecorator only accepts that.
+    consumer_rewards_pool = module_address("consumer_rewards_pool", prefix="mantra")
+    reward_memo = json.dumps(
+        {
+            "provider": {
+                "consumerId": consumer_id,
+                "chainId": "nvnm-canary-net-1",
+                "memo": "ICS rewards",
+            },
+        }
+    )
+    rsp = consumer_cli.ibc_transfer(
+        consumer_rewards_pool,
+        f"100000000000{factory_consumer_voucher}",
+        TRANSFER_CHANNEL_ID,
+        _from="community",
+        gas=500_000,
+        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        note=reward_memo,
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    # wait for IBC packet → allocation set → epoch end → AllocateTokens
+    wait_for_new_blocks(provider_cli, 30, timeout=120)
+    end_height = provider_cli.block_height()
+
+    # Only the validators portion goes through Provider.bankKeeper (bug-sensitive);
+    # the community portion goes through DistrKeeper (always-fires). Filter by
+    # amount to detect the bug-sensitive listener fire.
+    deposit = 100_000_000_000
+    expected_min_validator_amount = deposit * 8 // 10
+
+    listener_amounts = []
+    for h in range(start_height + 1, end_height + 1):
+        res = requests.get(f"{rpc}/block_results?height={h}").json().get("result") or {}
+        candidates = (res.get("end_block_events") or []) + [
+            ev
+            for ev in (res.get("finalize_block_events") or [])
+            if not any(a.get("key") == "txhash" for a in ev.get("attributes") or [])
+        ]
+        for ev in candidates:
+            if ev.get("type") != "wasm":
+                continue
+            attrs = {a.get("key"): a.get("value") for a in ev.get("attributes") or []}
+            if attrs.get("_contract_address") != listener_addr:
+                continue
+            amt = attrs.get("amount") or ""
+            # amt "20000000factory/.../rewardhook"
+            if amt.endswith(factory_denom):
+                try:
+                    listener_amounts.append((h, int(amt[: -len(factory_denom)])))
+                except ValueError:
+                    continue
+
+    assert any(
+        amount >= expected_min_validator_amount for _, amount in listener_amounts
+    ), f"validator-portion listener fire missing; observed: {listener_amounts}"
+
+
+def test_consumer_multisig(ibc, tmp_path):
+    consumer_cli = ibc.ibc2.cosmos_cli()
+    gas_prices = f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
+    multisig_name = "multitest_anchor"
+    gas_limit = 3_000_000
+    fee_amt = int(CONSUMER_GAS_AMT) * gas_limit
+    multi_addr = setup_multisig(
+        consumer_cli,
+        "community",
+        "signer2",
+        multisig_name,
+        denom=WMANTRAUSD_CONSUMER_IBC_DENOM,
+        gas_prices=gas_prices,
+        fund_amt=fee_amt * 2,
+    )
+
+    registry_name = "multisig-whitepaper"
+    checksum = sha256_hex("multisig-anchoring-payload")
+    fee = f"{fee_amt}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
+    common = {
+        "from_": multi_addr,
+        "fees": fee,
+        "gas": str(gas_limit),
+        "chain_id": consumer_cli.chain_id,
+        "keyring_backend": "test",
+        "home": consumer_cli.data_dir,
+        "node": consumer_cli.node_rpc,
+        "output": "json",
+    }
+    add_registry_tx = json.loads(
+        consumer_cli.raw(
+            "tx",
+            "anchoring",
+            "add-registry",
+            "--generate-only",
+            name=registry_name,
+            description="registry created via multisig",
+            metadata='{"owner":"NVNM Foundation"}',
+            **common,
+        )
+    )
+    add_record_tx = json.loads(
+        consumer_cli.raw(
+            "tx",
+            "anchoring",
+            "add-record",
+            "--generate-only",
+            record=json.dumps(
+                {
+                    "registry": registry_name,
+                    "uri": "ipfs://",
+                    "checksum": checksum,
+                    "checksum_algo": "sha256",
+                    "metadata": '{"version":"1.0"}',
+                    "status": "active",
+                }
+            ),
+            **common,
+        )
+    )
+    unsigned_tx = add_registry_tx
+    unsigned_tx["body"]["messages"].extend(add_record_tx["body"]["messages"])
+
+    multisig_sign_and_broadcast(
+        consumer_cli,
+        tmp_path,
+        unsigned_tx,
+        multisig_name,
+        multi_addr,
+        "community",
+        "signer2",
+    )
+
+    registries = consumer_cli.raw(
+        "q",
+        "anchoring",
+        "registries",
+        node=consumer_cli.node_rpc,
+        output="json",
+    )
+    assert registry_name in registries.decode("utf-8")

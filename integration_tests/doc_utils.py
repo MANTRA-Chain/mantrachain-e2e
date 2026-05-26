@@ -1,3 +1,4 @@
+import hashlib
 import json
 import time
 from dataclasses import astuple, dataclass
@@ -9,7 +10,31 @@ from eth_contract.contract import Contract as ContractAsync
 from eth_hash.auto import keccak
 from web3 import AsyncWeb3
 
-from .utils import ACCOUNTS, ADDRS, KEYS, build_contract, send_transaction
+from .utils import (
+    ACCOUNTS,
+    ADDRS,
+    CONSUMER_GAS_AMT,
+    KEYS,
+    build_contract,
+    send_transaction,
+)
+
+
+def consumer_eip1559_fees(w3) -> dict:
+    # base_fee can decay below min_gas_price in empty blocks, raise priority
+    # so effective_gas_price = base_fee + priority >= min_gas_price.
+    base_fee = int(w3.eth.get_block("latest")["baseFeePerGas"])
+    floor = int(CONSUMER_GAS_AMT)
+    priority_fee = max(2_000_000_000, floor - base_fee)
+    return {
+        "maxFeePerGas": (base_fee + priority_fee) * 2,
+        "maxPriorityFeePerGas": priority_fee,
+    }
+
+
+def sha256_hex(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
 
 # allow overriding accounts for different chain contexts
 _ACCOUNTS_OVERRIDE = None
@@ -180,10 +205,12 @@ async def _tx_params(
         base_fee = block.get("baseFeePerGas")
         if base_fee is not None:
             base_fee = int(base_fee)
-            priority_fee = 2_000_000_000  # 2 gwei
+            # raise priority so base_fee + priority >= consumer min_gas_price,
+            # otherwise empty-block base_fee decay starves the floor.
+            priority_fee = max(2_000_000_000, int(CONSUMER_GAS_AMT) - base_fee)
             return {
                 "gas": gas_limit,
-                "maxFeePerGas": base_fee * 2 + priority_fee,
+                "maxFeePerGas": (base_fee + priority_fee) * 2,
                 "maxPriorityFeePerGas": priority_fee,
             }
     except Exception:
@@ -390,6 +417,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
             "from": sender,
             "data": artifact["bytecode"],
             "gas": 2_000_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -428,6 +456,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
             "from": sender,
             "data": eoa_add_registry_call.data,
             "gas": 1_000_000,
+            **consumer_eip1559_fees(w3),
         },
         KEYS["community"],
     )
@@ -442,7 +471,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
         (
             "ccv-eoa-registry",
             "ipfs://ccv-contract-caller",
-            "ccv-contract-caller-checksum",
+            sha256_hex("ccv-contract-caller-checksum"),
             "sha256",
             "{}",
             "",
@@ -492,6 +521,7 @@ async def do_test_constructor_bypass_ensure_eoa_caller(
         {
             "from": sender,
             "gas": 2_000_000,
+            **consumer_eip1559_fees(w3),
         }
     )
     deploy_receipt = send_transaction(w3, deploy_tx, KEYS["community"])
@@ -781,8 +811,26 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
 
     registry_id = await get_registry_id(w3, registry_name)
 
-    # module admin can revoke the sole registry admin as an emergency override
-    await revoke_role(w3, registry_id, "", registry_admin, "admin", module_admin)
+    # module admin cannot orphan the registry by revoking the sole admin directly
+    # that would leave zero admins. Recovery must go grant-first, then revoke
+    revoke_sole_call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id, "", registry_admin.address, "admin"
+    )
+    await _assert_call_reverts_contains(
+        w3,
+        sender=module_admin.address,
+        to=DOCUMENT_ADDRESS,
+        data=revoke_sole_call.data,
+        expect_err="cannot revoke the last registry admin",
+    )
+
+    # break-glass: module admin grants a replacement admin 1st (registry never orphaned)
+    await grant_role(w3, registry_id, "", replacement_admin, "admin", module_admin)
+
+    # the replacement admin — which now holds the registry admin role — revokes
+    # the original admin. module_admin was never granted admin on this registry,
+    # so the revoke must come from the replacement.
+    await revoke_role(w3, registry_id, "", registry_admin, "admin", replacement_admin)
 
     # removed registry admin should no longer be able to perform admin actions
     grant_editor_call = DOCUMENT_PRECOMPILE.fns.grantRole(
@@ -795,9 +843,6 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
         data=grant_editor_call.data,
         message="Expected removed registry admin to lose admin permissions",
     )
-
-    # module admin can restore admin access to recover from lockout
-    await grant_role(w3, registry_id, "", replacement_admin, "admin", module_admin)
 
     # recovered admin can perform admin actions
     await grant_role(w3, registry_id, "", target, Role.EDITOR, replacement_admin)
@@ -903,7 +948,7 @@ async def do_test_record_level_overrides_registry_level(
     admin = accounts["community"]
     user = accounts["signer1"]
     reg_checksum = ""
-    doc_checksum = "doc123"
+    doc_checksum = sha256_hex("doc123")
 
     await add_record(w3, admin, doc_checksum)
 
@@ -923,8 +968,8 @@ async def do_test_role_with_different_checksums(
     accounts = get_accounts()
     admin = accounts["community"]
     user = accounts["signer1"]
-    doc1_checksum = "doc1"
-    doc2_checksum = "doc2"
+    doc1_checksum = sha256_hex("doc1")
+    doc2_checksum = sha256_hex("doc2")
 
     await add_record(w3, admin, doc1_checksum)
     await add_record(w3, admin, doc2_checksum)
@@ -943,9 +988,9 @@ async def do_test_add_and_query_records(w3: AsyncWeb3):
     admin = accounts["community"]
 
     for checksum, name in [
-        ("abc123", "Record 1"),
-        ("abc123", "Record 1 v2"),
-        ("def456", "Record 2"),
+        (sha256_hex("abc123"), "Record 1"),
+        (sha256_hex("abc123"), "Record 1 v2"),
+        (sha256_hex("def456"), "Record 2"),
     ]:
         await add_record(w3, admin, checksum, name=name, registry=registry_name)
 
@@ -955,7 +1000,7 @@ async def do_test_add_and_query_records(w3: AsyncWeb3):
     docs = [Record.from_tuple(d) for d in records]
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
 
-    abc_doc = next((d for d in docs if d.checksum == "abc123"), None)
+    abc_doc = next((d for d in docs if d.checksum == sha256_hex("abc123")), None)
     assert abc_doc is not None
     metadata = json.loads(abc_doc.metadata)
     assert metadata["document"] == "Record 1 v2"
@@ -965,7 +1010,7 @@ async def do_test_add_record_same_checksum_maintains_record_id(w3: AsyncWeb3):
     await ensure_registry_exists(w3)
     accounts = get_accounts()
     admin = accounts["community"]
-    checksum = "test_checksum_123"
+    checksum = sha256_hex("test_checksum_123")
     await add_record(w3, admin, checksum, name="Version 1")
     await add_record(w3, admin, checksum, name="Version 2")
 
@@ -1008,13 +1053,13 @@ async def _add_record_and_set_status(
 async def do_test_add_record(w3: AsyncWeb3):
     await _add_record_and_set_status(
         w3,
-        checksum="record_123",
+        checksum=sha256_hex("record_123"),
         name="Test Record",
         status="verified",
     )
     await _add_record_and_set_status(
         w3,
-        checksum="remove_test_123",
+        checksum=sha256_hex("remove_test_123"),
         name="To Remove",
         status="removed",
     )
@@ -1028,7 +1073,7 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
         ("multi1", "doc1", "figi1", "ind001"),
         ("multi2", "doc2", "figi2", "ind002"),
     ]
-    checksum = "shared_checksum_abc123"
+    checksum = sha256_hex("shared_checksum_abc123")
     for name, document, figi, individual_id in registries:
         await ensure_registry_exists(w3, name=name)
         metadata = json.dumps(
@@ -1085,7 +1130,7 @@ async def do_test_query_by_registry_and_checksum(w3: AsyncWeb3):
     ).call(w3, to=DOCUMENT_ADDRESS)
     assert registries
 
-    checksum = "query_test_checksum"
+    checksum = sha256_hex("query_test_checksum")
     await add_record(
         w3, admin, checksum, name="Query Test Record", registry=registry_name
     )
@@ -1104,7 +1149,7 @@ async def do_test_same_checksum_different_record_ids_per_registry(w3: AsyncWeb3)
     accounts = get_accounts()
     admin = accounts["community"]
     registries = ["recordid-test-1", "recordid-test-2"]
-    checksum = "recordid_checksum_xyz"
+    checksum = sha256_hex("recordid_checksum_xyz")
 
     for name in registries:
         await ensure_registry_exists(w3, name=name)
@@ -1126,7 +1171,7 @@ async def do_test_multiple_versions_same_checksum_across_registries(w3: AsyncWeb
     accounts = get_accounts()
     admin = accounts["community"]
     registries = ["version-test-1", "version-test-2"]
-    checksum = "multi_version_checksum"
+    checksum = sha256_hex("multi_version_checksum")
 
     for name in registries:
         await ensure_registry_exists(w3, name=name)
@@ -1152,7 +1197,7 @@ async def do_test_query_all_registries_for_checksum(w3: AsyncWeb3):
     accounts = get_accounts()
     admin = accounts["community"]
     registries = ["query-all-1", "query-all-2", "query-all-3"]
-    checksum = "query_all_checksum"
+    checksum = sha256_hex("query_all_checksum")
 
     for name in registries:
         await ensure_registry_exists(w3, name=name)
@@ -1174,7 +1219,7 @@ async def do_test_checksum_only_query_respects_limit(w3: AsyncWeb3):
     accounts = get_accounts()
     admin = accounts["community"]
 
-    checksum = "checksum_limit_test"
+    checksum = sha256_hex("checksum_limit_test")
     registries = ["checksum-limit-a", "checksum-limit-b", "checksum-limit-c"]
 
     for name in registries:
@@ -1211,12 +1256,12 @@ async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
         await add_record(
             w3,
             admin,
-            checksum=f"checksum-a-{i}",
+            checksum=sha256_hex(f"checksum-a-{i}"),
             name=f"record a {i}",
             registry=reg_a,
         )
 
-    checksum_b = "checksum-b"
+    checksum_b = sha256_hex("checksum-b")
     await add_record(
         w3,
         admin,
