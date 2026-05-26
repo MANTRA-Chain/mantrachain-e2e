@@ -16,6 +16,7 @@ dependencies = [
     "flaky>=3.8.1",
     "pytest-asyncio>=1.0.0",
     "eth-contract @ git+https://github.com/yihuang/eth-contract.git@main",
+    "pydefi @ git+https://github.com/yihuang/pydefi.git@main",
     "py-ecc>=8.0.0",
     "pyrevm @ git+https://github.com/yihuang/pyrevm.git@master",
     "backoff>=2.2.1",

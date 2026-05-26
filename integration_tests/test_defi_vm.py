@@ -2,6 +2,8 @@ import time
 
 import pytest
 from eth_contract.erc20 import ERC20
+from hexbytes import HexBytes
+from pydefi.vm import Program
 from web3 import AsyncWeb3
 
 from .ibc_utils import ibc_denom_hash, prepare_network
@@ -17,73 +19,12 @@ from .utils import (
 
 pytestmark = pytest.mark.asyncio
 
-OP_PUSH_U256 = 0x01
-OP_PUSH_ADDR = 0x02
-OP_PUSH_BYTES = 0x03
-OP_SWAP = 0x05
-OP_POP = 0x06
-OP_ASSERT_GE = 0x23
-OP_ASSERT_LE = 0x24
-OP_CALL = 0x30
-OP_SELF_BAL = 0x32
-OP_DELTA_START = 0x33
-OP_DELTA_LOAD = 0x34
 
-
-def push_u256(n: int) -> bytes:
-    return bytes([OP_PUSH_U256]) + n.to_bytes(32, "big")
-
-
-def push_addr(a: str) -> bytes:
-    raw = bytes.fromhex(a.removeprefix("0x"))
-    if len(raw) != 20:
-        raise ValueError(f"bad address length: {a!r}")
-    return bytes([OP_PUSH_ADDR]) + raw
-
-
-def push_bytes(data: bytes) -> bytes:
-    if len(data) > 0xFFFF:
-        raise ValueError("push_bytes payload too large")
-    return bytes([OP_PUSH_BYTES]) + len(data).to_bytes(2, "big") + data
-
-
-def pop() -> bytes:
-    return bytes([OP_POP])
-
-
-def swap() -> bytes:
-    return bytes([OP_SWAP])
-
-
-def assert_ge(msg: str = "") -> bytes:
-    raw = msg.encode()
-    if len(raw) > 255:
-        raise ValueError("assert_ge message too long")
-    return bytes([OP_ASSERT_GE, len(raw)]) + raw
-
-
-def assert_le(msg: str = "") -> bytes:
-    raw = msg.encode()
-    if len(raw) > 255:
-        raise ValueError("assert_le message too long")
-    return bytes([OP_ASSERT_LE, len(raw)]) + raw
-
-
-def self_bal() -> bytes:
-    return bytes([OP_SELF_BAL])
-
-
-def call(require_success: bool = True) -> bytes:
-    flags = 0x01 if require_success else 0x00
-    return bytes([OP_CALL, flags])
-
-
-def delta_start() -> bytes:
-    return bytes([OP_DELTA_START])
-
-
-def delta_load() -> bytes:
-    return bytes([OP_DELTA_LOAD])
+async def deploy_vm(w3: AsyncWeb3):
+    """Deploy the Analog-Labs interpreter + a fresh DeFiVM bound to it."""
+    interp = await build_and_deploy_contract_async(w3, "Interpreter", via_ir=False)
+    vm = await build_and_deploy_contract_async(w3, "DeFiVM", args=(interp.address,))
+    return vm
 
 
 @pytest.fixture(scope="module")
@@ -99,31 +40,19 @@ async def test_flow(mantra):
     w3: AsyncWeb3 = mantra.async_w3
     deployer = ACCOUNTS["community"]
 
-    vm = await build_and_deploy_contract_async(w3, "DeFiVM")
-
-    # Snapshot and load ETH delta for same account without transfers (expect zero delta)
-    program = (
-        push_addr(deployer.address)
-        + push_addr("0x0000000000000000000000000000000000000000")
-        + delta_start()
-        + push_addr(deployer.address)
-        + push_addr("0x0000000000000000000000000000000000000000")
-        + delta_load()
-        + push_u256(0)
-        + pop()
-        + pop()
-    )
-    tx_hash = await vm.functions.execute(program).transact({"from": deployer.address})
-    receipt = await w3.eth.get_transaction_receipt(tx_hash)
-    assert receipt["status"] == 1
+    vm = await deploy_vm(w3)
 
     value_in = 10**15
     vm_before = await w3.eth.get_balance(vm.address)
     sender_before = await w3.eth.get_balance(deployer.address)
 
-    # Check VM onchain balance during execution and then verify final balances offchain
-    program = push_u256(value_in) + self_bal() + assert_ge("vm balance too low")
-    tx_hash = await vm.functions.execute(program).transact(
+    # Onchain: assert the VM received `value_in`. Offchain: verify the
+    # balance shift after the call returns.
+    prog = Program()
+    prog.assert_ge(
+        prog.eth_balance(prog.builder.address()), value_in, "vm balance too low"
+    )
+    tx_hash = await vm.functions.execute(prog.build()).transact(
         {"from": deployer.address, "value": value_in}
     )
     receipt = await w3.eth.get_transaction_receipt(tx_hash)
@@ -150,15 +79,9 @@ async def test_ibc_cb(ibc):
     res = cli1.register_erc20(WETH_ADDRESS, _from="community", gas=400_000)
     assert res["code"] == 0
 
-    vm = await build_and_deploy_contract_async(w3, "DeFiVM")
+    vm = await deploy_vm(w3)
     cb = await build_and_deploy_contract_async(w3, "CounterWithCallbacks")
-
-    # DeFiVM only allows CALLs to whitelisted adapters.
-    set_adapter_tx = await vm.functions.setAdapter(cb.address, True).transact(
-        {"from": deployer.address}
-    )
-    set_adapter_receipt = await w3.eth.get_transaction_receipt(set_adapter_tx)
-    assert set_adapter_receipt["status"] == 1
+    cb_addr = HexBytes(cb.address)
 
     channel_id = "channel-0"
     port_id = "transfer"
@@ -171,17 +94,13 @@ async def test_ibc_cb(ibc):
     ).build_transaction({"from": deployer.address, "gas": 300_000})
     calldata = bytes.fromhex(tx["data"][2:])
 
-    # Stack order for CALL is (top -> bottom): gasLimit, to, value, calldataBufIdx
-    program = (
-        push_bytes(calldata)
-        + push_u256(0)
-        + push_addr(cb.address)
-        + push_u256(300_000)
-        + call(True)
-        + pop()
+    # DeFiVM-mediated call to onPacketAcknowledgement; require success.
+    prog = Program()
+    ok = prog.call_raw(cb_addr, calldata, gas=300_000)
+    prog.assert_(ok)
+    exec_tx = await vm.functions.execute(prog.build()).transact(
+        {"from": deployer.address}
     )
-
-    exec_tx = await vm.functions.execute(program).transact({"from": deployer.address})
     exec_receipt = await w3.eth.get_transaction_receipt(exec_tx)
     assert exec_receipt["status"] == 1
 
@@ -220,20 +139,13 @@ async def test_ibc_cb(ibc):
     dst_denom = f"ibc/{ibc_denom_hash(f'transfer/channel-0/{erc20_denom}')}"
     dst_balance_bf = cli2.balance(addr_signer2, dst_denom)
 
-    # SWAP opcode guard + DeFiVM-mediated cross-chain transfer.
-    program = (
-        push_u256(1)
-        + push_u256(2)
-        + swap()
-        + assert_le("swap failed")
-        + push_bytes(ibc_calldata)
-        + push_u256(0)
-        + push_addr(cb.address)
-        + push_u256(900_000)
-        + call(True)
-        + pop()
+    # DeFiVM-mediated cross-chain transfer.
+    prog = Program()
+    ok = prog.call_raw(cb_addr, ibc_calldata, gas=900_000)
+    prog.assert_(ok)
+    tx_hash = await vm.functions.execute(prog.build()).transact(
+        {"from": deployer.address}
     )
-    tx_hash = await vm.functions.execute(program).transact({"from": deployer.address})
     receipt = await w3.eth.get_transaction_receipt(tx_hash)
     assert receipt["status"] == 1
 
