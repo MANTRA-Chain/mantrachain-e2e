@@ -1,15 +1,24 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     flake-compat.url = "github:edolstra/flake-compat";
     hermes-src = {
       url = "github:mmsqe/ibc-rs/ae80ab348952840696e6c9a0c7096d2de11ea579";
       flake = false;
     };
+    eureka-relayer-src = {
+      # ghcr.io/cosmos/eureka-relayer:pr-952 is built from this commit.
+      url = "github:cosmos/solidity-ibc-eureka/d1fdeda051c63bd3cace02ab73171f835f9d09a8";
+      flake = false;
+    };
+    ibc-attestor-src = {
+      url = "github:mmsqe/ibc-attestor/a2f43d7b5067c1ee29e4b8978bbc39840fccc06e";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-compat, hermes-src, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-compat, hermes-src, eureka-relayer-src, ibc-attestor-src, flake-utils, ... }:
     let
       overlays =
         [
@@ -21,6 +30,16 @@
           })
           (_: pkgs: {
             hermes = pkgs.callPackage ./nix/hermes.nix { src = hermes-src; };
+          })
+          (_: pkgs: {
+            eureka-relayer = pkgs.callPackage ./nix/eureka-relayer.nix {
+              src = eureka-relayer-src;
+            };
+          })
+          (_: pkgs: {
+            ibc-attestor = pkgs.callPackage ./nix/ibc-attestor.nix {
+              src = ibc-attestor-src;
+            };
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
@@ -107,6 +126,8 @@
           mantrachaind = pkgs.mantrachaind;
           evmd = pkgs.evmd;
           hermes = pkgs.hermes;
+          eureka-relayer = pkgs.eureka-relayer;
+          ibc-attestor = pkgs.ibc-attestor;
           cosmovisor = pkgs.cosmovisor;
           go-ethereum = pkgs.go-ethereum;
           inherit benchmark-testcase testground-image testground-image-evmd;
@@ -138,6 +159,8 @@
             pkgs.direnv
             pkgs.git
             pkgs.hermes
+            pkgs.eureka-relayer
+            pkgs.ibc-attestor
             pkgs.go-ethereum
             pkgs.cosmovisor
             pkgs.rustc
