@@ -175,6 +175,21 @@ def setup_mantra(path, base_port, chain):
     yield from setup_custom_mantra(path, base_port, cfg, chain=chain)
 
 
+def setup_paired_mantra(path, base_port, chain):
+    """Spawn two mantra chains for cross-chain Eureka tests; yields ``(src, dst)``."""
+    from contextlib import contextmanager
+
+    from pystarport.utils import wait_for_new_blocks
+
+    cfg = Path(__file__).parent / "configs/eureka_paired.jsonnet"
+    with contextmanager(setup_custom_mantra)(path, base_port, cfg, chain=chain) as src:
+        dst_base_dir = src.base_dir.parent / "mantra-canary-net-2"
+        dst = Mantra(dst_base_dir, chain_binary=src.chain_binary)
+        wait_for_port(ports.rpc_port(dst.base_port(0)))
+        wait_for_new_blocks(dst.cosmos_cli(), 1)
+        yield (src, dst)
+
+
 def setup_custom_mantra(
     path,
     base_port,

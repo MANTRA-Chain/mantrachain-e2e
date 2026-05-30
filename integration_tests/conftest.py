@@ -1,9 +1,17 @@
-import pytest
+import os
 
-from .network import (
+# Disable gRPC's atfork logger before grpc is imported (conftest loads first),
+# else it pollutes forked Cosmos CLI stdout and corrupts parsed addresses.
+os.environ.setdefault("GRPC_ENABLE_FORK_SUPPORT", "0")
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+
+import pytest  # noqa: E402
+
+from .network import (  # noqa: E402
     connect_custom_mantra,
     setup_geth,
     setup_mantra,
+    setup_paired_mantra,
 )
 
 
@@ -98,6 +106,14 @@ def mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra")
     yield from setup_mantra(path, 26650, chain)
+
+
+@pytest.fixture(scope="module")
+def paired_mantra(request, tmp_path_factory):
+    """Two-chain fixture for cross-chain Eureka tests. Yields ``(src, dst)``."""
+    chain = request.config.getoption("chain_config")
+    path = tmp_path_factory.mktemp("paired_mantra")
+    yield from setup_paired_mantra(path, 26650, chain)
 
 
 @pytest.fixture(scope="session", params=[True])
