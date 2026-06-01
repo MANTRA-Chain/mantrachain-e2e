@@ -18,39 +18,57 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-compat, hermes-src, eureka-relayer-src, ibc-attestor-src, flake-utils, ... }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-compat,
+      hermes-src,
+      eureka-relayer-src,
+      ibc-attestor-src,
+      flake-utils,
+      ...
+    }:
     let
-      overlays =
-        [
-          (_: pkgs: {
-            flake-compat = flake-compat;
-            go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
-            dapp = pkgs.dapp;
-            solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
-          })
-          (_: pkgs: {
-            hermes = pkgs.callPackage ./nix/hermes.nix { src = hermes-src; };
-          })
-          (_: pkgs: {
-            eureka-relayer = pkgs.callPackage ./nix/eureka-relayer.nix {
-              src = eureka-relayer-src;
-            };
-          })
-          (_: pkgs: {
-            ibc-attestor = pkgs.callPackage ./nix/ibc-attestor.nix {
-              src = ibc-attestor-src;
-            };
-          })
-          (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
-          (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
-          (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
-        ];
+      overlays = [
+        (_: pkgs: {
+          flake-compat = flake-compat;
+          go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
+          dapp = pkgs.dapp;
+          solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
+        })
+        (_: pkgs: {
+          hermes = pkgs.callPackage ./nix/hermes.nix { src = hermes-src; };
+        })
+        (_: pkgs: {
+          eureka-relayer = pkgs.callPackage ./nix/eureka-relayer.nix {
+            src = eureka-relayer-src;
+          };
+        })
+        (_: pkgs: {
+          ibc-attestor = pkgs.callPackage ./nix/ibc-attestor.nix {
+            src = ibc-attestor-src;
+          };
+        })
+        (_: pkgs: {
+          # SP1 ICS07 light-client testing: operator (genesis + fixtures) built
+          # from the same relayer source, plus vendored prebuilt program ELFs.
+          sp1-operator = pkgs.callPackage ./nix/sp1-operator.nix {
+            src = eureka-relayer-src;
+          };
+          sp1-ics07-programs = pkgs.callPackage ./nix/sp1-ics07-programs.nix { };
+        })
+        (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
+        (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
+        (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
+      ];
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in
     {
       overlays.default = overlays;
 
-      legacyPackages = forAllSystems (system:
+      legacyPackages = forAllSystems (
+        system:
         import nixpkgs {
           inherit system;
           overlays = overlays;
@@ -58,7 +76,8 @@
         }
       );
 
-      packages = forAllSystems (system:
+      packages = forAllSystems (
+        system:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -121,20 +140,24 @@
             chaind = pkgs.evmd;
             imageName = "evmd-testground";
           };
-        in {
+        in
+        {
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
           evmd = pkgs.evmd;
           hermes = pkgs.hermes;
           eureka-relayer = pkgs.eureka-relayer;
           ibc-attestor = pkgs.ibc-attestor;
+          sp1-operator = pkgs.sp1-operator;
+          sp1-ics07-programs = pkgs.sp1-ics07-programs;
           cosmovisor = pkgs.cosmovisor;
           go-ethereum = pkgs.go-ethereum;
           inherit benchmark-testcase testground-image testground-image-evmd;
         }
       );
 
-      devShells = forAllSystems (system:
+      devShells = forAllSystems (
+        system:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -161,6 +184,8 @@
             pkgs.hermes
             pkgs.eureka-relayer
             pkgs.ibc-attestor
+            pkgs.sp1-operator
+            pkgs.sp1-ics07-programs
             pkgs.go-ethereum
             pkgs.cosmovisor
             pkgs.rustc
@@ -170,14 +195,21 @@
 
           commonShellHook = ''
             export PATH=${pkgs.go-ethereum}/bin:$PATH
+            # Vendored SP1 ICS07 program ELFs, consumed by the SP1 e2e
+            # (eureka_deploy_sp1._elf_paths + the relayer sp1_programs config).
+            export SP1_ICS07_PROGRAMS_DIR=${pkgs.sp1-ics07-programs}
             if [ -d integration_tests/.venv ]; then
               source integration_tests/.venv/bin/activate
             fi
           '';
 
-        in {
+        in
+        {
           default = pkgs.mkShell {
-            buildInputs = commonInputs ++ [ pkgs.mantrachaind pkgs.evmd ];
+            buildInputs = commonInputs ++ [
+              pkgs.mantrachaind
+              pkgs.evmd
+            ];
             shellHook = commonShellHook;
           };
 
