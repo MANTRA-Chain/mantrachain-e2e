@@ -154,14 +154,26 @@ CONTRACTS = {
     "DummyLightClient": "test/solidity-ibc/mocks/DummyLightClient.sol",
     # Attested-mode light client — for cross-chain tests against the real relayer.
     "AttestationLightClient": "contracts/light-clients/attestation/AttestationLightClient.sol",  # noqa: E501
+    # SP1 ICS07-Tendermint light client (zk path, cosmos→EVM).
+    "SP1ICS07Tendermint": "contracts/light-clients/sp1-ics07/SP1ICS07Tendermint.sol",  # noqa: E501
+    # Real groth16 verifier — v6.1.0 must match the ELFs (sp1-zkvm 6.1); on-file
+    # contract is `SP1Verifier` (hence the (path, name) pair). Needs `bun install`.
+    "SP1VerifierGroth16": (
+        "node_modules/sp1-contracts/contracts/src/v6.1.0/SP1VerifierGroth16.sol",
+        "SP1Verifier",
+    ),
+    "SP1MockVerifier": "node_modules/sp1-contracts/contracts/src/SP1MockVerifier.sol",  # noqa: E501
 }
 
 
 def get_contract(name: str) -> dict:
-    """Compile a known Eureka contract by short name."""
+    """Compile a known Eureka contract by short name. A CONTRACTS value is a path
+    (contract = file stem) or a ``(path, contract_name)`` pair."""
     if name not in CONTRACTS:
         raise KeyError(f"unknown Eureka contract {name!r}; known: {sorted(CONTRACTS)}")
-    return compile_eureka_contract(CONTRACTS[name], name)
+    spec = CONTRACTS[name]
+    path, contract_name = spec if isinstance(spec, tuple) else (spec, name)
+    return compile_eureka_contract(path, contract_name)
 
 
 # Inline test mocks — local to this repo, not part of solidity-ibc-eureka.
