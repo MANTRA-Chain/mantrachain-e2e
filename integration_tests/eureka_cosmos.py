@@ -169,6 +169,12 @@ def sign_and_broadcast_body(
     return tx
 
 
+def cosmos_signer(mantra, signer_name: str, *, denom: str):
+    """A ``BinaryRelayer`` cosmos_signer: sign + broadcast a relayer-returned
+    ``TxBody`` on ``mantra`` with ``signer_name``, returning the committed tx."""
+    return lambda body: sign_and_broadcast_body(mantra, signer_name, body, denom=denom)
+
+
 def add_counterparty(
     mantra,
     signer_name: str,

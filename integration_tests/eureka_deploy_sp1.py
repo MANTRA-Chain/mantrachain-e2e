@@ -55,7 +55,7 @@ class SP1ICS07Genesis:
     misbehaviour_vkey: bytes
 
     @classmethod
-    def from_fixture(cls, doc: dict) -> "SP1ICS07Genesis":
+    def from_fixture(cls, doc: dict) -> SP1ICS07Genesis:
         """Extract the genesis fields embedded in an operator fixture JSON."""
         return cls(
             trusted_client_state=_unhex(doc["trustedClientState"]),

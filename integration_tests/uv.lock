@@ -813,7 +813,7 @@ wheels = [
 [[package]]
 name = "eureka-grpc-py"
 version = "0.1.0"
-source = { git = "https://github.com/mmsqe/eureka-grpc-py.git?rev=main#cbd3d3e19358c27f06fb16c8f48305f6968e33b9" }
+source = { git = "https://github.com/mmsqe/eureka-grpc-py.git?rev=main#14203a00669c5fcf8b180382f1abc6ee8b9868d1" }
 dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },

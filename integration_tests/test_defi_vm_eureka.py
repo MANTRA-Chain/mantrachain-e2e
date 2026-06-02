@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from eth_abi.abi import decode as abi_decode
@@ -39,9 +39,18 @@ from .eureka_artifacts import (
     find_eureka_repo,
     get_contract,
 )
-from .eureka_cosmos import _clean_bech32, ibc_voucher_balances, send_v2_transfer
+from .eureka_cosmos import (
+    _clean_bech32,
+    cosmos_signer,
+    ibc_voucher_balances,
+    send_v2_transfer,
+)
 from .eureka_deploy import ICS20_DEFAULT_PORT, deploy_eureka_stack
 from .utils import ACCOUNTS, ADDRS, KEYS, build_and_deploy_contract_async, eth_to_bech32
+
+if TYPE_CHECKING:
+    from eureka_grpc.harness.relayer import RelayerProcess
+    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
 
 # Every test in this file needs the upstream solidity-ibc-eureka source tree
 # (for solc compile + ABIs). Skip the whole module on a clean clone where it
@@ -757,8 +766,8 @@ class PairedEurekaStack:
     src: _ChainSide
     dst: _ChainSide
     attestors: tuple  # (src_attestor, dst_attestor) — each has .stop()
-    relayer_process: Any  # eureka_relayer_subprocess.RelayerProcess
-    binary_relayer: Any  # eureka_binary_relayer.BinaryRelayer
+    relayer_process: RelayerProcess
+    binary_relayer: BinaryRelayer
 
 
 _ZERO_ADDR = "0x" + "0" * 40
@@ -805,12 +814,10 @@ async def paired_eureka_stack(paired_mantra, tmp_path_factory) -> PairedEurekaSt
     Skips if either binary isn't on ``$PATH`` (i.e. when not under
     ``nix develop``).
     """
-    from .eureka_attestor_subprocess import Attestor
-    from .eureka_binary_relayer import BinaryRelayer, _Endpoint
-    from .eureka_relayer_subprocess import (
-        build_eth_to_eth_config,
-        start_relayer,
-    )
+    from eureka_grpc.harness.attestor import Attestor
+    from eureka_grpc.harness.relayer import build_eth_to_eth_config, start_relayer
+    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+
     from .utils import free_port
 
     src_mantra, dst_mantra = paired_mantra
@@ -1036,24 +1043,24 @@ class EthToCosmosEurekaStack:
     dst_mantra: Any  # cosmos destination (evmd) — has .cosmos_cli()
     cosmos_chain_id: str  # cosmos chain-id string (relayer src/dst identifier)
     cosmos_client_id: str  # attestations-0
-    cosmos_ep: Any  # _Endpoint carrying the cosmos chain-id + client-id (ack src)
+    cosmos_ep: _Endpoint  # carries the cosmos chain-id + client-id (ack src)
     relayer_signer: str  # cosmos submitter key name
     denom: str  # cosmos fee/bond denom (atest)
-    relayer: Any  # BinaryRelayer (.src is the EVM endpoint / ack dest)
+    relayer: BinaryRelayer  # .src is the EVM endpoint / ack dest
     attestors: tuple  # (eth_attestor, cosmos_attestor)
-    relayer_process: Any
+    relayer_process: RelayerProcess
 
 
 @pytest.fixture(scope="module")
 async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
     """EVM→Cosmos attested Eureka fixture. Skips when ``ibc_attestor`` /
     ``relayer`` aren't on ``$PATH`` (i.e. outside ``nix develop``)."""
+    from eureka_grpc.harness.attestor import Attestor
+    from eureka_grpc.harness.relayer import build_eth_to_cosmos_config, start_relayer
+    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
     from pystarport import ports
 
-    from .eureka_attestor_subprocess import Attestor
-    from .eureka_binary_relayer import BinaryRelayer, _Endpoint
     from .eureka_cosmos import add_counterparty
-    from .eureka_relayer_subprocess import build_eth_to_cosmos_config, start_relayer
     from .utils import free_port
 
     src_mantra, dst_mantra = paired_mantra  # src = EVM source, dst = cosmos dest
@@ -1137,14 +1144,12 @@ async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
     # the v2 counterparty both ways: cosmos attestations-0 ↔ EVM client.
     eth_block = await eth_w3.eth.get_block("latest")
     created = relayer.create_attestations_client(
-        dst_mantra,
-        relayer_signer,
         eth_chain_id=eth_chain_id,
         cosmos_chain_id=cosmos_chain_id,
         attestor_addresses=[eth_attestor.address],
         height=eth_block["number"],
         timestamp=eth_block["timestamp"],
-        denom=denom,
+        cosmos_signer=cosmos_signer(dst_mantra, relayer_signer, denom=denom),
     )
     assert created == cosmos_client_id, f"expected {cosmos_client_id}, got {created}"
     # EVM commitment prefix is a single empty element (matches _build_paired_side).
@@ -1191,9 +1196,9 @@ def _relay_recv_ack(stack, tx_hash: bytes) -> dict:
         src_client_id=stack.eth_client_id,
         dst_client_id=stack.cosmos_client_id,
         tx_hash=tx_hash,
-        mantra=stack.dst_mantra,
-        signer_name=stack.relayer_signer,
-        denom=stack.denom,
+        cosmos_signer=cosmos_signer(
+            stack.dst_mantra, stack.relayer_signer, denom=stack.denom
+        ),
     )
 
 
@@ -1466,9 +1471,9 @@ async def test_eureka_cosmos_to_eth_return_timeout_refund(eth_to_cosmos_eureka_s
         src_client_id=stack.eth_client_id,
         dst_client_id=stack.cosmos_client_id,
         timeout_tx_hash=bytes.fromhex(cosmos_send["txhash"]),
-        mantra=stack.dst_mantra,
-        signer_name=stack.relayer_signer,
-        denom=stack.denom,
+        cosmos_signer=cosmos_signer(
+            stack.dst_mantra, stack.relayer_signer, denom=stack.denom
+        ),
     )
     assert timeout_tx["code"] == 0, timeout_tx.get("raw_log")
 

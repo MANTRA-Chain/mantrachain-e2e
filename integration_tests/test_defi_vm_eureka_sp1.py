@@ -6,12 +6,19 @@ import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from eth_account import Account
 from eth_contract import ERC20
 from eth_contract.utils import send_transaction
+from eureka_grpc.harness.process import require_binary
+from eureka_grpc.harness.relayer import (
+    _server_observability,
+    _sp1,
+    build_eth_to_cosmos_sp1_config,
+    start_relayer,
+)
 from hexbytes import HexBytes
 from pystarport.utils import wait_for_new_blocks
 
@@ -23,15 +30,11 @@ from .eureka_deploy_sp1 import (
     deploy_sp1_verifier,
     run_operator_update_client,
 )
-from .eureka_relayer_subprocess import (
-    _server_observability,
-    _sp1,
-    build_eth_to_cosmos_sp1_config,
-    start_relayer,
-)
-from .eureka_subprocess import require_binary
 from .network import setup_custom_mantra
 from .utils import KEYS, free_port
+
+if TYPE_CHECKING:
+    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
 
 try:
     find_eureka_repo()
@@ -230,12 +233,12 @@ class SP1CosmosToEthStack:
     denom: str  # cosmos fee/bond denom (atest)
     cosmos_chain_id: str
     cosmos_client_id: str  # attestations-0 (cosmos side, tracks EVM)
-    cosmos_ep: Any  # _Endpoint with chain_id=cosmos, client_id=attestations-0
+    cosmos_ep: _Endpoint  # chain_id=cosmos, client_id=attestations-0
     eth_chain_id: str  # EVM chain id, hex
     eth_client_id: str  # SP1 client on EVM, tracks CometBFT
     eth_transfer_addr: Any  # ICS20Transfer proxy (sendTransfer / escrow)
     eth_test_erc20_addr: Any  # TestERC20 the EVM source escrows
-    relayer: Any  # BinaryRelayer; .src is the SP1 EVM endpoint (relay dest)
+    relayer: BinaryRelayer  # .src is the SP1 EVM endpoint (relay dest)
 
 
 # Module-scoped so the transfer + timeout tests share ONE setup (one attestations
@@ -250,9 +253,10 @@ async def sp1_cosmos_to_eth_stack(
     client (→ SP1ICS07Tendermint, real groth16) + the relayer's cosmos_to_eth leg
     (→ SP1). The reverse eth→cosmos leg stays attested (eth attestor + cosmos
     attestations client). Gated like test_sp1_update_client."""
-    from .eureka_attestor_subprocess import Attestor
-    from .eureka_binary_relayer import BinaryRelayer, _Endpoint
-    from .eureka_cosmos import _clean_bech32, add_counterparty
+    from eureka_grpc.harness.attestor import Attestor
+    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+
+    from .eureka_cosmos import _clean_bech32, add_counterparty, cosmos_signer
 
     prover = _real_proof_prover_or_skip()
     try:
@@ -338,14 +342,12 @@ async def sp1_cosmos_to_eth_stack(
     # (cosmos attestations-0 ↔ EVM SP1 client).
     eth_block = await eth_w3.eth.get_block("latest")
     created = relayer.create_attestations_client(
-        sp1_mantra,
-        relayer_signer,
         eth_chain_id=eth_chain_id,
         cosmos_chain_id=cosmos_chain_id,
         attestor_addresses=[eth_attestor.address],
         height=eth_block["number"],
         timestamp=eth_block["timestamp"],
-        denom=denom,
+        cosmos_signer=cosmos_signer(sp1_mantra, relayer_signer, denom=denom),
     )
     assert created == cosmos_client_id, f"expected {cosmos_client_id}, got {created}"
     # EVM commitment prefix is a single empty element (matches the attestor stack).
