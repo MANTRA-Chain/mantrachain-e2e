@@ -12,6 +12,7 @@ import pytest
 from eth_account import Account
 from eth_contract import ERC20
 from eth_contract.utils import send_transaction
+from hexbytes import HexBytes
 from ibc_eureka.contracts.deploy import deploy_eureka_stack
 from ibc_eureka.contracts.deploy_sp1 import (
     deploy_sp1_ics07_client,
@@ -26,7 +27,6 @@ from ibc_eureka.harness.relayer import (
     build_eth_to_cosmos_sp1_config,
     start_relayer,
 )
-from hexbytes import HexBytes
 from pystarport.utils import wait_for_new_blocks
 
 from .eureka_artifacts import find_eureka_repo, get_contract
@@ -75,6 +75,15 @@ def sp1_programs_dir() -> str:
 
 
 @pytest.fixture(scope="module")
+async def eureka_stack(sp1_mantra):
+    """Shared base eureka stack (dummy client-0) for the lightweight tests that only
+    need a router — re-deploying ~20 contracts per test is the costly part. The
+    cosmos→eth flow keeps its own deploy (sp1_cosmos_to_eth_stack) for the
+    attestations-0 determinism."""
+    return await deploy_eureka_stack(sp1_mantra.async_w3, KEYS["community"])
+
+
+@pytest.fixture(scope="module")
 def sp1_real_verifier() -> None:
     """Skip unless the v6.1.0 groth16 verifier compiles (needs `bun install` in
     solidity-ibc-eureka; node_modules may ship older sp1-contracts)."""
@@ -104,9 +113,11 @@ def _recent_window(mantra, *, settle: int = 8) -> tuple[int, int]:
 
 def _real_proof_prover_or_skip() -> str:
     """Resolve the SP1 prover for a real-proof test, or skip. Explicit SP1_PROVER
-    wins; else network if NETWORK_* present, else local cpu. The gnark wrap is
-    amd64/AVX-only, so on arm64 a local prover skips unless SP1_ALLOW_ARM64_WRAP=1
-    (slow QEMU; Rosetta SIGILLs)."""
+    wins; else network if NETWORK_* present, else local cpu. The local groth16 wrap
+    uses gnark-ffi's docker backend by default, whose published image is amd64-only
+    (QEMU/Rosetta on Apple Silicon) — so on arm64 a local prover skips unless
+    SP1_ALLOW_ARM64_WRAP=1. Best on arm64: build the prover binaries with the native
+    backend (`-F sp1-sdk/native-gnark`) — gnark then runs natively, no Docker."""
     if not os.environ.get("SP1_REAL_PROOF"):
         pytest.skip("set SP1_REAL_PROOF=1 to run the real-proof test")
     prover = os.environ.get("SP1_PROVER") or (
@@ -118,18 +129,21 @@ def _real_proof_prover_or_skip() -> str:
         and not os.environ.get("SP1_ALLOW_ARM64_WRAP")
     ):
         pytest.skip(
-            "local groth16 wrap (gnark) is amd64/AVX-only; Rosetta can't run it. "
-            "Use amd64 CI / SP1_PROVER=network, or disable Rosetta (→ QEMU) and "
-            "set SP1_ALLOW_ARM64_WRAP=1 to attempt the slow emulated path"
+            "local groth16 wrap on arm64: the gnark docker image is amd64-only. "
+            "Build the operator/relayer with `-F sp1-sdk/native-gnark` (native, no "
+            "Docker), or use SP1_PROVER=network / amd64 CI; SP1_ALLOW_ARM64_WRAP=1 "
+            "forces the slow QEMU path"
         )
     return prover
 
 
-async def test_sp1_create_client(sp1_mantra, sp1_programs_dir, sp1_real_verifier):
+async def test_sp1_create_client(
+    sp1_mantra, eureka_stack, sp1_programs_dir, sp1_real_verifier
+):
     """Deploy + register SP1ICS07Tendermint (real verifier); assert a real clientId
     (≠ dummy) and getClientState() answers. No proof verified at create."""
     w3 = sp1_mantra.async_w3
-    stack = await deploy_eureka_stack(w3, KEYS["community"])
+    stack = eureka_stack
     trusted_block, target_block = _recent_window(sp1_mantra)
 
     deployed = await deploy_sp1_light_client(
@@ -180,7 +194,7 @@ async def test_sp1_update_client(sp1_mantra, sp1_programs_dir, sp1_real_verifier
     assert receipt["status"] == 1, "on-chain groth16 verifier rejected the real proof"
 
 
-async def test_sp1_relayer_config_loads(sp1_mantra, sp1_programs_dir):
+async def test_sp1_relayer_config_loads(sp1_mantra, eureka_stack, sp1_programs_dir):
     """Schema smoke: the relayer boots with a cosmos_to_eth module in {"sp1": …}
     mode (mock prover — never reaches the gnark wrap), confirming it parses the
     _sp1 config. Runs anywhere."""
@@ -190,7 +204,7 @@ async def test_sp1_relayer_config_loads(sp1_mantra, sp1_programs_dir):
         pytest.skip(str(exc))
 
     w3 = sp1_mantra.async_w3
-    stack = await deploy_eureka_stack(w3, KEYS["community"])
+    stack = eureka_stack
     eth_chain_id = hex(await w3.eth.chain_id)
 
     config = {
@@ -256,7 +270,7 @@ async def sp1_cosmos_to_eth_stack(
     from ibc_eureka.harness.attestor import Attestor
     from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
 
-    from .eureka_cosmos import _clean_bech32, add_counterparty, cosmos_signer
+    from .eureka_cosmos import cosmos_signer
 
     prover = _real_proof_prover_or_skip()
     try:
@@ -311,7 +325,7 @@ async def sp1_cosmos_to_eth_stack(
         eth_attestor_endpoint=eth_attestor.grpc_endpoint,
         cosmos_chain_id=cosmos_chain_id,
         cosmos_rpc_url=cosmos_rpc,
-        cosmos_signer_address=_clean_bech32(cli.address(relayer_signer)),
+        cosmos_signer_address=cli.address(relayer_signer),
         sp1_programs_dir=sp1_programs_dir,
         sp1_prover=prover,
     )
@@ -351,8 +365,8 @@ async def sp1_cosmos_to_eth_stack(
     )
     assert created == cosmos_client_id, f"expected {cosmos_client_id}, got {created}"
     # EVM commitment prefix is a single empty element (matches the attestor stack).
-    add_counterparty(
-        sp1_mantra, relayer_signer, cosmos_client_id, eth_client_id, [b""], denom=denom
+    sp1_mantra.cosmos_cli().ibc_client_add_counterparty(
+        cosmos_client_id, eth_client_id, [b""], from_=relayer_signer, denom=denom
     )
 
     try:
@@ -415,8 +429,6 @@ async def test_sp1_timeout_evm_to_cosmos(sp1_cosmos_to_eth_stack):
     never relayed; relaying the timeout refunds the EVM sender by proving the cosmos
     receipt ABSENT (over receipt_commitment_path), verified by the EVM-side SP1
     client. Slow; gated like test_sp1_update_client."""
-    from .eureka_cosmos import _clean_bech32
-
     try:
         from pydefi.bridge import encode_send_transfer_calldata
     except Exception as exc:  # pydefi not importable in this env
@@ -425,7 +437,7 @@ async def test_sp1_timeout_evm_to_cosmos(sp1_cosmos_to_eth_stack):
     stack = sp1_cosmos_to_eth_stack
     eth_w3 = stack.eth_w3
     amount = 10**6
-    receiver = _clean_bech32(stack.mantra.cosmos_cli().address("signer2"))
+    receiver = stack.mantra.cosmos_cli().address("signer2")
 
     sender_before = await ERC20.fns.balanceOf(_DEPLOYER.address).call(
         eth_w3, to=stack.eth_test_erc20_addr

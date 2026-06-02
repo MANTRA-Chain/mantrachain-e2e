@@ -41,7 +41,6 @@ from .eureka_artifacts import (
     get_contract,
 )
 from .eureka_cosmos import (
-    _clean_bech32,
     cosmos_signer,
     ibc_voucher_balances,
     send_v2_transfer,
@@ -1060,7 +1059,6 @@ async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
     from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
     from pystarport import ports
 
-    from .eureka_cosmos import add_counterparty
     from .utils import free_port
 
     src_mantra, dst_mantra = paired_mantra  # src = EVM source, dst = cosmos dest
@@ -1111,9 +1109,7 @@ async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
         eth_attestor_endpoint=eth_attestor.grpc_endpoint,
         cosmos_chain_id=cosmos_chain_id,
         cosmos_rpc_url=cosmos_rpc,
-        cosmos_signer_address=_clean_bech32(
-            dst_mantra.cosmos_cli().address(relayer_signer)
-        ),
+        cosmos_signer_address=dst_mantra.cosmos_cli().address(relayer_signer),
         cosmos_attestor_endpoint=cosmos_attestor.grpc_endpoint,
     )
     work_dir = tmp_path_factory.mktemp("eth_to_cosmos_relayer")
@@ -1153,8 +1149,8 @@ async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
     )
     assert created == cosmos_client_id, f"expected {cosmos_client_id}, got {created}"
     # EVM commitment prefix is a single empty element (matches _build_paired_side).
-    add_counterparty(
-        dst_mantra, relayer_signer, cosmos_client_id, eth_client_id, [b""], denom=denom
+    dst_mantra.cosmos_cli().ibc_client_add_counterparty(
+        cosmos_client_id, eth_client_id, [b""], from_=relayer_signer, denom=denom
     )
 
     try:
@@ -1185,7 +1181,7 @@ async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
 
 def _cosmos_addr(stack, name: str) -> str:
     """Cosmos-side bech32 address for keyring ``name`` on the dst chain."""
-    return _clean_bech32(stack.dst_mantra.cosmos_cli().address(name))
+    return stack.dst_mantra.cosmos_cli().address(name)
 
 
 def _relay_recv_ack(stack, tx_hash: bytes) -> dict:

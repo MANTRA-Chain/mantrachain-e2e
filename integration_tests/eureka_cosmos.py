@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 import base64
-import json
-import re
-import subprocess
-import time
 
-import requests
 from cprotobuf import Field, ProtoEntity
 from eth_account import Account
 from eth_keys import keys as eth_keys
 from eth_utils import keccak as eth_keccak
-from pystarport import ports
 from pystarport.utils import wait_for_new_blocks
 
 from .cosmostx_utils import (
@@ -27,7 +21,7 @@ from .eip712_utils import (
     create_sig_doc,
     create_signer_info,
 )
-from .utils import KEYS
+from .utils import KEYS, broadcast_tx
 
 # ICS20 ABI encoding string — the only encoding solidity-ibc-eureka's
 # ICS20Transfer.onRecvPacket accepts (ICS20Lib.ICS20_ENCODING). The CLI can't
@@ -49,67 +43,9 @@ class _MsgTransfer(ProtoEntity):
     encoding = Field("string", 9)
 
 
-# A bech32 account address (``<hrp>1<38+ chars>``), pulled out of CLI output
-# that gRPC's atfork logger may have polluted (see conftest.py).
-_BECH32_RE = re.compile(r"[a-z]{2,10}1[ac-hj-np-z02-9]{38,}")
-
-
-def _clean_bech32(raw: str) -> str:
-    matches = _BECH32_RE.findall(raw.strip())
-    if not matches:
-        raise ValueError(f"no bech32 address in CLI output: {raw!r}")
-    return matches[-1]
-
-
-def _first_json(raw: str) -> dict:
-    """Parse the first JSON object in ``raw``, skipping any leading log noise."""
-    start = raw.find("{")
-    if start < 0:
-        raise ValueError(f"no JSON object in CLI output: {raw!r}")
-    return json.loads(raw[start:])
-
-
 # Pubkey proto path for cosmos/evm accounts; matches create_signer_info's
 # non-"secp256k1" branch (EPubKey / ethsecp256k1).
 _ETHSECP256K1 = "ethsecp256k1"
-
-
-def _api_url(mantra, path: str) -> str:
-    p = ports.api_port(mantra.base_port(0))
-    return f"http://127.0.0.1:{p}{path}"
-
-
-def account_info(mantra, addr: str) -> tuple[int, int]:
-    """``(account_number, sequence)`` via ``q auth account`` (amino ``value``
-    shape, tolerating the ``EthAccount``→``base_account`` nesting). Amino omits
-    zero-valued fields, so a fresh signer has no ``sequence`` key — default to 0."""
-    acc = mantra.cosmos_cli().account(addr)["account"]["value"]
-    base = acc.get("base_account", acc)
-    return int(base.get("account_number", 0)), int(base.get("sequence", 0))
-
-
-def _pubkey_bytes(signer_name: str) -> bytes:
-    """Compressed secp256k1 pubkey for ``signer_name``, derived straight from
-    the private key (avoids a CLI round-trip that gRPC fork-logging pollutes)."""
-    return eth_keys.PrivateKey(KEYS[signer_name]).public_key.to_compressed_bytes()
-
-
-def _wait_tx_queryable(cli, txhash: str, *, attempts: int = 30, delay: float = 0.5):
-    """Block until CometBFT's by-hash ``/tx`` lookup succeeds on the relayer's
-    node — its cosmos->eth fetch otherwise fails "tx not found" if it queries
-    before the index is populated."""
-    h = txhash if txhash.startswith("0x") else "0x" + txhash
-    for _ in range(attempts):
-        try:
-            j = requests.get(
-                f"{cli.node_rpc_http}/tx", params={"hash": h}, timeout=5
-            ).json()
-        except requests.RequestException:
-            j = {}
-        if (j.get("result") or {}).get("hash"):
-            return
-        time.sleep(delay)
-    raise RuntimeError(f"tx {txhash} not queryable after {attempts} tries")
 
 
 def sign_and_broadcast_body(
@@ -126,12 +62,16 @@ def sign_and_broadcast_body(
     raises on non-zero code.
     """
     cli = mantra.cosmos_cli()
-    signer_addr = _clean_bech32(cli.address(signer_name))
-    account_number, sequence = account_info(mantra, signer_addr)
+    # account_number + sequence from `q auth account` (amino `value` shape, with
+    # the EthAccount→base_account nesting; amino omits a zero sequence).
+    acc = cli.account(cli.address(signer_name))["account"]["value"]
+    base = acc.get("base_account", acc)
+    account_number = int(base.get("account_number", 0))
+    sequence = int(base.get("sequence", 0))
+    # Compressed pubkey straight from the private key (no CLI round-trip).
+    pubkey = eth_keys.PrivateKey(KEYS[signer_name]).public_key.to_compressed_bytes()
 
-    signer_info = create_signer_info(
-        _ETHSECP256K1, _pubkey_bytes(signer_name), sequence, SIGN_DIRECT
-    )
+    signer_info = create_signer_info(_ETHSECP256K1, pubkey, sequence, SIGN_DIRECT)
     auth_info = create_auth_info(
         signer_info, create_fee(str(gas * gas_price), denom, gas)
     )
@@ -149,23 +89,13 @@ def sign_and_broadcast_body(
         signatures=[bytes(sig)],
     )
     tx_b64 = base64.b64encode(tx_raw.SerializeToString()).decode()
-    rsp = requests.post(
-        _api_url(mantra, "/cosmos/tx/v1beta1/txs"),
-        json={"tx_bytes": tx_b64, "mode": "BROADCAST_MODE_SYNC"},
-        timeout=15,
-    )
-    rsp.raise_for_status()
-    tx_response = rsp.json()["tx_response"]
+    tx_response = broadcast_tx(mantra, tx_b64)
     if tx_response.get("code", 1) != 0:
         raise RuntimeError(f"broadcast failed: {tx_response.get('raw_log')}")
 
     # Sync mode returns before inclusion — wait, then re-query for events.
     wait_for_new_blocks(cli, 1)
     tx = cli.event_query_tx_for(tx_response["txhash"])
-    # event_query_tx_for can return before the by-hash tx index is populated;
-    # block until the relayer's ``/tx?hash`` lookup would succeed, else a later
-    # cosmos->eth relay of this tx fails with "tx not found".
-    _wait_tx_queryable(cli, tx_response["txhash"])
     return tx
 
 
@@ -173,61 +103,6 @@ def cosmos_signer(mantra, signer_name: str, *, denom: str):
     """A ``BinaryRelayer`` cosmos_signer: sign + broadcast a relayer-returned
     ``TxBody`` on ``mantra`` with ``signer_name``, returning the committed tx."""
     return lambda body: sign_and_broadcast_body(mantra, signer_name, body, denom=denom)
-
-
-def add_counterparty(
-    mantra,
-    signer_name: str,
-    client_id: str,
-    counterparty_client_id: str,
-    merkle_prefix: list[bytes],
-    *,
-    denom: str,
-    gas: int = 400_000,
-    gas_price: int = 100_000_000_000,
-) -> None:
-    """Register the counterparty for a v2 client via the evmd CLI
-    ``tx ibc client add-counterparty`` (merkle-prefix args base64-encoded).
-
-    Uses an argv list, not pystarport's shell-string path: an empty prefix
-    element (``[b""]``→``""``) gets dropped by the shell, which the CLI rejects.
-    """
-    cli = mantra.cosmos_cli()
-    prefixes_b64 = [base64.b64encode(p).decode() for p in merkle_prefix]
-    cmd = [
-        mantra.chain_binary,
-        "tx",
-        "ibc",
-        "client",
-        "add-counterparty",
-        client_id,
-        counterparty_client_id,
-        *prefixes_b64,
-        "-y",
-        "--from",
-        signer_name,
-        "--home",
-        str(cli.data_dir),
-        "--keyring-backend",
-        "test",
-        "--chain-id",
-        cli.chain_id,
-        "--gas",
-        str(gas),
-        "--gas-prices",
-        f"{gas_price}{denom}",
-        "--node",
-        mantra.node_rpc(0),
-        "--output",
-        "json",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    assert (
-        proc.returncode == 0
-    ), f"add-counterparty failed: {proc.stdout}\n{proc.stderr}"
-    rsp = _first_json(proc.stdout)
-    assert rsp.get("code", 1) == 0, f"add-counterparty tx failed: {rsp.get('raw_log')}"
-    wait_for_new_blocks(cli, 1)
 
 
 def send_v2_transfer(
@@ -249,7 +124,7 @@ def send_v2_transfer(
     ``receiver`` the dest-chain address (hex for EVM), ``timeout_timestamp`` in
     SECONDS. Returns the committed cosmos tx (with events).
     """
-    sender = _clean_bech32(mantra.cosmos_cli().address(signer_name))
+    sender = mantra.cosmos_cli().address(signer_name)
     msg = _MsgTransfer(
         source_port="transfer",
         source_channel=source_client,

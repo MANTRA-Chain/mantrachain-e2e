@@ -41,7 +41,7 @@ from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
-from pystarport import cluster
+from pystarport import cluster, ports
 from pystarport.utils import (
     wait_for_block_time,
     wait_for_fn,
@@ -244,6 +244,18 @@ def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def broadcast_tx(mantra, tx_bytes_b64):
+    p = ports.api_port(mantra.base_port(0))
+    rsp = requests.post(
+        f"http://127.0.0.1:{p}/cosmos/tx/v1beta1/txs",
+        json={"tx_bytes": tx_bytes_b64, "mode": "BROADCAST_MODE_SYNC"},
+        timeout=15,
+    )
+    if not rsp.ok:
+        raise Exception(f"response code: {rsp.status_code}, {rsp.reason}, {rsp.json()}")
+    return rsp.json()["tx_response"]
 
 
 def find_log_event_attrs(events, ev_type, cond=None):
