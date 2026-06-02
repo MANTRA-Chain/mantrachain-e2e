@@ -12,8 +12,15 @@ import pytest
 from eth_account import Account
 from eth_contract import ERC20
 from eth_contract.utils import send_transaction
-from eureka_grpc.harness.process import require_binary
-from eureka_grpc.harness.relayer import (
+from ibc_eureka.contracts.deploy import deploy_eureka_stack
+from ibc_eureka.contracts.deploy_sp1 import (
+    deploy_sp1_ics07_client,
+    deploy_sp1_light_client,
+    deploy_sp1_verifier,
+    run_operator_update_client,
+)
+from ibc_eureka.harness.process import require_binary
+from ibc_eureka.harness.relayer import (
     _server_observability,
     _sp1,
     build_eth_to_cosmos_sp1_config,
@@ -23,18 +30,11 @@ from hexbytes import HexBytes
 from pystarport.utils import wait_for_new_blocks
 
 from .eureka_artifacts import find_eureka_repo, get_contract
-from .eureka_deploy import deploy_eureka_stack
-from .eureka_deploy_sp1 import (
-    deploy_sp1_ics07_client,
-    deploy_sp1_light_client,
-    deploy_sp1_verifier,
-    run_operator_update_client,
-)
 from .network import setup_custom_mantra
 from .utils import KEYS, free_port
 
 if TYPE_CHECKING:
-    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+    from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
 
 try:
     find_eureka_repo()
@@ -253,8 +253,8 @@ async def sp1_cosmos_to_eth_stack(
     client (→ SP1ICS07Tendermint, real groth16) + the relayer's cosmos_to_eth leg
     (→ SP1). The reverse eth→cosmos leg stays attested (eth attestor + cosmos
     attestations client). Gated like test_sp1_update_client."""
-    from eureka_grpc.harness.attestor import Attestor
-    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+    from ibc_eureka.harness.attestor import Attestor
+    from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
 
     from .eureka_cosmos import _clean_bech32, add_counterparty, cosmos_signer
 

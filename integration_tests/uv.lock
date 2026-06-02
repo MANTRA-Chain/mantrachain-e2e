@@ -811,15 +811,6 @@ wheels = [
 ]
 
 [[package]]
-name = "eureka-grpc-py"
-version = "0.1.0"
-source = { git = "https://github.com/mmsqe/eureka-grpc-py.git?rev=main#14203a00669c5fcf8b180382f1abc6ee8b9868d1" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "protobuf" },
-]
-
-[[package]]
 name = "fire"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1075,6 +1066,15 @@ wheels = [
 ]
 
 [[package]]
+name = "ibc-eureka-py"
+version = "0.1.0"
+source = { git = "https://github.com/mmsqe/ibc-eureka-py.git?rev=main#d37a8ef4a744e2b88dbaa3133f0dd6362af9bfb4" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+
+[[package]]
 name = "idna"
 version = "3.15"
 source = { registry = "https://pypi.org/simple" }
@@ -1126,10 +1126,10 @@ dependencies = [
     { name = "cryptography" },
     { name = "eth-bloom" },
     { name = "eth-contract" },
-    { name = "eureka-grpc-py" },
     { name = "flake8-black" },
     { name = "flake8-isort" },
     { name = "flaky" },
+    { name = "ibc-eureka-py" },
     { name = "py-ecc" },
     { name = "py-solc-x" },
     { name = "pydefi" },
@@ -1161,10 +1161,10 @@ requires-dist = [
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "eth-bloom", specifier = ">=3.0" },
     { name = "eth-contract", git = "https://github.com/yihuang/eth-contract.git?rev=main" },
-    { name = "eureka-grpc-py", git = "https://github.com/mmsqe/eureka-grpc-py.git?rev=main" },
     { name = "flake8-black", specifier = ">=0.3.6" },
     { name = "flake8-isort", specifier = ">=6.1.2" },
     { name = "flaky", specifier = ">=3.8.1" },
+    { name = "ibc-eureka-py", git = "https://github.com/mmsqe/ibc-eureka-py.git?rev=main" },
     { name = "py-ecc", specifier = ">=8.0.0" },
     { name = "py-solc-x", specifier = ">=2.0.5" },
     { name = "pydefi", git = "https://github.com/yihuang/pydefi.git?rev=vyper_plan" },

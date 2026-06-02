@@ -25,7 +25,7 @@ dependencies = [
     "cryptography>=46.0.7",
     "requests>=2.33.0",
     "web3>=7.15.0",
-    "eureka-grpc-py @ git+https://github.com/mmsqe/eureka-grpc-py.git@main",
+    "ibc-eureka-py @ git+https://github.com/mmsqe/ibc-eureka-py.git@main",
 ]
 
 [build-system]

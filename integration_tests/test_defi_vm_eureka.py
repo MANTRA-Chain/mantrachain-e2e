@@ -30,6 +30,7 @@ try:
     )
 except FileNotFoundError as _exc:
     pytest.skip(f"pydefi packaged data missing: {_exc}", allow_module_level=True)
+from ibc_eureka.contracts.deploy import ICS20_DEFAULT_PORT, deploy_eureka_stack
 from web3 import AsyncWeb3
 
 from .eureka_artifacts import (
@@ -45,12 +46,11 @@ from .eureka_cosmos import (
     ibc_voucher_balances,
     send_v2_transfer,
 )
-from .eureka_deploy import ICS20_DEFAULT_PORT, deploy_eureka_stack
 from .utils import ACCOUNTS, ADDRS, KEYS, build_and_deploy_contract_async, eth_to_bech32
 
 if TYPE_CHECKING:
-    from eureka_grpc.harness.relayer import RelayerProcess
-    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+    from ibc_eureka.harness.relayer import RelayerProcess
+    from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
 
 # Every test in this file needs the upstream solidity-ibc-eureka source tree
 # (for solc compile + ABIs). Skip the whole module on a clean clone where it
@@ -814,9 +814,9 @@ async def paired_eureka_stack(paired_mantra, tmp_path_factory) -> PairedEurekaSt
     Skips if either binary isn't on ``$PATH`` (i.e. when not under
     ``nix develop``).
     """
-    from eureka_grpc.harness.attestor import Attestor
-    from eureka_grpc.harness.relayer import build_eth_to_eth_config, start_relayer
-    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+    from ibc_eureka.harness.attestor import Attestor
+    from ibc_eureka.harness.relayer import build_eth_to_eth_config, start_relayer
+    from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
 
     from .utils import free_port
 
@@ -1055,9 +1055,9 @@ class EthToCosmosEurekaStack:
 async def eth_to_cosmos_eureka_stack(paired_mantra, tmp_path_factory):
     """EVM→Cosmos attested Eureka fixture. Skips when ``ibc_attestor`` /
     ``relayer`` aren't on ``$PATH`` (i.e. outside ``nix develop``)."""
-    from eureka_grpc.harness.attestor import Attestor
-    from eureka_grpc.harness.relayer import build_eth_to_cosmos_config, start_relayer
-    from eureka_grpc.relayer.binary import BinaryRelayer, _Endpoint
+    from ibc_eureka.harness.attestor import Attestor
+    from ibc_eureka.harness.relayer import build_eth_to_cosmos_config, start_relayer
+    from ibc_eureka.relayer.binary import BinaryRelayer, _Endpoint
     from pystarport import ports
 
     from .eureka_cosmos import add_counterparty
