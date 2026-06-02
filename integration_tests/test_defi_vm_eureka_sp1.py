@@ -29,6 +29,10 @@ from ibc_eureka.harness.relayer import (
 )
 from pystarport.utils import wait_for_new_blocks
 
+try:
+    from pydefi.bridge import encode_send_transfer_calldata
+except Exception as exc:  # pydefi not importable in this env
+    pytest.skip(f"pydefi.bridge unavailable: {exc}")
 from .eureka_artifacts import find_eureka_repo, get_contract
 from .network import setup_custom_mantra
 from .utils import KEYS, free_port
@@ -233,7 +237,9 @@ async def test_sp1_relayer_config_loads(sp1_mantra, eureka_stack, sp1_programs_d
 
 
 # ---------------------------------------------------------------------------
-# Full packet flow: cosmos→EVM recv (membership) + EVM→cosmos timeout (absence).
+# Full packet flow on the hybrid stack. SP1ICS07 only proves CometBFT→EVM, so
+# anything verified on EVM is SP1 (cosmos→EVM recv, EVM→cosmos ack + timeout); the
+# EVM→cosmos recv is verified on cosmos, so it stays attested.
 # ---------------------------------------------------------------------------
 
 
@@ -253,6 +259,7 @@ class SP1CosmosToEthStack:
     eth_transfer_addr: Any  # ICS20Transfer proxy (sendTransfer / escrow)
     eth_test_erc20_addr: Any  # TestERC20 the EVM source escrows
     relayer: BinaryRelayer  # .src is the SP1 EVM endpoint (relay dest)
+    relayer_signer: str  # funded cosmos submitter for recv/ack onto cosmos
 
 
 # Module-scoped so the transfer + timeout tests share ONE setup (one attestations
@@ -382,6 +389,7 @@ async def sp1_cosmos_to_eth_stack(
             eth_transfer_addr=base.ics20_transfer.address,
             eth_test_erc20_addr=base.test_erc20.address,
             relayer=relayer,
+            relayer_signer=relayer_signer,
         )
     finally:
         relayer.close()
@@ -424,16 +432,107 @@ async def test_sp1_transfer_cosmos_to_evm(sp1_cosmos_to_eth_stack):
     assert recv["status"] == 1, "SP1 recvPacket failed — groth16/membership rejected"
 
 
+async def test_attested_recv_eth_to_cosmos(sp1_cosmos_to_eth_stack):
+    """Reverse leg: an EVM→cosmos transfer relayed onto cosmos mints a voucher. The
+    recv is verified on cosmos, so it's attested (eth attestor → attestations-0), not
+    SP1. Pairs with the cosmos→EVM SP1 recv for a real recv both ways."""
+    from .eureka_cosmos import cosmos_signer, ibc_voucher_balances
+
+    stack = sp1_cosmos_to_eth_stack
+    eth_w3 = stack.eth_w3
+    amount = 10**6
+    receiver = stack.mantra.cosmos_cli().address("signer2")
+    before = ibc_voucher_balances(stack.mantra, receiver)
+
+    # approve + sendTransfer on EVM; source = SP1 client (counterparty attestations-0).
+    await ERC20.fns.approve(stack.eth_transfer_addr, amount).transact(
+        eth_w3, _DEPLOYER, to=stack.eth_test_erc20_addr
+    )
+    calldata = encode_send_transfer_calldata(
+        denom=HexBytes(stack.eth_test_erc20_addr),
+        amount=amount,
+        receiver=receiver,
+        source_client=stack.eth_client_id,
+        timeout_timestamp=int(time.time()) + 600,
+    )
+    send_receipt = await send_transaction(
+        eth_w3, _DEPLOYER, to=stack.eth_transfer_addr, data=calldata, gas=900_000
+    )
+    assert send_receipt["status"] == 1
+
+    # Relay EVM recv onto cosmos: attestations client verifies it → voucher minted.
+    recv = stack.relayer.relay_to_cosmos(
+        src_chain=stack.eth_chain_id,
+        dst_chain=stack.cosmos_chain_id,
+        src_client_id=stack.eth_client_id,
+        dst_client_id=stack.cosmos_client_id,
+        tx_hash=bytes(send_receipt["transactionHash"]),
+        cosmos_signer=cosmos_signer(
+            stack.mantra, stack.relayer_signer, denom=stack.denom
+        ),
+    )
+    assert recv["code"] == 0, recv.get("raw_log")
+
+    after = ibc_voucher_balances(stack.mantra, receiver)
+    assert any(
+        after[d] - before.get(d, 0) == amount for d in after
+    ), "voucher not minted on the attested reverse leg"
+
+
+async def test_sp1_ack_eth_to_cosmos(sp1_cosmos_to_eth_stack):
+    """SP1 ack membership: recv an EVM→cosmos transfer onto cosmos (attested) so it
+    commits the ack, then relay the ack back to EVM where SP1ICS07 verifies it and
+    finalizes the source escrow. Completes the SP1 trio (recv, ack, timeout)."""
+    from .eureka_cosmos import cosmos_signer
+
+    stack = sp1_cosmos_to_eth_stack
+    eth_w3 = stack.eth_w3
+    amount = 10**6
+    receiver = stack.mantra.cosmos_cli().address("signer2")
+
+    # approve + sendTransfer on EVM; source = SP1 client (counterparty attestations-0).
+    await ERC20.fns.approve(stack.eth_transfer_addr, amount).transact(
+        eth_w3, _DEPLOYER, to=stack.eth_test_erc20_addr
+    )
+    calldata = encode_send_transfer_calldata(
+        denom=HexBytes(stack.eth_test_erc20_addr),
+        amount=amount,
+        receiver=receiver,
+        source_client=stack.eth_client_id,
+        timeout_timestamp=int(time.time()) + 600,
+    )
+    send_receipt = await send_transaction(
+        eth_w3, _DEPLOYER, to=stack.eth_transfer_addr, data=calldata, gas=900_000
+    )
+    assert send_receipt["status"] == 1
+
+    # Recv onto cosmos (attested) so cosmos commits the ack we then prove back to EVM.
+    recv = stack.relayer.relay_to_cosmos(
+        src_chain=stack.eth_chain_id,
+        dst_chain=stack.cosmos_chain_id,
+        src_client_id=stack.eth_client_id,
+        dst_client_id=stack.cosmos_client_id,
+        tx_hash=bytes(send_receipt["transactionHash"]),
+        cosmos_signer=cosmos_signer(
+            stack.mantra, stack.relayer_signer, denom=stack.denom
+        ),
+    )
+    assert recv["code"] == 0, recv.get("raw_log")
+
+    # Relay the cosmos ack back to EVM (SP1 membership of the ack). Let the relayer
+    # index the recv tx first, else its by-hash query sees "tx not found".
+    wait_for_new_blocks(stack.mantra.cosmos_cli(), 2)
+    ack = await stack.relayer.relay(
+        stack.cosmos_ep, stack.relayer.src, bytes.fromhex(recv["txhash"])
+    )
+    assert ack["status"] == 1, "SP1 ackPacket failed — groth16/ack-membership rejected"
+
+
 async def test_sp1_timeout_evm_to_cosmos(sp1_cosmos_to_eth_stack):
     """SP1 non-membership: an EVM→cosmos transfer with a short timeout whose recv is
     never relayed; relaying the timeout refunds the EVM sender by proving the cosmos
     receipt ABSENT (over receipt_commitment_path), verified by the EVM-side SP1
     client. Slow; gated like test_sp1_update_client."""
-    try:
-        from pydefi.bridge import encode_send_transfer_calldata
-    except Exception as exc:  # pydefi not importable in this env
-        pytest.skip(f"pydefi.bridge unavailable: {exc}")
-
     stack = sp1_cosmos_to_eth_stack
     eth_w3 = stack.eth_w3
     amount = 10**6
