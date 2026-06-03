@@ -34,6 +34,7 @@ from ibc_eureka.contracts.deploy import ICS20_DEFAULT_PORT, deploy_eureka_stack
 from web3 import AsyncWeb3
 
 from .eureka_artifacts import (
+    CONTRACTS,
     MOCK_V3_POOL_SOL,
     compile_inline,
     compile_pydefi_contract,
@@ -943,11 +944,7 @@ async def test_eureka_cross_chain_transfer_via_binary(paired_eureka_stack):
     assert src_escrow_bal == amount
 
     # Destination has an IBCERC20 minted to the receiver.
-    denom_path = (
-        f"transfer/{dst.client_id}/"
-        + "0x"
-        + bytes(HexBytes(src.test_erc20_addr)).hex().lower()
-    )
+    denom_path = _ibc_denom_path(dst, src.test_erc20_addr)
     ibc_erc20_addr = await dst.transfer.fns.ibcERC20Contract(denom_path).call(
         dst.w3, to=dst.transfer_addr
     )
@@ -961,7 +958,6 @@ async def test_eureka_cross_chain_transfer_via_binary(paired_eureka_stack):
 async def test_eureka_contracts_compile():
     """Compile every contract in ``CONTRACTS`` from the upstream source tree.
     Catches upstream-source drift before the deploy fixture even spins up."""
-    from .eureka_artifacts import CONTRACTS
 
     for name in CONTRACTS:
         art = get_contract(name)
@@ -989,9 +985,7 @@ async def test_eureka_stack_deploy_smoke(mantra):
     registered = await router.fns.getIBCApp(ICS20_DEFAULT_PORT).call(
         w3, to=stack.ics26_router.address
     )
-    assert to_checksum_address(registered) == to_checksum_address(
-        stack.ics20_transfer.address
-    )
+    assert to_checksum_address(registered) == stack.ics20_transfer.address
 
     assert stack.client_id
 
@@ -1006,9 +1000,7 @@ async def test_eureka_stack_deploy_smoke(mantra):
     bound_client = await router.fns.getClient(stack.client_id).call(
         w3, to=stack.ics26_router.address
     )
-    assert to_checksum_address(bound_client) == to_checksum_address(
-        stack.light_client.address
-    )
+    assert to_checksum_address(bound_client) == stack.light_client.address
     # Initial mint is capped at 10**30 so MockV3Pool can still .mint() into
     # the same TestERC20 without overflowing _totalSupply (see eureka_deploy.py).
     bal = await ERC20.fns.balanceOf(stack.deployer.address).call(
@@ -1233,10 +1225,12 @@ async def _mint_voucher(stack, holder: str, amount: int) -> tuple[str, int]:
 
 async def test_eureka_eth_to_cosmos_via_router_v2(eth_to_cosmos_eureka_stack):
     """EVM sendTransfer relayed into evmd: ibcRouterV2 mints an IBC voucher to the
-    cosmos receiver; the ack leg back to EVM keeps the source escrow funded."""
+    cosmos receiver; the ack leg back to EVM keeps the source escrow funded. The
+    uint256-scale amount makes the exact mint/escrow asserts an ABI no-truncation
+    check (first send on the shared stack, so escrow starts at 0)."""
     stack = eth_to_cosmos_eureka_stack
     eth_w3 = stack.eth_w3
-    amount = 10**18
+    amount = 10**30 // 2  # uint256-scale; deployer holds 10**30 TestERC20
     receiver = _cosmos_addr(stack, "signer2")
     before = ibc_voucher_balances(stack.dst_mantra, receiver)
 
@@ -1307,6 +1301,8 @@ async def test_eureka_cosmos_to_eth_return_via_router_v2(eth_to_cosmos_eureka_st
     burned = ibc_voucher_balances(stack.dst_mantra, holder).get(voucher, 0)
     assert burned == voucher_before - amount, "send should burn the voucher"
 
+    # Let the relayer's node index the tx first, else cosmos_to_eth sees "tx not found".
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
     return_recv = await stack.relayer.relay(
         stack.cosmos_ep, stack.relayer.src, bytes.fromhex(cosmos_send["txhash"])
     )
@@ -1343,6 +1339,9 @@ async def test_eureka_eth_to_cosmos_error_ack_refund(eth_to_cosmos_eureka_stack)
     )
     recv_tx = _relay_recv_ack(stack, bytes(send_receipt["transactionHash"]))
     assert recv_tx["code"] == 0, recv_tx.get("raw_log")
+
+    # Let relayer's node index recv tx first, else cosmos_to_eth sees "tx not found".
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
 
     # Relay the error ack back → EVM refunds the sender.
     ack = await stack.relayer.relay(
@@ -1417,6 +1416,8 @@ async def test_eureka_cosmos_to_eth_return_error_ack_refund(eth_to_cosmos_eureka
     burned = ibc_voucher_balances(stack.dst_mantra, holder).get(voucher, 0)
     assert burned == voucher_before - amount, "send should burn the voucher"
 
+    # Let relayer's node index tx first, else cosmos_to_eth sees "tx not found".
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
     err_recv = await stack.relayer.relay(
         stack.cosmos_ep, stack.relayer.src, bytes.fromhex(cosmos_send["txhash"])
     )
@@ -1503,6 +1504,10 @@ async def test_eureka_cosmos_native_to_eth_ibcerc20_mint(eth_to_cosmos_eureka_st
     )
     assert cosmos_send["code"] == 0, cosmos_send.get("raw_log")
 
+    # send_v2_transfer only waits one block (enough for the CLI's node, not the
+    # relayer's under load); index it fully, else cosmos_to_eth sees "tx not found".
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
+
     # Relay the recv to the EVM ICS26Router → ICS20Transfer mints the IBCERC20.
     recv = await stack.relayer.relay(
         stack.cosmos_ep, stack.relayer.src, bytes.fromhex(cosmos_send["txhash"])
@@ -1519,6 +1524,81 @@ async def test_eureka_cosmos_native_to_eth_ibcerc20_mint(eth_to_cosmos_eureka_st
         eth_w3, to=to_checksum_address(token_addr)
     )
     assert bal == amount, f"expected {amount} of minted {full_denom}, got {bal}"
+
+
+async def test_eureka_eth_to_cosmos_voucher_timeout_remint(eth_to_cosmos_eureka_stack):
+    """Mint-branch EVM-source timeout: mint a voucher on EVM, send it back to cosmos
+    with a short timeout (burns it), don't relay the recv, then relay the timeout to
+    EVM — the voucher is re-minted. Distinct from the escrow-refund timeout (which
+    releases a locked native token rather than re-minting a burned voucher)."""
+    stack = eth_to_cosmos_eureka_stack
+    eth_w3 = stack.eth_w3
+    deployer = Account.from_key(KEYS["community"])
+    amount = 10**6
+    native_denom = "atoken"  # cosmos-native, foreign to the EVM source → MINT branch
+    full_denom = f"transfer/{stack.eth_client_id}/{native_denom}"
+
+    # 1) Mint a voucher to the EVM deployer (cosmos native → EVM recv).
+    cosmos_send = send_v2_transfer(
+        stack.dst_mantra,
+        "community",
+        source_client=stack.cosmos_client_id,
+        receiver=deployer.address,
+        token_denom=native_denom,
+        amount=amount,
+        timeout_timestamp=int(time.time()) + 600,
+        fee_denom=stack.denom,
+    )
+    assert cosmos_send["code"] == 0, cosmos_send.get("raw_log")
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
+    recv = await stack.relayer.relay(
+        stack.cosmos_ep, stack.relayer.src, bytes.fromhex(cosmos_send["txhash"])
+    )
+    assert recv["status"] == 1
+    voucher = to_checksum_address(
+        await stack.eth_transfer.fns.ibcERC20Contract(full_denom).call(
+            eth_w3, to=stack.eth_transfer_addr
+        )
+    )
+    minted = await ERC20.fns.balanceOf(deployer.address).call(eth_w3, to=voucher)
+    assert minted == amount, f"voucher not minted: {minted}"
+
+    # 2) Send the voucher back to cosmos with a short timeout — burns it on EVM.
+    await ERC20.fns.approve(stack.eth_transfer_addr, amount).transact(
+        eth_w3, deployer, to=voucher
+    )
+    calldata = encode_send_transfer_calldata(
+        denom=HexBytes(voucher),
+        amount=amount,
+        receiver=_cosmos_addr(stack, "signer2"),
+        source_client=stack.eth_client_id,
+        timeout_timestamp=int(time.time()) + 8,
+    )
+    send_receipt = await send_transaction(
+        eth_w3, deployer, to=stack.eth_transfer_addr, data=calldata, gas=900_000
+    )
+    assert send_receipt["status"] == 1
+    burned = await ERC20.fns.balanceOf(deployer.address).call(eth_w3, to=voucher)
+    assert burned == 0, "sending the voucher back should burn it"
+
+    # 3) Don't relay the recv; wait past the timeout + advance cosmos blocks so the
+    # non-receipt is provable at a height beyond it.
+    await asyncio.sleep(12)
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
+
+    # 4) Relay the timeout to the EVM source → onTimeout re-mints the voucher.
+    timeout_receipt = await stack.relayer.relay_timeout(
+        src_chain=stack.cosmos_chain_id,
+        dst_chain=stack.eth_chain_id,
+        src_client_id=stack.cosmos_client_id,
+        dst_client_id=stack.eth_client_id,
+        timeout_tx_hash=bytes(send_receipt["transactionHash"]),
+        to_side=stack.relayer.src,
+    )
+    assert timeout_receipt["status"] == 1
+
+    restored = await ERC20.fns.balanceOf(deployer.address).call(eth_w3, to=voucher)
+    assert restored == amount, "timeout should re-mint the burned voucher on EVM"
 
 
 # ---------------------------------------------------------------------------
@@ -1548,7 +1628,7 @@ async def paired_pydefi_stack(paired_eureka_stack) -> PairedPydefiStack:
 
 def _ibc_denom_path(dst: _ChainSide, erc20_addr: ChecksumAddress) -> str:
     """The dst-side IBCERC20 denom for a token bridged from src (origin EVM)."""
-    return f"transfer/{dst.client_id}/0x" + bytes(HexBytes(erc20_addr)).hex().lower()
+    return f"transfer/{dst.client_id}/0x" + bytes(HexBytes(erc20_addr)).hex()
 
 
 async def _ibc_erc20_balance(dst: _ChainSide, denom_path: str, holder: str) -> int:
@@ -1961,6 +2041,8 @@ async def test_eureka_composer_ack_callback_to_cosmos(eth_to_cosmos_pydefi_stack
     # Relay recv into evmd (ibcRouterV2 mints the voucher), then the real ack back.
     recv_tx = _relay_recv_ack(stack, bytes(send_receipt["transactionHash"]))
     assert recv_tx["code"] == 0, recv_tx.get("raw_log")
+    # Let relayer's node index recv tx first, else cosmos_to_eth sees "tx not found".
+    wait_for_new_blocks(stack.dst_mantra.cosmos_cli(), 2)
     ack_receipt = await stack.relayer.relay(
         stack.cosmos_ep, stack.relayer.src, bytes.fromhex(recv_tx["txhash"])
     )
