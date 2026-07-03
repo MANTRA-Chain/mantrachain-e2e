@@ -8,29 +8,22 @@ local evmd_chain = (import 'chains.jsonnet').evmd;
 local constant = import 'constant.jsonnet';
 local coins = constant.coins;
 local staked = constant.staked;
+local evm_mempool = import 'evm_mempool.jsonnet';
 
 config {
-  'mantra-canary-net-1'+: ibc_common {
+  'mantra-canary-net-1'+: ibc_common + evm_mempool(chain) {
     key_name: 'signer2',
     'account-prefix': chain['account-prefix'],
   },
-  'evm-canary-net-1': basic + ibc_common {
+  'evm-canary-net-1': basic + ibc_common + evm_mempool(evmd_chain) {
     key_name: 'signer1',
     'account-prefix': evmd_chain['account-prefix'],
-    config+: {
-      mempool+: {
-        type+: 'app',
-      },
-    },
     accounts: [account {
       coins: coins + evmd_chain.evm_denom,
     } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
     'app-config'+: {
       evm+: {
         'evm-chain-id': evmd_chain.evm_chain_id,
-        mempool: {
-          'operate-exclusively': true,
-        },
       },
       'minimum-gas-prices': '0' + evmd_chain.evm_denom,
     },
