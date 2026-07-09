@@ -1,9 +1,16 @@
 local ibc = import 'ibc_evmd.jsonnet';
 
-// Same v8.1.1 genesis binary as cosmovisor.jsonnet, paired with an evmd chain so
+// Same v8.3.0 genesis binary as cosmovisor.jsonnet, paired with an evmd chain so
 // the upgrades run while an IBC channel is live.
 ibc {
   'mantra-canary-net-1'+: {
+    config+: {
+      mempool+: {
+        // genesis binary predates the app-side mempool; ensure_comet_mempool_app
+        // flips this back to 'app' before the v8.5.0 upgrade
+        type: 'flood',
+      },
+    },
     'app-config'+: {
       evm+: {
         'evm-chain-id': 5887,

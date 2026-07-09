@@ -1,41 +1,63 @@
 {
   lib,
   stdenv,
-  buildGo125Module,
+  buildGoModule,
+  staticBuildGoModule,
   fetchFromGitHub,
   fetchurl,
   pkgsStatic,
 }:
 {
-  version ? "v7.0.0",
+  version,
   pname ? "mantrachain",
   owner ? "MANTRA-Chain",
   repo ? "mantrachain",
   rev,
   hash,
   vendorHash,
-  wasmvmVersion ? "v3.0.0",
+  # no default: it must track the version's go.mod, and a stale inherited
+  # default links the wrong libwasmvm
+  wasmvmVersion,
   nativeByteOrder ? true,
 }:
 let
-  # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module; };
-  buildStdenv = buildPackages.stdenv;
-  buildGo125Module' = if stdenv.isLinux then buildPackages.buildGo125Module else buildGo125Module;
+  # Use static packages for Linux to ensure musl compatibility.
+  # The Go module builder is caller-provided so each mantrachain version can be
+  # compiled with the Go toolchain it requires (older releases pin Go 1.25).
+  buildStdenv = if stdenv.isLinux then pkgsStatic.stdenv else stdenv;
+  buildGoModule' = if stdenv.isLinux then staticBuildGoModule else buildGoModule;
+
+  wasmvmHashesByVersion = {
+    "v3.0.0" = {
+      darwin = "sha256-D3D8Ad1Jd8jRwlBDb6eVoMGlPDlKohI4rt0xe+kOdlQ=";
+      linux-x86_64 = "sha256-zv5z8Mqlqeq6NzPGOc31BAxHRqk8IGcLpskof+OUSLo=";
+      linux-aarch64 = "sha256-oElptPkxvh0uLz8jE6aKIKICaT9nVZ96rx3ZclCCOuw=";
+    };
+    "v3.0.7" = {
+      darwin = "sha256-ZQSO+VgiuNLzNlYj1TsX1AZODF5XKD7JHET0jFC/TP0=";
+      linux-x86_64 = "sha256-SezXDaKBtu4IsxdwpUu1KdHelrPlQBPgJd+fDDn/9/Q=";
+      linux-aarch64 = "sha256-7z4xJeHOWIqbxpj2laGkeTQyuZA6CSgBjA14cuh0zJc=";
+    };
+  };
+
+  wasmvmHashes =
+    wasmvmHashesByVersion.${wasmvmVersion} or (throw
+      "Unknown wasmvm version ${wasmvmVersion}; add its libwasmvm hashes to mantrachain-builder.nix"
+    );
 
   # Download wasmvm libraries as fixed-output derivations
   wasmvmLibs = {
     darwin = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvmstatic_darwin.a";
-      sha256 = "sha256-D3D8Ad1Jd8jRwlBDb6eVoMGlPDlKohI4rt0xe+kOdlQ=";
+      sha256 = wasmvmHashes.darwin;
     };
     linux-x86_64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.x86_64.a";
-      sha256 = "sha256-zv5z8Mqlqeq6NzPGOc31BAxHRqk8IGcLpskof+OUSLo=";
+      sha256 = wasmvmHashes.linux-x86_64;
     };
     linux-aarch64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.aarch64.a";
-      sha256 = "sha256-oElptPkxvh0uLz8jE6aKIKICaT9nVZ96rx3ZclCCOuw=";
+      sha256 = wasmvmHashes.linux-aarch64;
     };
   };
 
@@ -79,7 +101,7 @@ let
     ];
 
 in
-buildGo125Module' rec {
+buildGoModule' rec {
   inherit
     pname
     version

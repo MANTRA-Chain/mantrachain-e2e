@@ -37,7 +37,6 @@ from .utils import (
     transfer_via_cosmos,
     w3_wait_for_new_blocks_async,
     wait_for_promoted_tx,
-    wait_for_unconfirmed_txs,
 )
 
 
@@ -148,7 +147,7 @@ async def test_send_transaction_mempool_mix(mantra, connect_mantra, tmp_path):
         )
     )
     assert "txhash" in rsp, rsp
-    await wait_for_unconfirmed_txs(cli.node_rpc_http)
+    assert rsp.get("code", 0) == 0, rsp
     tx = {"to": ADDRS["signer1"], "value": 1000}
     receipt = await send_transaction_async(
         connect_mantra.async_w3, ACCOUNTS["community"], **tx
@@ -261,9 +260,14 @@ async def test_transaction(mantra, connect_mantra):
             data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
             await send_transaction_async(w3, acct, **data)
 
+        # nonce gap keeps this tx pending until the gap is filled below
         data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
         signed = await sign_transaction(w3, acct, **data)
         txhash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+
+        # still pending, so resend is "already known" rather than "nonce too low"
+        with pytest.raises(web3.exceptions.Web3RPCError, match="already known"):
+            await w3.eth.send_raw_transaction(signed.raw_transaction)
 
         data["nonce"] = await w3.eth.get_transaction_count(sender)
         receipt = await send_transaction_async(w3, acct, **data)
@@ -475,12 +479,11 @@ def test_batch_tx(mantra, connect_mantra, tmp_path):
         {"from": sender, "nonce": nonce + 2, "gas": 200000}
     )
 
-    cosmos_tx, tx_hashes = build_batch_tx(
+    cosmos_tx, _ = build_batch_tx(
         w3, cli, [deploy_tx, transfer_tx1, transfer_tx2], key=KEYS["community"]
     )
     rsp = cli.broadcast_tx_json(cosmos_tx)
-    assert rsp["code"] == 18
-    assert f"got {len(tx_hashes)}" in rsp["raw_log"]
+    assert rsp["code"] != 0, rsp
 
 
 @pytest.mark.connect

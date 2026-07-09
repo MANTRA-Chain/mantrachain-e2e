@@ -23,6 +23,7 @@ import jsonmerge
 import requests
 import rlp
 import solcx
+import tomlkit
 import web3
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
@@ -1095,8 +1096,9 @@ def assert_duplicate(rpc, height):
 
 def fund_acc(w3, acc, fund=4_000_000_000_000_000_000):
     addr = acc.address
-    if w3.eth.get_balance(addr, "latest") == 0:
-        tx = {"to": addr, "value": fund, "gasPrice": w3.eth.gas_price}
+    bal = w3.eth.get_balance(addr, "latest")
+    if bal < fund:
+        tx = {"to": addr, "value": fund - bal, "gasPrice": w3.eth.gas_price}
         send_transaction(w3, tx)
         assert w3.eth.get_balance(addr, "latest") == fund
 
@@ -1343,6 +1345,15 @@ def edit_app_cfg(cli, i, app_config={}):
             app_config,
         ),
     )
+
+
+def ensure_comet_mempool_app(base_dir):
+    "switch every comet config under base_dir to the app-side mempool v8.5.0 needs"
+    for cfg_file in Path(base_dir).rglob("node*/config/config.toml"):
+        cfg = tomlkit.parse(cfg_file.read_text())
+        if cfg["mempool"]["type"] != "app":
+            cfg["mempool"]["type"] = "app"
+            cfg_file.write_text(tomlkit.dumps(cfg))
 
 
 def duration(duration_str):
@@ -1718,21 +1729,6 @@ def update_consumer_chain(
     rsp = cli.provider_update_consumer(msg_path, **kwargs)
     assert rsp["code"] == 0, f"Failed to update consumer: {rsp.get('raw_log', '')}"
     return rsp
-
-
-async def wait_for_unconfirmed_txs(url: str, min_txs: int = 1, timeout_s: float = 5.0):
-    deadline = time.monotonic() + timeout_s
-    last = None
-    while time.monotonic() < deadline:
-        last = requests.get(f"{url}/num_unconfirmed_txs").json()
-        try:
-            n = int(last["result"]["n_txs"])
-        except Exception:
-            n = 0
-        if n >= min_txs:
-            return n
-        await asyncio.sleep(0.1)
-    raise AssertionError(f"expected >= {min_txs} unconfirmed txs, last={last}")
 
 
 async def assert_gas_estimate_within_floor(

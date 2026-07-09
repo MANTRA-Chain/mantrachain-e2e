@@ -15,6 +15,7 @@ from .upgrade_utils import (
 )
 from .utils import (
     CMD,
+    ensure_comet_mempool_app,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
@@ -50,11 +51,11 @@ async def exec(c):
     def upgrade():
         """Upgrade mid-flow, so the transfers back exercise a migrated chain."""
         nonlocal cli
-        cli = do_upgrade(c.ibc1, "v8.2.0", cli.block_height() + WAIT_HEIGHT)
+        cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
 
     await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
-    cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    ensure_comet_mempool_app(c.ibc1.base_dir)
+    cli = do_upgrade(c.ibc1, "v8.5.0", cli.block_height() + WAIT_HEIGHT)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

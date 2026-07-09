@@ -39,6 +39,7 @@ from .utils import (
     build_contract,
     duration,
     edit_app_cfg,
+    ensure_comet_mempool_app,
     eth_to_bech32,
     find_log_event_attrs,
     module_address,
@@ -430,6 +431,7 @@ async def test_join_validator(mantra):
     res = cli0.transfer(cli0.address("community"), cli.address("validator"), fund)
     assert res["code"] == 0, res
     edit_app_cfg(clustercli, node_index)
+    ensure_comet_mempool_app(clustercli.data_root)
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     await asyncio.sleep(0.5)

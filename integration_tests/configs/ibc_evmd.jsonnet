@@ -11,10 +11,11 @@ local staked = constant.staked;
 local evm_mempool = import 'evm_mempool.jsonnet';
 
 config {
-  'mantra-canary-net-1'+: ibc_common + evm_mempool(chain) {
+  'mantra-canary-net-1'+: ibc_common {
     key_name: 'signer2',
     'account-prefix': chain['account-prefix'],
   },
+  // ``basic`` carries the mempool of CHAIN_CONFIG's binary, this chain runs evmd
   'evm-canary-net-1': basic + ibc_common + evm_mempool(evmd_chain) {
     key_name: 'signer1',
     'account-prefix': evmd_chain['account-prefix'],

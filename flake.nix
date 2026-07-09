@@ -14,6 +14,16 @@
       overlays =
         [
           (_: pkgs: {
+            # go.mod needs >= 1.26.5, GOTOOLCHAIN=local blocks self-upgrade
+            go_1_26 = pkgs.go_1_26.overrideAttrs (_: rec {
+              version = "1.26.5";
+              src = pkgs.fetchurl {
+                url = "https://go.dev/dl/go${version}.src.tar.gz";
+                hash = "sha256-SVvkvIcXasVnOS5bQRar2YRm0z17SdQedkzMaXay3EI=";
+              };
+            });
+          })
+          (_: pkgs: {
             flake-compat = flake-compat;
             go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
             dapp = pkgs.dapp;

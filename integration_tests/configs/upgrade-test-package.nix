@@ -5,10 +5,9 @@
 let
   common = import ./mantrachain-common.nix { inherit pkgs; };
   releases = {
-    genesis = pkgs.callPackage ../../nix/v8.1.1/default.nix {};
-    "v8.2.0" = pkgs.callPackage ../../nix/v8.2.0/default.nix {};
-    "v8.3.0" = pkgs.callPackage ../../nix/v8.3.0/default.nix {};
-    "v8.4.0" = if useLiteMode
+    genesis = pkgs.callPackage ../../nix/v8.3.0/default.nix {};
+    "v8.4.0" = pkgs.callPackage ../../nix/v8.4.0/default.nix {};
+    "v8.5.0" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };

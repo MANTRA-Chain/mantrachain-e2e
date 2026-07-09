@@ -13,11 +13,8 @@ let
   pname = "evmd";
 
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo126Module; };
-  buildStdenv = buildPackages.stdenv;
-  buildGoModule' = if stdenv.isLinux 
-    then buildPackages.buildGo126Module
-    else buildGo126Module;
+  buildStdenv = if stdenv.isLinux then pkgsStatic.stdenv else stdenv;
+  buildGoModule' = if stdenv.isLinux then pkgsStatic.buildGo126Module else buildGo126Module;
 
   tags =
     [

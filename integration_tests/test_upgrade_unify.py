@@ -36,6 +36,7 @@ from .utils import (
     create_periodic_vesting_acct,
     denom_to_erc20_address,
     derive_new_account,
+    ensure_comet_mempool_app,
     eth_to_bech32,
     module_address,
     update_consumer_chain,
@@ -62,7 +63,7 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-async def exec(c, tmp_path):
+async def run_upgrades(c, tmp_path):
     cli = c.cosmos_cli()
     w3 = c.async_w3
     grpc_cmd = cli.raw.cmd
@@ -228,7 +229,7 @@ async def exec(c, tmp_path):
         c.supervisorctl("stop", f"{CHAIN_ID}-node2")
         update_node_cmd(c.base_dir, grpc_cmd, 2, grpc_only=True)
         target_height = stop_height + WAIT_HEIGHT
-        cli = do_upgrade(c, "v8.2.0", target_height)
+        cli = do_upgrade(c, "v8.4.0", target_height)
         return cli, target_height
 
     # validator self-delegation needs more than the cli's 200k default
@@ -307,9 +308,9 @@ async def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
     assert len(get_block_events()) == 0
 
-    # remaining upgrades v8.3.0 -> v8.4.0
-    cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    # final upgrade, onto the first cometbft v0.39 binary
+    ensure_comet_mempool_app(c.base_dir)
+    cli = do_upgrade(c, "v8.5.0", cli.block_height() + WAIT_HEIGHT)
 
     verify_removed_modules(cli)
     blacklist = cli.query_blacklist()
@@ -450,5 +451,5 @@ def verify_removed_modules(cli):
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
-    await exec(custom_mantra, tmp_path)
+    await run_upgrades(custom_mantra, tmp_path)
     cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)
