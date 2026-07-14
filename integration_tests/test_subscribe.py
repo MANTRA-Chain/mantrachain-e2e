@@ -84,12 +84,11 @@ def test_subscribe_basic(mantra: Mantra):
     """
     wait_for_port(ports.evmrpc_ws_port(mantra.base_port(0)))
     cli = mantra.cosmos_cli()
-    loop = asyncio.get_event_loop()
 
     async def assert_unsubscribe(c: Client, sub_id):
         assert await c.unsubscribe(sub_id)
         # check no more messages
-        await loop.run_in_executor(None, wait_for_new_blocks, cli, 2)
+        await asyncio.to_thread(wait_for_new_blocks, cli, 2)
         assert c.sub_qsize(sub_id) == 0
         # unsubscribe again return False
         assert not await c.unsubscribe(sub_id)
@@ -167,4 +166,4 @@ def test_subscribe_basic(mantra: Mantra):
                 pass
 
     timeout = 100
-    loop.run_until_complete(asyncio.wait_for(async_test(), timeout))
+    asyncio.run(asyncio.wait_for(async_test(), timeout))
