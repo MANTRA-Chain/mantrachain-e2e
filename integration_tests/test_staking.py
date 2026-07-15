@@ -84,11 +84,6 @@ def test_staking_unbond(mantra, connect_mantra, tmp_path):
     assert cli.balance(signer1) == balance_bf - (sum(amounts) - unbonded_amt) - fee
 
 
-@pytest.mark.connect
-def test_connect_staking_redelegate(connect_mantra, tmp_path):
-    test_staking_redelegate(None, connect_mantra, tmp_path)
-
-
 def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     name = "signer1"

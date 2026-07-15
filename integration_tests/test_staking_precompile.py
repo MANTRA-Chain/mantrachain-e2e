@@ -220,11 +220,6 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
             assert balance_contract_af == balance_contract_bf + unbond_diff
 
 
-@pytest.mark.connect
-async def test_connect_staking_redelegate(mantra, connect_mantra, tmp_path):
-    await test_staking_redelegate(mantra, connect_mantra, tmp_path)
-
-
 async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3

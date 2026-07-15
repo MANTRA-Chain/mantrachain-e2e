@@ -1156,7 +1156,6 @@ async def test_anchoring_eth_estimate_gas_matches_eth_call(
     assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
 
 
-@pytest.mark.skip(reason="https://github.com/NVNM-Chain/nvnmchain/pull/24")
 async def test_erc20_precompile_state_override(ibc):
     """eth_call balanceOf on a native ERC20 precompile must return the same
     value under no override, empty `{}`, and an unrelated stateDiff override.

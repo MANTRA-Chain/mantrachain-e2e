@@ -66,11 +66,6 @@ def test_commission(mantra):
     ), "balance should increase after commission withdrawal"
 
 
-@pytest.mark.connect
-def test_connect_withdraw_rewards(connect_mantra, tmp_path):
-    test_withdraw_rewards(None, connect_mantra, tmp_path)
-
-
 def test_withdraw_rewards(mantra):
     def cb(cli):
         wait_for_new_blocks(cli, 1)
