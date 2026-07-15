@@ -280,9 +280,28 @@ def send_raw_transactions(w3, raw_transactions):
     return sended_hash_set
 
 
-def send_transaction(w3, tx, key=KEYS["community"], check=True):
-    signed = sign_transaction(w3, tx, key)
-    txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
+# cosmos/evm's go-ethereum txpool can hold a tx at the account's next nonce that
+# eth_getTransactionCount("pending") ignores, a resend then collides there and is
+# rejected as "replacement transaction underpriced", so bump the fees to evict it.
+REPLACEMENT_ERRORS = ("underpriced", "already known")
+
+
+def send_transaction(w3, tx, key=KEYS["community"], check=True, retries=6):
+    acct = Account.from_key(key)
+    tx = fill_transaction_defaults(w3, {**tx, "from": acct.address})
+    for attempt in range(retries):
+        signed = acct.sign_transaction(fill_nonce(w3, tx))  # re-read nonce each attempt
+        try:
+            txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
+            break
+        except web3.exceptions.Web3RPCError as e:
+            if attempt == retries - 1 or not any(
+                s in str(e).lower() for s in REPLACEMENT_ERRORS
+            ):
+                raise
+            for fee in ("maxFeePerGas", "maxPriorityFeePerGas", "gasPrice"):
+                if fee in tx:
+                    tx[fee] *= 3
     if check:
         return w3.eth.wait_for_transaction_receipt(txhash)
     return txhash
