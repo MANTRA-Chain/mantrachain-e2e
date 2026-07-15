@@ -628,7 +628,8 @@ def test_connect_comet_validator_set(connect_mantra, tmp_path):
 def test_comet_validator_set(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     res = cli.comet_validator_set(cli.block_height())
-    assert len(res["validators"]) == len(cli.validators())
+    bonded = [v for v in cli.validators() if v["status"] == "BOND_STATUS_BONDED"]
+    assert len(res["validators"]) == len(bonded)
 
 
 @pytest.mark.skip(reason="https://github.com/cosmos/evm/pull/917")
