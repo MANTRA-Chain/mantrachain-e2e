@@ -5,7 +5,6 @@ import pytest
 import requests
 from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import send_transaction
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 from pystarport.utils import wait_for_new_blocks
@@ -35,6 +34,7 @@ from .utils import (
     derive_new_account,
     eth_to_bech32,
 )
+from .utils import send_transaction_async as send_transaction
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 

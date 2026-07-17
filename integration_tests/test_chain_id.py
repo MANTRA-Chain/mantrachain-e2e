@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import pytest
-from eth_contract.utils import send_transaction
 
 from .network import setup_custom_mantra
 from .utils import ACCOUNTS, ADDRS
+from .utils import send_transaction_async as send_transaction
 
 pytestmark = pytest.mark.asyncio
 

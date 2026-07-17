@@ -1,6 +1,5 @@
 import pytest
 import web3
-from eth_contract.utils import send_transaction
 from web3 import AsyncWeb3
 
 from .utils import (
@@ -8,6 +7,9 @@ from .utils import (
     ADDRS,
     KEYS,
     AsyncGreeter,
+)
+from .utils import send_transaction_async as send_transaction
+from .utils import (
     w3_wait_for_new_blocks_async,
 )
 

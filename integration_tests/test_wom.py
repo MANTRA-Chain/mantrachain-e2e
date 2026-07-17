@@ -1,9 +1,9 @@
 import pytest
-from eth_contract.utils import send_transaction
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 
 from .utils import ACCOUNTS, deploy_wom
+from .utils import send_transaction_async as send_transaction
 
 
 @pytest.mark.asyncio

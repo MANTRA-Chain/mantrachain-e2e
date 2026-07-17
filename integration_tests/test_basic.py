@@ -8,7 +8,6 @@ import web3
 from eth_account import Account
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
-from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.utils import sign_transaction
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
@@ -34,8 +33,10 @@ from .utils import (
     module_address,
     recover_community,
     send_transaction,
+    send_transaction_async,
     transfer_via_cosmos,
     w3_wait_for_new_blocks_async,
+    wait_for_promoted_tx,
     wait_for_unconfirmed_txs,
 )
 
@@ -249,7 +250,10 @@ async def test_transaction(mantra, connect_mantra):
     res = await w3.eth.get_transaction(res["transactionHash"])
     assert res["transactionIndex"] == 0
 
-    with pytest.raises(web3.exceptions.Web3RPCError, match="tx already in mempool"):
+    # "nonce too low" when a fee bump made the first send differ from this resend
+    with pytest.raises(
+        web3.exceptions.Web3RPCError, match="tx already in mempool|nonce too low"
+    ):
         data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
         await send_transaction_async(w3, acct, **data)
 
@@ -261,7 +265,7 @@ async def test_transaction(mantra, connect_mantra):
     receipt = await send_transaction_async(w3, acct, **data)
     assert receipt["status"] == 1
 
-    receipt = await w3.eth.wait_for_transaction_receipt(txhash)
+    receipt = await wait_for_promoted_tx(w3, acct, txhash, data)
     assert receipt["status"] == 1
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="intrinsic gas too low"):
@@ -321,21 +325,25 @@ async def test_transaction(mantra, connect_mantra):
 
 async def assert_receipt_transaction_and_block(w3, receipts):
     assert len(receipts) >= 1, "should have at least 1 valid receipt"
-    block_number = await w3.eth.get_block_number()
+    # concurrent txs from different senders can straddle adjacent blocks on a live
+    # chain, so check each receipt against the block it actually landed in
+    by_block = {}
     for receipt in receipts:
-        assert receipt["blockNumber"] == block_number
-    tx_indexes = [receipt["transactionIndex"] for receipt in receipts]
-    assert len(tx_indexes) == len(set(tx_indexes)), "duplicate index found"
-    block = await w3.eth.get_block(block_number)
+        by_block.setdefault(receipt["blockNumber"], []).append(receipt)
 
-    for receipt in receipts:
-        tx_index = receipt["transactionIndex"]
-        tx = await w3.eth.get_transaction_by_block(block_number, tx_index)
-        assert tx["blockNumber"] == block_number
-        assert tx["transactionIndex"] == receipt["transactionIndex"]
-        assert tx["hash"] == receipt["transactionHash"]
-        assert tx["hash"] in block["transactions"]
-        assert tx["blockNumber"] == block["number"]
+    for block_number, block_receipts in by_block.items():
+        tx_indexes = [receipt["transactionIndex"] for receipt in block_receipts]
+        assert len(tx_indexes) == len(set(tx_indexes)), "duplicate index found"
+        block = await w3.eth.get_block(block_number)
+
+        for receipt in block_receipts:
+            tx_index = receipt["transactionIndex"]
+            tx = await w3.eth.get_transaction_by_block(block_number, tx_index)
+            assert tx["blockNumber"] == block_number
+            assert tx["transactionIndex"] == receipt["transactionIndex"]
+            assert tx["hash"] == receipt["transactionHash"]
+            assert tx["hash"] in block["transactions"]
+            assert tx["blockNumber"] == block["number"]
 
 
 @pytest.mark.connect

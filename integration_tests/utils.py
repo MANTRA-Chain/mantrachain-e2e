@@ -36,7 +36,7 @@ from eth_contract.deploy_utils import (
 )
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode
-from eth_contract.utils import send_transaction as send_transaction_async
+from eth_contract.utils import send_transaction as _send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
@@ -48,6 +48,7 @@ from pystarport.utils import (
 )
 from web3 import AsyncWeb3
 from web3._utils.transactions import fill_nonce, fill_transaction_defaults
+from web3.types import RPCEndpoint
 
 load_dotenv(Path(__file__).parent.parent / "scripts/.env")
 Account.enable_unaudited_hdwallet_features()
@@ -284,27 +285,155 @@ def send_raw_transactions(w3, raw_transactions):
 # eth_getTransactionCount("pending") ignores, a resend then collides there and is
 # rejected as "replacement transaction underpriced", so bump the fees to evict it.
 REPLACEMENT_ERRORS = ("underpriced", "already known")
+FEE_FIELDS = ("maxFeePerGas", "maxPriorityFeePerGas", "gasPrice")
+# a replacement must beat the incumbent on every fee field by >= 10%, so bump off
+# the incumbent's fees, not our own; 2x clears the bar with room to spare
+FEE_BUMP = 2
+# a tx the node strands in its local pool stays unmined for tens of minutes;
+# past this wait, evict-replace it at the same nonce
+STALL_TIMEOUT = 30
+
+
+def _parked_fee_fields(res, nonce):
+    for pool in ("pending", "queued"):
+        parked = (res.get(pool) or {}).get(str(nonce))
+        if parked:
+            return {
+                f: int(parked[f], 16) for f in FEE_FIELDS if parked.get(f) is not None
+            }
+    return {}
+
+
+def parked_tx_fees(w3, sender, nonce):
+    "Fees of the tx occupying `nonce` in `sender`'s txpool (pending or queued)."
+    try:
+        res = w3.manager.request_blocking(
+            RPCEndpoint("txpool_contentFrom"), [to_checksum_address(sender)]
+        )
+    except Exception:
+        return {}
+    return _parked_fee_fields(res, nonce)
+
+
+async def parked_tx_fees_async(w3, sender, nonce):
+    "Async twin of parked_tx_fees."
+    try:
+        res = await w3.manager.coro_request(
+            RPCEndpoint("txpool_contentFrom"), [to_checksum_address(sender)]
+        )
+    except Exception:
+        return {}
+    return _parked_fee_fields(res, nonce)
+
+
+def bump_fees(tx, parked):
+    """Raise tx's fees above the incumbent parked at its nonce."""
+    if not any(f in tx for f in FEE_FIELDS):
+        # adopt the incumbent's own fee fields so the bump has something to beat
+        if "maxFeePerGas" in parked:
+            tx["maxFeePerGas"] = parked["maxFeePerGas"]
+            tx["maxPriorityFeePerGas"] = parked.get("maxPriorityFeePerGas", 0)
+        elif "gasPrice" in parked:
+            tx["gasPrice"] = parked["gasPrice"]
+    for fee in FEE_FIELDS:
+        if fee in tx:
+            tx[fee] = max(tx[fee], parked.get(fee, 0)) * FEE_BUMP
 
 
 def send_transaction(w3, tx, key=KEYS["community"], check=True, retries=6):
     acct = Account.from_key(key)
     tx = fill_transaction_defaults(w3, {**tx, "from": acct.address})
     for attempt in range(retries):
-        signed = acct.sign_transaction(fill_nonce(w3, tx))  # re-read nonce each attempt
+        sent = fill_nonce(w3, tx)  # re-read nonce each attempt
+        signed = acct.sign_transaction(sent)
         try:
             txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
-            break
         except web3.exceptions.Web3RPCError as e:
             if attempt == retries - 1 or not any(
                 s in str(e).lower() for s in REPLACEMENT_ERRORS
             ):
                 raise
-            for fee in ("maxFeePerGas", "maxPriorityFeePerGas", "gasPrice"):
-                if fee in tx:
-                    tx[fee] *= 3
-    if check:
-        return w3.eth.wait_for_transaction_receipt(txhash)
-    return txhash
+            bump_fees(tx, parked_tx_fees(w3, acct.address, sent["nonce"]))
+            continue
+        if not check:
+            return txhash
+        try:
+            return w3.eth.wait_for_transaction_receipt(txhash, timeout=STALL_TIMEOUT)
+        except web3.exceptions.TimeExhausted:
+            if attempt == retries - 1:
+                raise
+            try:
+                return w3.eth.get_transaction_receipt(txhash)  # mined at the buzzer?
+            except web3.exceptions.TransactionNotFound:
+                pass
+            # stranded in the node's local pool: evict-replace at the same nonce
+            bump_fees(tx, parked_tx_fees(w3, acct.address, sent["nonce"]))
+
+
+async def _bump_off_parked_async(w3, account, tx):
+    sender = account.address if isinstance(account, BaseAccount) else account
+    nonce = tx.get("nonce")
+    if nonce is None:
+        nonce = await w3.eth.get_transaction_count(sender)
+    bump_fees(tx, await parked_tx_fees_async(w3, sender, nonce))
+
+
+async def send_transaction_async(w3, account, check=True, retries=6, **tx):
+    """eth_contract's send_transaction plus the eviction retries of the sync one:
+    on a send collision or a receipt stall, bump fees past the parked tx and resend.
+    """
+    for attempt in range(retries):
+        try:
+            return await _send_transaction_async(w3, account, check=check, **tx)
+        except web3.exceptions.Web3RPCError as e:
+            if attempt == retries - 1 or not any(
+                s in str(e).lower() for s in REPLACEMENT_ERRORS
+            ):
+                raise
+            await _bump_off_parked_async(w3, account, tx)
+        except web3.exceptions.TimeExhausted as e:
+            if attempt == retries - 1:
+                raise
+            # the library's wait timed out, its exception carries the tx hash
+            match = re.search(r"0x[0-9a-fA-F]{64}", str(e))
+            if match:
+                try:
+                    receipt = await w3.eth.get_transaction_receipt(match.group(0))
+                    if check:
+                        assert receipt["status"] == 1, receipt
+                    return receipt  # mined at the buzzer
+                except web3.exceptions.TransactionNotFound:
+                    pass
+            await _bump_off_parked_async(w3, account, tx)
+
+
+async def wait_for_promoted_tx(w3, account, txhash, tx=None, rescue_after=30):
+    """Receipt of a formerly nonce-gapped tx, evicting it if the node strands it.
+
+    The node may never rebroadcast a tx promoted out of its queue, and identical
+    bytes are rejected as "already known", so the rescue is a fee-bumped
+    replacement of the same call under a new hash; if the pool dropped the tx
+    outright, `tx` supplies the call to re-issue at a fresh nonce.
+    """
+    try:
+        return await w3.eth.wait_for_transaction_receipt(txhash, timeout=rescue_after)
+    except web3.exceptions.TimeExhausted:
+        pass
+    try:
+        parked = await w3.eth.get_transaction(txhash)
+        rescue = {
+            "to": parked["to"],
+            "value": parked["value"],
+            "gas": parked["gas"],
+            "nonce": parked["nonce"],
+        }
+    except web3.exceptions.TransactionNotFound:
+        # dropped from the pool entirely; nonce and fees are stale, the call is not
+        rescue = {k: v for k, v in (tx or {}).items() if k not in FEE_FIELDS}
+        rescue.pop("nonce", None)
+        if not rescue:
+            raise
+    return await send_transaction_async(w3, account, **rescue)
 
 
 def send_txs(w3, cli, to, keys, params):

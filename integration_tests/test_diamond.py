@@ -9,11 +9,12 @@ from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_deployed_by_create2,
 )
-from eth_contract.utils import get_initcode, send_transaction
+from eth_contract.utils import get_initcode
 from web3 import AsyncWeb3
 
 from .diamond import Facet, FacetCut, FacetCutAction, cut_diamond
 from .utils import ACCOUNTS, build_contract_solcx, selectors
+from .utils import send_transaction_async as send_transaction
 
 DIAMOND_ARTIFACT = build_contract_solcx("Diamond")
 GREETER_ARTIFACT = build_contract_solcx("Greeter")

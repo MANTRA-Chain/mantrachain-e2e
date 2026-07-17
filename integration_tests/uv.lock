@@ -1596,7 +1596,7 @@ source = { git = "https://github.com/yihuang/pyrevm.git?rev=master#ef0903ad7ca3d
 [[package]]
 name = "pystarport"
 version = "0.2.5"
-source = { git = "https://github.com/MANTRA-Chain/pystarport.git?rev=main#8990fec8828a4eb7c3d5d2fe95f2a720875a7061" }
+source = { git = "https://github.com/MANTRA-Chain/pystarport.git?rev=main#8d90f9e9c9377c17e323667ca19086ba49d6897a" }
 dependencies = [
     { name = "bech32" },
     { name = "docker" },

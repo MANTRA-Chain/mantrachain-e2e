@@ -14,6 +14,7 @@ from pystarport.utils import (
     wait_for_port,
     wait_for_url,
 )
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import (
     HTTPError,
     Timeout,
@@ -21,7 +22,9 @@ from requests.exceptions import (
 )
 from web3 import AsyncHTTPProvider, AsyncWeb3, HTTPProvider, WebSocketProvider
 from web3.middleware import ExtraDataToPOAMiddleware
+from web3.middleware.base import Web3Middleware
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
+from web3.types import RPCEndpoint
 
 from .cosmoscli import ChainCommand, CosmosCLI
 from .utils import (
@@ -30,10 +33,74 @@ from .utils import (
     supervisorctl,
 )
 
+RETRIES = 10
+BACKOFF_FACTOR = 0.125
+
+# retries only fire on the exception types the provider's own transport raises:
+# requests here, aiohttp defaults for the async provider (see async_http_provider)
 RETRY_CONFIG = ExceptionRetryConfiguration(
-    errors=(ConnectionError, HTTPError, Timeout, TooManyRedirects),
-    retries=10,
+    errors=(RequestsConnectionError, HTTPError, Timeout, TooManyRedirects),
+    retries=RETRIES,
+    backoff_factor=BACKOFF_FACTOR,
 )
+
+RECEIPT = RPCEndpoint("eth_getTransactionReceipt")
+TX_BY_HASH = RPCEndpoint("eth_getTransactionByHash")
+
+
+def async_http_provider(endpoint):
+    "AsyncHTTPProvider keeping its default aiohttp retry errors, with our counts."
+    provider = AsyncHTTPProvider(endpoint, cache_allowed_requests=True)
+    provider.exception_retry_configuration.retries = RETRIES
+    provider.exception_retry_configuration.backoff_factor = BACKOFF_FACTOR
+    # web3's cache validator chokes on the null blockNumber of a pending tx
+    provider.cacheable_requests = set(provider.cacheable_requests) - {TX_BY_HASH}
+    return provider
+
+
+def _unmined(response):
+    tx = response.get("result")
+    return tx is None or tx.get("blockNumber") is None
+
+
+class ReceiptOnlyWhenMinedMiddleware(Web3Middleware):
+    """Answer eth_getTransactionReceipt with null until the tx is mined.
+
+    The node's receipt lookup retries longer than its own http-timeout, so for an
+    unmined tx it can only surface as -32002 or a read timeout, never as the null
+    that receipt polling expects. eth_getTransactionByHash hits the same index
+    without the retry loop, so probe with it and synthesise the null.
+    """
+
+    @staticmethod
+    def _null(response):
+        return {"jsonrpc": "2.0", "id": response.get("id"), "result": None}
+
+    def wrap_make_request(self, make_request):
+        def middleware(method, params):
+            if method == RECEIPT:
+                probe = make_request(TX_BY_HASH, params)
+                if "error" not in probe and _unmined(probe):
+                    return self._null(probe)
+            return make_request(method, params)
+
+        return middleware
+
+    async def async_wrap_make_request(self, make_request):
+        async def middleware(method, params):
+            if method == RECEIPT:
+                probe = await make_request(TX_BY_HASH, params)
+                if "error" not in probe and _unmined(probe):
+                    return self._null(probe)
+            return await make_request(method, params)
+
+        return middleware
+
+
+def with_receipt_guard(w3):
+    """Install the receipt guard innermost, where responses are still raw JSON."""
+    w3.middleware_onion.inject(ReceiptOnlyWhenMinedMiddleware, layer=0)
+    return w3
 
 
 class Mantra:
@@ -70,25 +137,18 @@ class Mantra:
 
     def node_w3(self, i=0):
         if self._use_websockets:
-            return web3.Web3(
-                WebSocketProvider(
-                    self.w3_ws_endpoint(i), exception_retry_configuration=RETRY_CONFIG
-                )
-            )
+            w3 = web3.Web3(WebSocketProvider(self.w3_ws_endpoint(i)))
         else:
-            return web3.Web3(
+            w3 = web3.Web3(
                 HTTPProvider(
                     self.w3_http_endpoint(i), exception_retry_configuration=RETRY_CONFIG
                 )
             )
+        return with_receipt_guard(w3)
 
     def async_node_w3(self, i=0):
-        return AsyncWeb3(
-            AsyncHTTPProvider(
-                self.w3_http_endpoint(i),
-                cache_allowed_requests=True,
-                exception_retry_configuration=RETRY_CONFIG,
-            ),
+        return with_receipt_guard(
+            AsyncWeb3(async_http_provider(self.w3_http_endpoint(i)))
         )
 
     def base_port(self, i):
@@ -143,24 +203,15 @@ class ConnectMantra:
 
     def node_w3(self):
         if self._use_websockets:
-            return web3.Web3(
-                WebSocketProvider(
-                    self.evm_rpc_ws, exception_retry_configuration=RETRY_CONFIG
-                )
-            )
+            w3 = web3.Web3(WebSocketProvider(self.evm_rpc_ws))
         else:
-            return web3.Web3(
+            w3 = web3.Web3(
                 HTTPProvider(self.evm_rpc, exception_retry_configuration=RETRY_CONFIG)
             )
+        return with_receipt_guard(w3)
 
     def async_node_w3(self):
-        return AsyncWeb3(
-            AsyncHTTPProvider(
-                self.evm_rpc,
-                cache_allowed_requests=True,
-                exception_retry_configuration=RETRY_CONFIG,
-            )
-        )
+        return with_receipt_guard(AsyncWeb3(async_http_provider(self.evm_rpc)))
 
     def cosmos_cli(self, home) -> CosmosCLI:
         return CosmosCLI(home, self.rpc, self.chain_binary, self.chain_id)

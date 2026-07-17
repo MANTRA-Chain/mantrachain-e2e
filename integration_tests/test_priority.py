@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 import web3
 from eth_account import Account
-from eth_contract.utils import send_transaction as send_transaction_async
 from eth_contract.utils import sign_transaction as sign_transaction_async
 from pystarport.utils import wait_for_new_blocks
 
@@ -16,6 +15,7 @@ from .utils import (
     WEI_PER_DENOM,
     eth_to_bech32,
     send_transaction,
+    send_transaction_async,
     sign_transaction,
 )
 
