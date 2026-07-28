@@ -27,10 +27,12 @@ from pystarport.utils import (
 from web3.logs import DISCARD
 
 from .doc_utils import (
+    ANCHORING_FEE,
     DOCUMENT_ADDRESS,
     DOCUMENT_PRECOMPILE,
     Record,
     Role,
+    _assert_within_cap,
     _tx_params,
     add_record,
     clear_accounts_override,
@@ -173,6 +175,7 @@ async def run_method(
         to=DOCUMENT_ADDRESS,
         data=call.data,
     )
+    balance_bf = await async_w3.eth.get_balance(sender_account.address)
     receipt = await call.transact(
         async_w3,
         sender_account,
@@ -180,6 +183,7 @@ async def run_method(
         **txp,
     )
     assert receipt.status == 1
+    await _assert_within_cap(async_w3, sender_account.address, balance_bf)
     intrinsic = intrinsic_calldata_gas(call.data)
     gas_used = int(receipt["gasUsed"])
     delta = gas_used - intrinsic
@@ -304,6 +308,8 @@ def ibc(request, tmp_path_factory):
             ] = "10s"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "87600000000"
             genesis["app_state"]["feemarket"]["params"]["min_gas_price"] = "87600000000"
+            # AnchoringFee.Denom is left at the sentinel ("") so the chain's
+            # InitGenesis fills it from evm_denom (the IBC mantraUSD denom).
             with open(cons_cfg / "edited_genesis.json", "w") as f:
                 json.dump(genesis, f, indent=2)
             (cons_cfg / "edited_genesis.json").replace(genesis_path)
@@ -1556,6 +1562,197 @@ async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
     await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
 
 
+def _cap_test_add_record_call(checksum: str, registry: str = "test-registry"):
+    record = Record(
+        registry=registry,
+        uri=f"ipfs://{checksum}",
+        checksum=checksum,
+        checksumAlgo="sha256",
+        metadata=json.dumps({"document": "cap test"}),
+        timestamp="",
+        status="active",
+        recordId=0,
+        index=0,
+        isLatest=False,
+    )
+    return DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
+
+
+async def _send_cap_test_evm_tx(ibc, *, label: str, fees: dict):
+    w3 = ibc.ibc2.w3
+    sender = ADDRS["community"]
+
+    await ensure_registry_exists(ibc.ibc2.async_w3)
+    call = _cap_test_add_record_call(sha256_hex(f"fee_cap_{label}"))
+
+    balance_bf = w3.eth.get_balance(sender)
+    receipt = send_transaction(
+        w3,
+        {"to": DOCUMENT_ADDRESS, "data": call.data, "gas": 500_000, **fees},
+        KEYS["community"],
+    )
+    assert receipt.status == 1
+    return {
+        "deducted": balance_bf - w3.eth.get_balance(sender),
+        "natural": receipt.gasUsed * receipt.effectiveGasPrice,
+        "receipt": receipt,
+    }
+
+
+# check duplicate hook event
+def _count_refund_events(consumer_cli, eth_tx_hash: str) -> int:
+    txs = consumer_cli.tx_search_rpc(f"ethereum_tx.ethereumTxHash='{eth_tx_hash}'")
+    assert len(txs) == 1, f"expected 1 cosmos tx for {eth_tx_hash}, got {len(txs)}"
+    events = txs[0]["tx_result"]["events"]
+    return sum(1 for ev in events if ev["type"] == "anchoring_fee_refunded")
+
+
+async def test_anchoring_fee_cap_evm_direct_precompile(ibc, setup_consumer_accounts):
+    """Inflated EVM tip is capped at the anchoring fee."""
+    res = await _send_cap_test_evm_tx(
+        ibc,
+        label="evm_direct",
+        fees=consumer_eip1559_fees(ibc.ibc2.w3, priority_multiplier=20),
+    )
+    assert (
+        res["natural"] > ANCHORING_FEE
+    ), f"setup invalid: natural {res['natural']} <= cap {ANCHORING_FEE}"
+    assert res["deducted"] == ANCHORING_FEE, (
+        f"deducted {res['deducted']} != cap {ANCHORING_FEE} "
+        f"(natural {res['natural']})"
+    )
+
+    eth_tx_hash = res["receipt"].transactionHash.hex()
+    if not eth_tx_hash.startswith("0x"):
+        eth_tx_hash = "0x" + eth_tx_hash
+    count = _count_refund_events(ibc.ibc2.cosmos_cli(), eth_tx_hash)
+    assert count == 1, f"anchoring_fee_refunded emitted {count}× (expected 1)"
+
+
+async def test_anchoring_fee_cap_cosmos_msg_add_record(ibc, setup_consumer_accounts):
+    """Inflated Cosmos MsgAddRecord fee is capped at the anchoring fee."""
+    cli = ibc.ibc2.cosmos_cli()
+    sender_bech = cli.address("community")
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
+    inflated_fee = ANCHORING_FEE * 10
+    checksum = sha256_hex("fee_cap_cosmos_msg")
+
+    await ensure_registry_exists(ibc.ibc2.async_w3)
+
+    balance_bf = int(cli.balance(sender_bech, denom=denom))
+    rsp = cli.add_record(
+        {
+            "registry": "test-registry",
+            "uri": f"ipfs://{checksum}",
+            "checksum": checksum,
+            "checksum_algo": "sha256",
+            "metadata": '{"document":"cap test"}',
+            "status": "active",
+        },
+        from_="community",
+        fees=f"{inflated_fee}{denom}",
+        gas="400000",
+        gas_prices=None,  # avoid reject by fees+gas-prices
+        broadcast_mode="sync",
+    )
+    assert rsp["code"] == 0, rsp.get("raw_log")
+
+    wait_for_fn(
+        "MsgAddRecord included",
+        lambda: int(cli.balance(sender_bech, denom=denom)) != balance_bf,
+        timeout=30,
+    )
+    deducted = balance_bf - int(cli.balance(sender_bech, denom=denom))
+    assert (
+        deducted == ANCHORING_FEE
+    ), f"deducted {deducted} != cap {ANCHORING_FEE} (paid {inflated_fee})"
+
+
+async def test_anchoring_fee_cap_no_refund_when_natural_below_cap(
+    ibc, setup_consumer_accounts
+):
+    """If natural fee is already <= 1¢, balance change == natural (no refund)."""
+    res = await _send_cap_test_evm_tx(
+        ibc,
+        label="no_refund",
+        fees=consumer_eip1559_fees(ibc.ibc2.w3),
+    )
+    assert res["natural"] <= ANCHORING_FEE, (
+        f"setup invalid: natural fee {res['natural']} should be <= cap {ANCHORING_FEE} "
+        f"with default fee params; if this fires, gas usage has grown — recalibrate"
+    )
+    assert res["deducted"] == res["natural"], (
+        f"expected deducted == natural fee {res['natural']} (no refund), "
+        f"got {res['deducted']}"
+    )
+
+
+async def test_anchoring_fee_cap_cosmos_msg_add_registry(ibc, setup_consumer_accounts):
+    """Inflated Cosmos MsgAddRegistry fee is capped — confirms the cap applies
+    to all user-facing anchoring msg types, not just MsgAddRecord."""
+    cli = ibc.ibc2.cosmos_cli()
+    sender_bech = cli.address("community")
+    denom = WMANTRAUSD_CONSUMER_IBC_DENOM
+    inflated_fee = ANCHORING_FEE * 10
+
+    balance_bf = int(cli.balance(sender_bech, denom=denom))
+    rsp = cli.add_registry(
+        "fee-cap-registry",
+        "fee cap scope test",
+        '{"source":"fee_cap_test"}',
+        from_="community",
+        fees=f"{inflated_fee}{denom}",
+        gas="400000",
+        gas_prices=None,  # avoid reject by fees+gas-prices
+        broadcast_mode="sync",
+    )
+    assert rsp["code"] == 0, rsp.get("raw_log")
+
+    wait_for_fn(
+        "MsgAddRegistry included",
+        lambda: int(cli.balance(sender_bech, denom=denom)) != balance_bf,
+        timeout=30,
+    )
+    deducted = balance_bf - int(cli.balance(sender_bech, denom=denom))
+    assert (
+        deducted == ANCHORING_FEE
+    ), f"deducted {deducted} != cap {ANCHORING_FEE} (paid {inflated_fee})"
+
+
+async def test_anchoring_fee_cap_no_refund_on_evm_revert(ibc, setup_consumer_accounts):
+    """No refund for reverted addRecord: full natural fee debited even when above cap"""
+    w3 = ibc.ibc2.w3
+    sender = ADDRS["community"]
+
+    # Force a revert: write to a registry that does not exist. The precompile
+    # surfaces ErrNotFound which the EVM materialises as a status-0 receipt.
+    call = _cap_test_add_record_call(
+        sha256_hex("fee_cap_revert"),
+        registry="cap-revert-registry-does-not-exist",
+    )
+    fees = consumer_eip1559_fees(w3, priority_multiplier=20)
+
+    balance_bf = w3.eth.get_balance(sender)
+    receipt = send_transaction(
+        w3,
+        {"to": DOCUMENT_ADDRESS, "data": call.data, "gas": 500_000, **fees},
+        KEYS["community"],
+    )
+    assert (
+        receipt.status == 0
+    ), f"setup invalid: expected revert on missing registry, got success ({receipt})"
+
+    deducted = balance_bf - w3.eth.get_balance(sender)
+    natural = receipt.gasUsed * receipt.effectiveGasPrice
+    assert natural > ANCHORING_FEE, (
+        f"setup invalid: natural {natural} <= cap {ANCHORING_FEE}; "
+        "raise priority_multiplier so natural fee exceeds the cap"
+    )
+    assert (
+        deducted == natural
+    ), f"no refund for reverted tx: deducted {deducted} != natural {natural}"
+
+
 def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
     """
     Provider's SendCoinsFromModuleToModule must fire TokenFactory BeforeSend hooks.
@@ -1736,6 +1933,7 @@ def test_consumer_multisig(ibc, tmp_path):
         "from_": multi_addr,
         "fees": fee,
         "gas": str(gas_limit),
+        "gas_prices": None,
         "chain_id": consumer_cli.chain_id,
         "keyring_backend": "test",
         "home": consumer_cli.data_dir,
@@ -1754,24 +1952,17 @@ def test_consumer_multisig(ibc, tmp_path):
             **common,
         )
     )
-    add_record_tx = json.loads(
-        consumer_cli.raw(
-            "tx",
-            "anchoring",
-            "add-record",
-            "--generate-only",
-            record=json.dumps(
-                {
-                    "registry": registry_name,
-                    "uri": "ipfs://",
-                    "checksum": checksum,
-                    "checksum_algo": "sha256",
-                    "metadata": '{"version":"1.0"}',
-                    "status": "active",
-                }
-            ),
-            **common,
-        )
+    add_record_tx = consumer_cli.add_record(
+        {
+            "registry": registry_name,
+            "uri": "ipfs://",
+            "checksum": checksum,
+            "checksum_algo": "sha256",
+            "metadata": '{"version":"1.0"}',
+            "status": "active",
+        },
+        generate_only=True,
+        **common,
     )
     unsigned_tx = add_registry_tx
     unsigned_tx["body"]["messages"].extend(add_record_tx["body"]["messages"])
