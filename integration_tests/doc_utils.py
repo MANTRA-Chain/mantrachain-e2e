@@ -608,9 +608,9 @@ async def ensure_registry_exists(
 
     if metadata:
         reg = await _registry_by_id(w3, registry_id)
-        assert reg and reg[5] == metadata, (
-            f"expected registry metadata {metadata}, got {reg and reg[5]}"
-        )
+        assert (
+            reg and reg[5] == metadata
+        ), f"expected registry metadata {metadata}, got {reg and reg[5]}"
 
     return int(registry_id)
 

@@ -1372,6 +1372,33 @@ async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):
         await asyncio.sleep(sleep)
 
 
+async def wait_for_eth_tx_result(cli, w3, tx_hash, from_height, timeout=30):
+    """Find an eth tx's cosmos result by scanning blocks from from_height.
+    A commit-failed tx has no eth receipt, but its hash is still in the block.
+    """
+    target = eth_utils.to_hex(tx_hash)
+
+    def result_in_block(height):
+        rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
+        for res in rsp["result"].get("txs_results") or []:
+            for ev in res.get("events") or []:
+                if ev["type"] == "ethereum_tx" and any(
+                    a["key"] == "ethereumTxHash" and a["value"] == target
+                    for a in ev.get("attributes") or []
+                ):
+                    return res
+        return None
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for height in range(from_height, cli.block_height() + 1):
+            res = result_in_block(height)
+            if res:
+                return res
+        await w3_wait_for_new_blocks_async(w3, 1)
+    raise TimeoutError(f"no result for {target} since {from_height}")
+
+
 def update_node_cmd(path, cmd, i, **kwargs):
     ini_path = path / cluster.SUPERVISOR_CONFIG_FILE
     ini = configparser.RawConfigParser()

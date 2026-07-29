@@ -14,7 +14,7 @@ from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_deployed_by_create2,
 )
-from eth_contract.utils import get_initcode
+from eth_contract.utils import get_initcode, sign_transaction
 from pystarport import cluster
 from pystarport.utils import (
     BondStatus,
@@ -22,6 +22,7 @@ from pystarport.utils import (
     wait_for_block_time,
     wait_for_new_blocks,
 )
+from web3.exceptions import TransactionNotFound
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -38,6 +39,8 @@ from .utils import (
     duration,
     edit_app_cfg,
     find_log_event_attrs,
+    module_address,
+    wait_for_eth_tx_result,
 )
 
 PRECOMPILE = Contract(build_contract("StakingI")["abi"])
@@ -47,6 +50,8 @@ VALIDATOR = PRECOMPILE.fns.validator
 STAKING = "0x0000000000000000000000000000000000000800"
 TEST_STAKING = Contract(build_contract("TestStaking")["abi"])
 TEST_STAKING_CONTRACT = None
+EXPLOIT = Contract(build_contract("StakingExploit")["abi"])
+EXPLOIT_CONTRACT = None
 gas = 400_000
 
 
@@ -91,6 +96,98 @@ async def get_test_staking_contract(w3):
             salt=100,
         )
     return TEST_STAKING_CONTRACT
+
+
+async def get_exploit_contract(w3):
+    global EXPLOIT_CONTRACT
+    signer = ACCOUNTS["community"]
+    if EXPLOIT_CONTRACT is None:
+        artifact = build_contract("StakingExploit")
+        await ensure_create2_deployed(w3, signer)
+        EXPLOIT_CONTRACT = await ensure_deployed_by_create2(
+            w3,
+            signer,
+            get_initcode(artifact),
+            salt=101,
+        )
+    return EXPLOIT_CONTRACT
+
+
+async def delegated_amount(w3, delegator, validator):
+    """delegator's bonded amount to validator, 0 if there is no delegation."""
+    try:
+        _, balance = await PRECOMPILE.fns.delegation(delegator, validator).call(
+            w3, to=STAKING
+        )
+    except Exception:
+        return 0
+    return balance[1]
+
+
+async def test_delegate_transfer_to_bonded_pool_rejected(mantra):
+    """Pool-drain exploit rejected by the SetBalance guard.
+
+    Delegating via precompile moves msg.value into blocked bonded tokens pool
+    (which BalanceHandler skips syncing), a following raw transfer to it caches
+    a stale balance that would clobber the real bank balance on commit.
+    evm 3524ebc6 rejects the tx ("is not allowed to receive funds"), and it's
+    dropped from block RPCs (cosmos/evm#1107) so eth_getTransaction cannot find it.
+    """
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    acct = ACCOUNTS["community"]
+    exploit = await get_exploit_contract(w3)
+
+    validator = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
+    pool_bech32 = module_address("bonded_tokens_pool")
+    pool_eth = bech32_to_eth(pool_bech32)
+
+    # prefund the contract for the raw transfer on top of the delegated msg.value
+    receipt = await w3.eth.wait_for_transaction_receipt(
+        await send_value(w3, acct, exploit, 1_000_000)
+    )
+    assert receipt["status"] == 1
+
+    amt = 100  # delegated msg.value; > 15 so the clobbered amount differs
+    pool_before = cli.staking_pool()
+    deleg_before = await delegated_amount(w3, exploit, validator)
+    contract_before = await w3.eth.get_balance(exploit)
+
+    fn = EXPLOIT.fns.delegateWithTransfer(pool_eth, validator, amt)
+    height = cli.block_height()
+    tx_hash = await send_value(
+        w3, acct, exploit, amt * WEI_PER_DENOM, data=fn.data, gas=3_000_000
+    )
+
+    # admitted and included, but fails when the statedb is committed
+    res = await wait_for_eth_tx_result(cli, w3, tx_hash, height)
+    assert res["code"] != 0, res
+    assert f"{pool_bech32} is not allowed to receive funds" in res["log"], res["log"]
+    with pytest.raises(TransactionNotFound):
+        await w3.eth.get_transaction(tx_hash)
+
+    # no pool funds burned, no phantom delegation: the drain never gets going
+    assert cli.staking_pool() == pool_before
+    assert await delegated_amount(w3, exploit, validator) == deleg_before
+    assert await w3.eth.get_balance(exploit) == contract_before
+
+
+async def send_value(w3, acct, to, value, data=b"", gas=30000):
+    latest = await w3.eth.get_block("latest")
+    base_fee = int(latest.get("baseFeePerGas") or 0)
+    tip = int(await w3.eth.max_priority_fee)
+    signed = await sign_transaction(
+        w3,
+        acct,
+        to=to,
+        value=value,
+        data=data,
+        gas=gas,
+        maxFeePerGas=(base_fee + tip) * 2 + 1,
+        maxPriorityFeePerGas=tip,
+        nonce=await w3.eth.get_transaction_count(acct.address),
+    )
+    return await w3.eth.send_raw_transaction(signed.raw_transaction)
 
 
 async def delegate(w3, acct, validator, amt, to):
