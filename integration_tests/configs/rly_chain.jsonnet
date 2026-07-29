@@ -2,6 +2,7 @@ local constant = import 'constant.jsonnet';
 {
   max_gas: 2500000,
   gas_multiplier: 1.1,
+  sequential_batch_tx: true,
   address_type: {
     derivation: 'ethermint',
     proto_type: {
