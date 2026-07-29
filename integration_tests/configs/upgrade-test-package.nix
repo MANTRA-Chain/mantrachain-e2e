@@ -1,15 +1,11 @@
-{ 
+{
   pkgs ? (builtins.getFlake (toString ../..)).legacyPackages.${builtins.currentSystem or "x86_64-linux"},
   useLiteMode ? false
 }:
 let
   common = import ./mantrachain-common.nix { inherit pkgs; };
-  platform = common.platform;
   releases = {
-    genesis = common.mkMantrachain { version = "v4.0.1"; };
-    "v5.0" = common.mkMantrachain { version = "v5.0.0"; };
-    "v6.0.0" = common.mkMantrachain { version = "v6.0.0"; };
-    "v6.1.0" = common.mkMantrachain { version = "v6.1.0"; };
+    genesis = pkgs.callPackage ../../nix/v6.1.3/default.nix {};
     "v7.0.0" = pkgs.callPackage ../../nix/v7.0.0/default.nix {};
     "v8.0.0" = pkgs.callPackage ../../nix/v8.0.0/default.nix {};
     "v8.1.1" = pkgs.callPackage ../../nix/v8.1.1/default.nix {};

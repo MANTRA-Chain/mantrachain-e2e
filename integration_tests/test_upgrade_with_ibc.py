@@ -32,7 +32,7 @@ def custom_mantra(request, tmp_path_factory):
     path = tmp_path_factory.mktemp(name)
     configdir = Path(__file__).parent
     upgrades = path / "upgrades"
-    nix_name = "upgrade-test-package-ibc"
+    nix_name = "upgrade-test-package"
     build_upgrade_package(upgrades, configdir / f"configs/{nix_name}.nix")
     binary = str(upgrades / f"genesis/bin/{CMD}")
     yield from prepare_network(
