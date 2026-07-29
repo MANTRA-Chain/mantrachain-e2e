@@ -61,7 +61,6 @@ class Role(str, Enum):
 
 @dataclass
 class Record:
-    registry: str
     uri: str
     checksum: str
     checksumAlgo: str
@@ -71,6 +70,7 @@ class Record:
     recordId: int
     index: int
     isLatest: bool
+    registryId: int
 
     @classmethod
     def from_tuple(cls, t):
@@ -80,7 +80,6 @@ class Record:
 DOCUMENT_PRECOMPILE_ABI = [
     """
     struct Record {
-        string registry;
         string uri;
         string checksum;
         string checksumAlgo;
@@ -90,6 +89,7 @@ DOCUMENT_PRECOMPILE_ABI = [
         uint64 recordId;
         uint64 index;
         bool isLatest;
+        uint64 registryId;
     }
     """,
     """
@@ -137,7 +137,7 @@ DOCUMENT_PRECOMPILE_ABI = [
     """,
     """
     function records(
-        string memory registry,
+        uint64 registryId,
         string memory checksum,
         uint64 recordId,
         uint64 index,
@@ -147,7 +147,6 @@ DOCUMENT_PRECOMPILE_ABI = [
     """
     function registries(
         uint64 registryId,
-        string memory name,
         PageRequest memory pagination
     ) returns (Registry[] memory, PageResponse memory)
     """,
@@ -342,16 +341,16 @@ async def _assert_add_record_event(
     receipt,
     *,
     caller: str,
-    registry: str,
+    registry_id: int,
     checksum: str,
 ):
-    registry_id = await get_registry_id(w3, registry)
-
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        registry, checksum, 0, 0, (b"", 0, 50, False, False)
+        registry_id, checksum, 0, 0, (b"", 0, 50, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     parsed = [Record.from_tuple(r) for r in records]
-    assert parsed, f"expected record after addRecord({registry}, {checksum})"
+    assert (
+        parsed
+    ), f"expected record after addRecord(registry_id={registry_id}, {checksum})"
 
     # for versioned records, event should reflect the latest version
     rec = max(parsed, key=lambda r: int(r.index))
@@ -469,7 +468,6 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
 
     add_record_call = caller.fns.callAddRecord(
         (
-            "ccv-eoa-registry",
             "ipfs://ccv-contract-caller",
             sha256_hex("ccv-contract-caller-checksum"),
             "sha256",
@@ -479,6 +477,7 @@ async def do_test_contract_cannot_call_anchoring_sensitive_methods(
             0,
             0,
             False,
+            registry_id,
         )
     )
     await assert_reverted(add_record_call.data)
@@ -539,11 +538,31 @@ async def do_test_constructor_bypass_ensure_eoa_caller(
     ), "expected no registry created from constructor call"
 
 
-async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
-    registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
-        0, name, (b"", 0, 10, False, False)
+async def _registry_by_id(w3: AsyncWeb3, registry_id: int):
+    regs, _ = await DOCUMENT_PRECOMPILE.fns.registries(
+        registry_id, (b"", 0, 1, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
-    reg = next((r for r in registries if r[1] == name), None)
+    return regs[0] if regs else None
+
+
+async def _find_registry_by_name(w3: AsyncWeb3, name: str):
+    # No on-chain name lookup (names are non-unique): page through all registries and
+    # filter client-side, picking the newest (highest id) on a name collision.
+    out: list = []
+    key = b""
+    while True:
+        regs, page = await DOCUMENT_PRECOMPILE.fns.registries(
+            0, (key, 0, 100, False, False)
+        ).call(w3, to=DOCUMENT_ADDRESS)
+        out.extend(r for r in regs if r[1] == name)
+        key = _as_bytes(page[0])
+        if not key:
+            break
+    return max(out, key=lambda r: int(r[0])) if out else None
+
+
+async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
+    reg = await _find_registry_by_name(w3, name)
     if reg is None:
         raise AssertionError(f"registry {name} not found")
     return int(reg[0])
@@ -556,10 +575,7 @@ async def ensure_registry_exists(
     metadata: str = "",
 ) -> int:
     try:
-        registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
-            0, name, (b"", 0, 10, False, False)
-        ).call(w3, to=DOCUMENT_ADDRESS)
-        reg = next((r for r in registries if r[1] == name), None)
+        reg = await _find_registry_by_name(w3, name)
     except Exception:
         reg = None
     if reg is not None:
@@ -580,7 +596,8 @@ async def ensure_registry_exists(
     receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
     assert receipt.status == 1, f"failed to create registry {name}"
 
-    registry_id = await get_registry_id(w3, name)
+    # Read the id from the event; a name scan can't tell apart same-named registries.
+    registry_id = get_add_registry_event_registry_id(receipt, caller=admin.address)
     assert_document_event(
         receipt,
         event_sig="AddRegistry(address,uint64,string)",
@@ -590,16 +607,12 @@ async def ensure_registry_exists(
     )
 
     if metadata:
-        registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
-            0, name, (b"", 0, 10, False, False)
-        ).call(w3, to=DOCUMENT_ADDRESS)
-        reg = next((r for r in registries if r[1] == name), None)
-        assert reg is not None, "created registry not returned in query"
-        assert (
-            reg[5] == metadata
-        ), f"expected registry metadata {metadata}, got {reg[5]}"
+        reg = await _registry_by_id(w3, registry_id)
+        assert reg and reg[5] == metadata, (
+            f"expected registry metadata {metadata}, got {reg and reg[5]}"
+        )
 
-    return await get_registry_id(w3, name)
+    return int(registry_id)
 
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
@@ -657,9 +670,9 @@ async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
 async def add_record(
     w3: AsyncWeb3, admin, checksum, name="Test Record", registry=DOCUMENT_REGISTRY_DENOM
 ):
+    registry_id = await get_registry_id(w3, registry)
     metadata = json.dumps({"document": name, "figi": "", "individualId": ""})
     doc = Record(
-        registry=registry,
         uri=f"ipfs://{checksum}",
         checksum=checksum,
         checksumAlgo="sha256",
@@ -669,6 +682,7 @@ async def add_record(
         recordId=0,
         index=0,
         isLatest=False,
+        registryId=registry_id,
     )
     call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc))
     txp = await _tx_params(
@@ -686,7 +700,7 @@ async def add_record(
         w3,
         receipt,
         caller=admin.address,
-        registry=registry,
+        registry_id=registry_id,
         checksum=checksum,
     )
     return receipt
@@ -698,7 +712,7 @@ async def update_record_status(
     record: Record,
     status: str,
 ):
-    registry_id = await get_registry_id(w3, record.registry)
+    registry_id = int(record.registryId)
     call = DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
         registry_id,
         record.recordId,
@@ -983,7 +997,7 @@ async def do_test_role_with_different_checksums(
 
 async def do_test_add_and_query_records(w3: AsyncWeb3):
     registry_name = f"query-registry-{int(time.time() * 1000)}"
-    await ensure_registry_exists(w3, name=registry_name)
+    registry_id = await ensure_registry_exists(w3, name=registry_name)
     accounts = get_accounts()
     admin = accounts["community"]
 
@@ -995,7 +1009,7 @@ async def do_test_add_and_query_records(w3: AsyncWeb3):
         await add_record(w3, admin, checksum, name=name, registry=registry_name)
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        registry_name, "", 0, 0, (b"", 0, 10, True, False)
+        registry_id, "", 0, 0, (b"", 0, 10, True, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     docs = [Record.from_tuple(d) for d in records]
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
@@ -1036,7 +1050,7 @@ async def _add_record_and_set_status(
     assert ev_checksum == checksum
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        DOCUMENT_REGISTRY_DENOM,
+        int(registry_id),
         "",
         int(record_id),
         0,
@@ -1068,19 +1082,19 @@ async def do_test_add_record(w3: AsyncWeb3):
 async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
     accounts = get_accounts()
     admin = accounts["community"]
-    admin = accounts["community"]
     registries = [
         ("multi1", "doc1", "figi1", "ind001"),
         ("multi2", "doc2", "figi2", "ind002"),
     ]
     checksum = sha256_hex("shared_checksum_abc123")
+    registry_ids = {}
     for name, document, figi, individual_id in registries:
-        await ensure_registry_exists(w3, name=name)
+        registry_id = await ensure_registry_exists(w3, name=name)
+        registry_ids[name] = registry_id
         metadata = json.dumps(
             {"document": document, "figi": figi, "individualId": individual_id}
         )
         record = Record(
-            registry=name,
             uri=f"ipfs://{checksum}",
             checksum=checksum,
             checksumAlgo="sha256",
@@ -1090,6 +1104,7 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
             recordId=0,
             index=0,
             isLatest=False,
+            registryId=registry_id,
         )
         call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
         txp = await _tx_params(
@@ -1105,16 +1120,16 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
             w3,
             receipt,
             caller=admin.address,
-            registry=name,
+            registry_id=registry_id,
             checksum=checksum,
         )
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 0, 100, False, False)
+        0, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
     assert len(records) == 2
-    registries_found = {r.registry for r in records}
-    assert all(name in registries_found for name, *_ in registries)
+    registries_found = {r.registryId for r in records}
+    assert registries_found == set(registry_ids.values())
     metadata_values = {json.loads(r.metadata)["document"] for r in records}
     assert metadata_values == {"doc1", "doc2"}
 
@@ -1123,10 +1138,10 @@ async def do_test_query_by_registry_and_checksum(w3: AsyncWeb3):
     accounts = get_accounts()
     admin = accounts["community"]
     registry_name = "query-specific-reg"
-    await ensure_registry_exists(w3, name=registry_name)
+    registry_id = await ensure_registry_exists(w3, name=registry_name)
 
     registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
-        0, registry_name, (b"", 0, 10, False, False)
+        registry_id, (b"", 0, 10, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     assert registries
 
@@ -1135,14 +1150,14 @@ async def do_test_query_by_registry_and_checksum(w3: AsyncWeb3):
         w3, admin, checksum, name="Query Test Record", registry=registry_name
     )
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        registry_name, checksum, 0, 0, (b"", 0, 100, False, False)
+        registry_id, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
 
     assert len(records) == 1
     rec = records[0]
     assert rec.checksum == checksum
-    assert rec.registry == registry_name
+    assert rec.registryId == registry_id
 
 
 async def do_test_same_checksum_different_record_ids_per_registry(w3: AsyncWeb3):
@@ -1156,7 +1171,7 @@ async def do_test_same_checksum_different_record_ids_per_registry(w3: AsyncWeb3)
         await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 0, 100, False, False)
+        0, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
 
@@ -1181,7 +1196,7 @@ async def do_test_multiple_versions_same_checksum_across_registries(w3: AsyncWeb
             await add_record(w3, admin, checksum, name=version, registry=reg)
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 0, 100, False, False)
+        0, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
 
@@ -1199,20 +1214,21 @@ async def do_test_query_all_registries_for_checksum(w3: AsyncWeb3):
     registries = ["query-all-1", "query-all-2", "query-all-3"]
     checksum = sha256_hex("query_all_checksum")
 
+    registry_ids = {}
     for name in registries:
-        await ensure_registry_exists(w3, name=name)
+        registry_ids[name] = await ensure_registry_exists(w3, name=name)
 
     for name in registries[:2]:
         await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 0, 100, False, False)
+        0, checksum, 0, 0, (b"", 0, 100, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     records = [Record.from_tuple(r) for r in records]
 
     assert len(records) == 2
-    found = {r.registry for r in records}
-    assert found == set(registries[:2])
+    found = {r.registryId for r in records}
+    assert found == {registry_ids[name] for name in registries[:2]}
 
 
 async def do_test_checksum_only_query_respects_limit(w3: AsyncWeb3):
@@ -1228,17 +1244,17 @@ async def do_test_checksum_only_query_respects_limit(w3: AsyncWeb3):
 
     # explicit limit/offset should work.
     page1, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 0, 1, False, False)
+        0, checksum, 0, 0, (b"", 0, 1, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     page2, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        "", checksum, 0, 0, (b"", 1, 1, False, False)
+        0, checksum, 0, 0, (b"", 1, 1, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
 
     page1 = [Record.from_tuple(r) for r in page1]
     page2 = [Record.from_tuple(r) for r in page2]
     assert len(page1) == 1
     assert len(page2) == 1
-    assert {r.registry for r in page1}.isdisjoint({r.registry for r in page2})
+    assert {r.registryId for r in page1}.isdisjoint({r.registryId for r in page2})
 
 
 async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
@@ -1249,7 +1265,7 @@ async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
     reg_b = "reg-limit-b"
 
     await ensure_registry_exists(w3, name=reg_a)
-    await ensure_registry_exists(w3, name=reg_b)
+    registry_id_b = await ensure_registry_exists(w3, name=reg_b)
 
     # add records under A first
     for i in range(5):
@@ -1271,9 +1287,9 @@ async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
     )
 
     page, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        reg_b, "", 0, 0, (b"", 0, 1, False, False)
+        registry_id_b, "", 0, 0, (b"", 0, 1, False, False)
     ).call(w3, to=DOCUMENT_ADDRESS)
     page = [Record.from_tuple(r) for r in page]
     assert len(page) == 1
-    assert page[0].registry == reg_b
+    assert page[0].registryId == registry_id_b
     assert page[0].checksum == checksum_b

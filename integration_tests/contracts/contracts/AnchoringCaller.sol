@@ -3,7 +3,6 @@ pragma solidity ^0.8.4;
 
 interface IAnchoringPrecompile {
     struct Record {
-        string registry;
         string uri;
         string checksum;
         string checksumAlgo;
@@ -13,6 +12,7 @@ interface IAnchoringPrecompile {
         uint64 recordId;
         uint64 index;
         bool isLatest;
+        uint64 registryId;
     }
 
     function addRegistry(

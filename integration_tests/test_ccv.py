@@ -1072,15 +1072,14 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
     w3 = ibc.ibc2.async_w3
 
     registry_name = "state_override"
-    await do_test_add_registry(
+    registry_id = await ensure_registry_exists(
         w3,
         name=registry_name,
         metadata='{"source":"state_override"}',
     )
 
     registries_call = DOCUMENT_PRECOMPILE.fns.registries(
-        0,
-        registry_name,
+        registry_id,
         (b"", 0, 10, False, False),
     )
     tx = {
@@ -1145,8 +1144,7 @@ async def test_anchoring_eth_estimate_gas_matches_eth_call(
     )
     tx = {"to": DOCUMENT_ADDRESS, "from": sender.address, "data": call.data}
 
-    # Estimate + floor check BEFORE broadcast — addRegistry writes state, so a
-    # post-broadcast estimate would revert with "registry already exists".
+    # Estimate against pre-broadcast state so it reflects this addRegistry's cost.
     estimated = await assert_gas_estimate_within_floor(w3, tx)
 
     # Broadcast: consumer chain enforces a min_gas_price floor and transact()
@@ -1225,7 +1223,6 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
 
     checksum = sha256_hex(f"ccv-gas-{registry_id}")
     record = Record(
-        registry=registry_name,
         uri=f"ipfs://{checksum}",
         checksum=checksum,
         checksumAlgo="sha256",
@@ -1235,6 +1232,7 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
         recordId=0,
         index=0,
         isLatest=False,
+        registryId=registry_id,
     )
     add_record_call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
     await run_method(
@@ -1247,7 +1245,7 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
     )
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        registry_name,
+        registry_id,
         checksum,
         0,
         0,
@@ -1363,11 +1361,10 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
     admin = accounts["community"]
 
     registry_name = "oversize-algo-registry"
-    await do_test_add_registry(w3, name=registry_name, metadata="{}")
+    registry_id = await ensure_registry_exists(w3, name=registry_name, metadata="{}")
 
     oversized_algo = "a" * 129
     record = Record(
-        registry=registry_name,
         uri="ipfs://oversize-algo",
         checksum=sha256_hex("abc123def456"),
         checksumAlgo=oversized_algo,
@@ -1377,6 +1374,7 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
         recordId=0,
         index=0,
         isLatest=False,
+        registryId=registry_id,
     )
 
     call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
@@ -1754,6 +1752,23 @@ def test_consumer_multisig(ibc, tmp_path):
             **common,
         )
     )
+    # Records reference their registry by id. The add-registry above is message[0] of
+    # this tx, so the new registry gets the next id: current highest + 1 (ids are
+    # sequential and never reused). --page-count-total is rejected, so read the highest
+    # id via a reverse page of one.
+    highest = json.loads(
+        consumer_cli.raw(
+            "query",
+            "anchoring",
+            "registries",
+            page_reverse=True,
+            page_limit=1,
+            output="json",
+            node=consumer_cli.node_rpc,
+        )
+    )
+    existing = highest["registries"]
+    next_registry_id = (int(existing[0]["id"]) if existing else 0) + 1
     add_record_tx = json.loads(
         consumer_cli.raw(
             "tx",
@@ -1762,7 +1777,7 @@ def test_consumer_multisig(ibc, tmp_path):
             "--generate-only",
             record=json.dumps(
                 {
-                    "registry": registry_name,
+                    "registry_id": next_registry_id,
                     "uri": "ipfs://",
                     "checksum": checksum,
                     "checksum_algo": "sha256",
@@ -1786,11 +1801,16 @@ def test_consumer_multisig(ibc, tmp_path):
         "signer2",
     )
 
-    registries = consumer_cli.raw(
-        "q",
-        "anchoring",
-        "registries",
-        node=consumer_cli.node_rpc,
-        output="json",
+    # Query the just-created registry by id (pagination-proof) and check its name.
+    created = json.loads(
+        consumer_cli.raw(
+            "q",
+            "anchoring",
+            "registries",
+            registry_id=next_registry_id,
+            node=consumer_cli.node_rpc,
+            output="json",
+        )
     )
-    assert registry_name in registries.decode("utf-8")
+    names = [r["name"] for r in created["registries"]]
+    assert registry_name in names, names
