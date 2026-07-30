@@ -14,6 +14,8 @@
     packets: {
       enabled: true,
       tx_confirmation: true,
+      // default 100 blocks is slower than the test wait timeouts
+      clear_interval: 10,
     },
   },
   rest: {
