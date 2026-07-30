@@ -160,7 +160,7 @@ def test_stale_pin_diverges_via_blocksync(mantra):
 
     # Tell a real negative from a vacuous run; neither proves pruning passed the
     # pin, so a skip means "no fault seen", not "iavl was correct".
-    assert pins, "vacuous: shouldRemoveFromEVMPool never ran (NoOpMempool?)"
+    assert pins, "vacuous: shouldRemoveFromEVMPool never ran (freeze hook built in?)"
     assert max(pins) > funded_at, (
         f"vacuous: pin froze at {max(pins)} <= funding height {funded_at}, so the "
         "senders are absent from the pinned tree and reads return not-found"

@@ -1,7 +1,4 @@
-// node3, tuned so a stale version-pinned context faults on a pruned node.
-// Declared here rather than added at runtime: create_node() runs a plain
-// `init` and inherits none of this -- notably mempool.max-txs, whose -1
-// default makes configureEVMMempool install a NoOpMempool.
+// node3, tuned so a stale version-pinned context faults on a pruned node
 local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local constant = import 'constant.jsonnet';
@@ -11,7 +8,7 @@ config {
   'mantra-canary-net-1'+: {
     'app-config'+: {
       mempool+: {
-        'max-txs': -1,
+        'max-txs': 0,
       },
     },
     validators+: [{
@@ -21,9 +18,6 @@ config {
       gas_prices: constant.gas_price + chain.evm_denom,
       mnemonic: '${VALIDATOR4_MNEMONIC}',
       'app-config'+: {
-        mempool+: {
-          'max-txs': 5000,
-        },
         // Prune close behind the tip so a stale pin falls outside the window
         // quickly. Not the floor of 2: with the fix EndBlock re-pins every
         // block, leaving the pin a few blocks back, and at 2 even that is
