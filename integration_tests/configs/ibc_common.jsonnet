@@ -1,7 +1,8 @@
 {
   'coin-type': 60,
   'app-config'+: {
-    'index-events': super['index-events'] + ['message.action'],
+    // empty means index all, so comet indexes send_packet.* for hermes clearing
+    'index-events': [],
   },
   genesis+: {
     app_state+: {
