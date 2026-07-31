@@ -30,11 +30,9 @@ def mantra(request, tmp_path_factory):
 
 
 def _restart_frozen(clustercli, chain_dir, n):
-    """Start node NODE with its latestCtx refresher frozen after n
-    notifications, modelling the subscription drop seen in production.
-
-    Scoped to one program so the validators keep refreshing. The pin is rebuilt
-    on every start, so this only affects the run that follows.
+    """Start node NODE with its refresher frozen after n notifications, as a
+    dropped subscription would leave it. Scoped to one program so the validators
+    keep refreshing; the pin rebuilds on every start.
     """
     ini_path = chain_dir / cluster.SUPERVISOR_CONFIG_FILE
     ini = configparser.RawConfigParser()
@@ -46,121 +44,159 @@ def _restart_frozen(clustercli, chain_dir, n):
         ini.write(fp)
 
     clustercli.supervisor.reloadConfig()
-    try:
-        clustercli.supervisor.removeProcessGroup(proc)
-    except Exception:
-        pass
+    # Stop before removing, each call is tolerant: node may already be down or gone
+    for step in ("stopProcess", "removeProcessGroup", "addProcessGroup"):
+        try:
+            getattr(clustercli.supervisor, step)(proc)
+        except Exception:
+            pass
     # Declared validators carry autostart=true, so addProcessGroup already
     # starts the node; startProcess would then raise ALREADY_STARTED.
-    clustercli.supervisor.addProcessGroup(proc)
     try:
         clustercli.supervisor.startProcess(proc)
     except Exception:
         pass
 
 
-def _send(w3, gas_price, key, to, value=1):
-    """Fire one tx, ignoring nonce collisions and transient RPC errors."""
-    try:
-        send_transaction(
-            w3, {"to": to, "value": value, "gasPrice": gas_price}, key=key, check=False
-        )
-    except Exception:
-        pass
+def _sender(w3, key, address):
+    """Return send(to, value=1), firing from address and counting nonces here.
+
+    The mempool inserts asynchronously, so pending still reports the old nonce
+    and a burst left to fill_nonce collides. RPC errors are ignored.
+    """
+    gas_price = w3.eth.gas_price
+    nonce = w3.eth.get_transaction_count(address)
+
+    def send(to, value=1):
+        nonlocal nonce
+        tx = {"to": to, "value": value, "gasPrice": gas_price, "nonce": nonce}
+        nonce += 1
+        try:
+            send_transaction(w3, tx, key=key, check=False)
+        except Exception:
+            pass
+
+    return send
 
 
-def _find(text, needle, ctx=400):
-    idx = text.find(needle)
-    return text[idx : idx + ctx] if idx != -1 else None
+def _scan(log, start=0):
+    """(text, missing-node panic, AppHash divergence) for the log after start.
+
+    Both variants share one node log, scanning from 0 re-reports earlier variant's fault
+    """
+    if not log.exists():
+        return "", None, None
+    with log.open(errors="ignore") as fp:
+        fp.seek(start)
+        text = fp.read()
+
+    def excerpt(needle):
+        i = text.find(needle)
+        return text[i : i + 400] if i != -1 else None
+
+    return text, excerpt(MISSING_NODE_ERR), excerpt(APPHASH_ERR)
 
 
-def test_stale_pin_diverges_via_blocksync(mantra):
-    """A stale mempool cache read during block sync diverges the AppHash.
+@pytest.mark.parametrize("blocksync", [False, True], ids=["gossip", "blocksync"])
+def test_stale_pin_faults(mantra, blocksync):
+    """A stale mempool cache reads a version pruning has deleted.
 
-    Freezing the refresher, as a dropped CometBFT subscription would, pins the
-    mempool to an IAVL version pruning then deletes. Fails before the EndBlock
-    fix, skips after. Needs EVM_MEMPOOL_FREEZE_CTX_AFTER in evm.
+    Freezing the refresher pins the mempool to an IAVL version pruning then
+    deletes. Each sender is read for the first time only after that, so the read
+    has to reach disk, where the nodes are gone. An already-traversed key would
+    still answer from the ImmutableTree whatever iavl-cache-size says, which is
+    why the senders must be cold. Needs EVM_MEMPOOL_FREEZE_CTX_AFTER in evm.
 
-    node3 must meet each tx first inside a block: by gossip it panics in CheckTx,
-    which is local to it and cannot move the AppHash.
+    How node3 meets those txs decides where the fault lands, and how bad it is:
+
+    gossip -- node3 is up, so each tx enters its pool and legacypool.validateTx
+    reads the sender's nonce through the pinned statedb. That runs in the insert
+    queue's goroutine, outside baseapp's recovery, so the panic takes the node
+    down instead of failing one tx. No AppHash move: nothing was executing.
+
+    blocksync -- node3 is down while they commit, so it meets them only inside a
+    block. Where Remove still validates through the pin the read lands in
+    deliverTx instead, and the recovered panic diverges node3's AppHash. Current
+    main does not: shouldRemoveFromEVMPool reads reason.Error and no state.
     """
     n_senders = int(os.getenv("STALE_SENDERS", "40"))
     churn_blocks = int(os.getenv("STALE_CHURN_BLOCKS", "40"))
     deadline = time.time() + int(os.getenv("STALE_TIMEOUT", "900"))
+    freeze_after = os.getenv("STALE_FREEZE_AFTER", "2")
 
     cli0 = mantra.cosmos_cli(0)
     w3 = mantra.w3
-    gas_price = w3.eth.gas_price
-    chain_dir = Path(mantra.base_dir).parent / mantra.config["chain_id"]
+    base_dir = Path(mantra.base_dir).parent
+    chain_dir = base_dir / mantra.config["chain_id"]
     clustercli = cluster.ClusterCLI(
-        Path(mantra.base_dir).parent,
+        base_dir,
         cmd=mantra.config.get("cmd") or CMD,
         chain_id=mantra.config["chain_id"],
     )
     log = chain_dir / f"node{NODE}.log"
+    log_start = log.stat().st_size if log.exists() else 0
+    proc = f"{clustercli.chain_id}-node{NODE}"
+    fund = _sender(w3, KEYS["community"], ADDRS["community"])
 
-    # (1) Fund the senders while node3 follows, so they exist in its pinned
-    # version; accounts created later just read back not-found.
+    # (1) Fund the senders while node3 follows, so they land in its pinned
+    # version; later accounts just read back not-found.
     senders = [derive_new_account(n + 400) for n in range(n_senders)]
     for acct in senders:
-        _send(w3, gas_price, KEYS["community"], acct.address, 10**17)
+        fund(acct.address, 10**17)
     wait_for_block(cli0, cli0.block_height() + 4)
     assert w3.eth.get_balance(senders[0].address) > 0, "sender funding did not land"
     funded_at = cli0.block_height()
 
-    # (2) Take node3 down and build the backlog it will replay. Churn first, so
-    # pruning drops the pinned version before node3 reaches the sender txs.
-    clustercli.supervisor.stopProcess(f"{clustercli.chain_id}-node{NODE}")
-    stopped_at = cli0.block_height()
-    target = stopped_at + churn_blocks
-    while cli0.block_height() < target and time.time() < deadline:
-        _send(w3, gas_price, KEYS["community"], ADDRS["signer2"])
+    # (2) Freeze the pin. Restarting is what injects the env, and node3 comes
+    # back above funded_at either way, so the senders stay inside the pin.
+    if blocksync:
+        clustercli.supervisor.stopProcess(proc)
+    else:
+        _restart_frozen(clustercli, chain_dir, freeze_after)
+        wait_for_block(clustercli.cosmos_cli(NODE), funded_at + 4)
+
+    # (3) Churn so pruning drops the pinned version, then have every sender
+    # transact for the first time -- the read that has to reach disk.
+    start = cli0.block_height()
+    while cli0.block_height() < start + churn_blocks and time.time() < deadline:
+        fund(ADDRS["signer2"])
         time.sleep(0.5)
-
-    # These commit while node3 is offline, so it only meets them in a block.
     for acct in senders:
-        _send(w3, gas_price, acct.key, ADDRS["signer2"])
-    wait_for_block(cli0, cli0.block_height() + 3)
-    print(f"\nnode{NODE} down from {stopped_at}, chain now at {cli0.block_height()}")
+        _sender(w3, acct.key, acct.address)(ADDRS["signer2"])
 
-    # (3) Restart frozen: the pin sticks at the restart height while sync races
-    # past it and pruning deletes it.
-    _restart_frozen(clustercli, chain_dir, os.getenv("STALE_FREEZE_AFTER", "2"))
+    if blocksync:
+        # Let them commit while node3 is down, so it meets them only in a block.
+        wait_for_block(cli0, cli0.block_height() + 3)
+        _restart_frozen(clustercli, chain_dir, freeze_after)
+    print(f"\nnode{NODE} frozen after {freeze_after}, funded by {funded_at}")
 
-    # (4) Wait out the catch-up, stopping early once the fault shows.
+    # (4) Watch for the fault, keeping the chain moving: a recovered panic
+    # surfaces only at the next header comparison.
     panic_hit = apphash_hit = None
-    while time.time() < deadline:
+    grace = min(time.time() + int(os.getenv("STALE_GRACE", "180")), deadline)
+    while time.time() < grace:
         time.sleep(2)
-        text = log.read_text(errors="ignore") if log.exists() else ""
-        panic_hit = panic_hit or _find(text, MISSING_NODE_ERR)
-        apphash_hit = apphash_hit or _find(text, APPHASH_ERR)
-        if apphash_hit:
-            break
-        try:
-            if clustercli.cosmos_cli(NODE).block_height() >= cli0.block_height():
-                # A recovered panic only surfaces once the next header is
-                # compared, so keep the chain moving while one is pending.
-                if panic_hit:
-                    _send(w3, gas_price, KEYS["community"], ADDRS["signer2"])
-                    continue
-                break
-        except Exception:
-            pass  # node3 is down mid-panic; the log still tells us what happened
+        _, panic, apphash = _scan(log, log_start)
+        panic_hit, apphash_hit = panic_hit or panic, apphash_hit or apphash
+        if apphash_hit or (panic_hit and not blocksync):
+            break  # an execModeCheck fault cannot diverge; nothing to wait for
+        fund(ADDRS["signer2"])
 
-    text = log.read_text(errors="ignore") if log.exists() else ""
+    text, panic, apphash = _scan(log, log_start)
+    panic_hit, apphash_hit = panic_hit or panic, apphash_hit or apphash
     pins = sorted({int(m.split("=")[1]) for m in re.findall(r"ctx_height=\d+", text)})
     modes = re.findall(r"runTx\(0x[a-f0-9]+, (0x[0-9a-f]+)", text)
     print(f"pins seen: {pins}; panic exec modes: {modes} (0x0=CheckTx, 0x7=Finalize)")
 
     if panic_hit or apphash_hit:
         pytest.fail(
-            "REPRODUCED -- stale pin read during block sync\n\n"
+            "REPRODUCED -- stale pinned context\n\n"
             f"missing-node panic:\n{panic_hit}\n\nAppHash divergence:\n{apphash_hit}"
         )
 
-    # Tell a real negative from a vacuous run; neither proves pruning passed the
-    # pin, so a skip means "no fault seen", not "iavl was correct".
-    assert pins, "vacuous: shouldRemoveFromEVMPool never ran (freeze hook built in?)"
+    # Tell a real negative from a vacuous run; neither proves pruning passed
+    # the pin, so a skip means "no fault seen", not "iavl was correct".
+    assert pins, "vacuous: the pinned context was never read (freeze hook built in?)"
     assert max(pins) > funded_at, (
         f"vacuous: pin froze at {max(pins)} <= funding height {funded_at}, so the "
         "senders are absent from the pinned tree and reads return not-found"

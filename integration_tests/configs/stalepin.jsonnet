@@ -3,9 +3,11 @@ local config = import 'default.jsonnet';
 local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local constant = import 'constant.jsonnet';
 local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != null then chain['coin-type'] else 60;
+local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
+local evm_mempool = import 'evm_mempool.jsonnet';
 
 config {
-  'mantra-canary-net-1'+: {
+  'mantra-canary-net-1'+: evm_mempool(chain) {
     'app-config'+: {
       mempool+: {
         'max-txs': 0,
