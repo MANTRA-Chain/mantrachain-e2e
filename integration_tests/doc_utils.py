@@ -5,9 +5,7 @@ from dataclasses import astuple, dataclass
 from enum import Enum
 
 import pytest
-from eth_abi.abi import decode as abi_decode
 from eth_contract.contract import Contract as ContractAsync
-from eth_hash.auto import keccak
 from web3 import AsyncWeb3
 
 from .utils import (
@@ -166,6 +164,49 @@ DOCUMENT_PRECOMPILE_ABI = [
         string memory role
     )
     """,
+    """
+    event AddRegistry(
+        address indexed caller,
+        uint64 registryId,
+        string name
+    )
+    """,
+    """
+    event AddRecord(
+        address indexed caller,
+        uint64 registryId,
+        uint64 recordId,
+        uint64 index,
+        string checksum
+    )
+    """,
+    """
+    event UpdateRecordStatus(
+        address indexed caller,
+        uint64 registryId,
+        uint64 recordId,
+        uint64 index,
+        string status
+    )
+    """,
+    """
+    event GrantRole(
+        address indexed caller,
+        uint64 registryId,
+        string checksum,
+        address account,
+        string role
+    )
+    """,
+    """
+    event RevokeRole(
+        address indexed caller,
+        uint64 registryId,
+        string checksum,
+        address account,
+        string role
+    )
+    """,
 ]
 
 DOCUMENT_PRECOMPILE = ContractAsync.from_abi(DOCUMENT_PRECOMPILE_ABI)
@@ -234,30 +275,32 @@ def _as_bytes(value) -> bytes:
     return bytes(value)
 
 
-def _decode_document_event_data(
-    receipt,
-    *,
-    event_sig: str,
-    caller: str,
-    data_types: list[str],
-):
-    topic0 = keccak(event_sig.encode())
-    caller_topic = b"\x00" * 12 + bytes.fromhex(caller[2:])
+def find_document_event(receipt, *, event: str, caller: str) -> dict:
+    """Return the decoded args of the named precompile event in ``receipt``,
+    matched by emitter address, topic0 and caller, decoded via its ABI."""
+    abi_event = getattr(DOCUMENT_PRECOMPILE.events, event)
 
     for log in receipt["logs"]:
         if log["address"].lower() != DOCUMENT_ADDRESS.lower():
             continue
 
         topics = log["topics"]
-        if not topics or _as_bytes(topics[0]) != topic0:
+        if not topics or _as_bytes(topics[0]) != bytes(abi_event.topic):
             continue
 
-        if len(topics) < 2 or _as_bytes(topics[1]) != caller_topic:
+        # topic0 matched, so a decode failure here means the emitted layout no
+        # longer agrees with the declaration; surface it instead of skipping.
+        decoded = abi_event.parse_log(log)
+        assert (
+            decoded is not None
+        ), f"{abi_event.signature} log does not match its declared ABI: {log}"
+
+        if decoded["args"]["caller"].lower() != caller.lower():
             continue
 
-        return list(abi_decode(data_types, _as_bytes(log["data"])))
+        return dict(decoded["args"])
 
-    raise AssertionError(f"missing event {event_sig} from {DOCUMENT_ADDRESS}")
+    raise AssertionError(f"missing event {abi_event.signature} from {DOCUMENT_ADDRESS}")
 
 
 async def _assert_call_reverts(
@@ -357,51 +400,39 @@ async def _assert_add_record_event(
 
     assert_document_event(
         receipt,
-        event_sig="AddRecord(address,uint64,uint64,uint64,string)",
+        event="AddRecord",
         caller=caller,
-        data_types=["uint64", "uint64", "uint64", "string"],
-        expected_data=[registry_id, int(rec.recordId), int(rec.index), checksum],
+        registryId=registry_id,
+        recordId=int(rec.recordId),
+        index=int(rec.index),
+        checksum=checksum,
     )
 
 
-def assert_document_event(
-    receipt,
-    *,
-    event_sig: str,
-    caller: str,
-    data_types: list[str],
-    expected_data: list,
-):
-    decoded = _decode_document_event_data(
-        receipt,
-        event_sig=event_sig,
-        caller=caller,
-        data_types=data_types,
-    )
+def assert_document_event(receipt, *, event: str, caller: str, **expected):
+    """Assert the named precompile event carries ``expected`` argument
+    values, keyed by their ABI names."""
+    abi_event = getattr(DOCUMENT_PRECOMPILE.events, event)
+    types = {i["name"]: i["type"] for i in abi_event.abi["inputs"]}
 
-    if len(decoded) != len(expected_data):
-        raise AssertionError(
-            f"{event_sig} data length mismatch: {decoded} != {expected_data}"
-        )
+    unknown = set(expected) - set(types)
+    assert not unknown, f"{abi_event.signature} has no argument(s) {sorted(unknown)}"
 
-    for typ, got, exp in zip(data_types, decoded, expected_data, strict=True):
-        if typ == "address":
+    args = find_document_event(receipt, event=event, caller=caller)
+    for key, exp in expected.items():
+        got = args[key]
+        if types[key] == "address":
             got, exp = got.lower(), exp.lower()
         if got != exp:
-            kind = "address" if typ == "address" else "data"
             raise AssertionError(
-                f"{event_sig} {kind} mismatch:\n  got: {got}\n  expected: {exp}"
+                f"{abi_event.signature} {key} mismatch:"
+                f"\n  got: {got}\n  expected: {exp}"
             )
 
 
 def get_add_registry_event_registry_id(receipt, *, caller: str) -> int:
-    decoded = _decode_document_event_data(
-        receipt,
-        event_sig="AddRegistry(address,uint64,string)",
-        caller=caller,
-        data_types=["uint64", "string"],
-    )
-    return int(decoded[0])
+    args = find_document_event(receipt, event="AddRegistry", caller=caller)
+    return int(args["registryId"])
 
 
 async def do_test_contract_cannot_call_anchoring_sensitive_methods(
@@ -600,10 +631,10 @@ async def ensure_registry_exists(
     registry_id = get_add_registry_event_registry_id(receipt, caller=admin.address)
     assert_document_event(
         receipt,
-        event_sig="AddRegistry(address,uint64,string)",
+        event="AddRegistry",
         caller=admin.address,
-        data_types=["uint64", "string"],
-        expected_data=[int(registry_id), name],
+        registryId=int(registry_id),
+        name=name,
     )
 
     if metadata:
@@ -633,10 +664,12 @@ async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
 
     assert_document_event(
         receipt,
-        event_sig="GrantRole(address,uint64,string,address,string)",
+        event="GrantRole",
         caller=sender.address,
-        data_types=["uint64", "string", "address", "string"],
-        expected_data=[int(registry_id), str(checksum), user.address, role_value],
+        registryId=int(registry_id),
+        checksum=str(checksum),
+        account=user.address,
+        role=role_value,
     )
     return receipt
 
@@ -659,10 +692,12 @@ async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
 
     assert_document_event(
         receipt,
-        event_sig="RevokeRole(address,uint64,string,address,string)",
+        event="RevokeRole",
         caller=sender.address,
-        data_types=["uint64", "string", "address", "string"],
-        expected_data=[int(registry_id), str(checksum), user.address, role_value],
+        registryId=int(registry_id),
+        checksum=str(checksum),
+        account=user.address,
+        role=role_value,
     )
     return receipt
 
@@ -730,15 +765,12 @@ async def update_record_status(
 
     assert_document_event(
         receipt,
-        event_sig="UpdateRecordStatus(address,uint64,uint64,uint64,string)",
+        event="UpdateRecordStatus",
         caller=admin.address,
-        data_types=["uint64", "uint64", "uint64", "string"],
-        expected_data=[
-            int(registry_id),
-            int(record.recordId),
-            int(record.index),
-            str(status),
-        ],
+        registryId=int(registry_id),
+        recordId=int(record.recordId),
+        index=int(record.index),
+        status=str(status),
     )
     return receipt
 
@@ -1040,14 +1072,10 @@ async def _add_record_and_set_status(
     accounts = get_accounts()
     admin = accounts["community"]
     receipt = await add_record(w3, admin, checksum, name=name)
-    ev_registry_id, record_id, _, ev_checksum = _decode_document_event_data(
-        receipt,
-        event_sig="AddRecord(address,uint64,uint64,uint64,string)",
-        caller=admin.address,
-        data_types=["uint64", "uint64", "uint64", "string"],
-    )
-    assert int(ev_registry_id) == int(registry_id)
-    assert ev_checksum == checksum
+    args = find_document_event(receipt, event="AddRecord", caller=admin.address)
+    record_id = args["recordId"]
+    assert int(args["registryId"]) == int(registry_id)
+    assert args["checksum"] == checksum
 
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
         int(registry_id),
