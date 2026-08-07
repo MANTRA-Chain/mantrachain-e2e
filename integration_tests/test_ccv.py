@@ -124,15 +124,22 @@ ICS20_PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
 ICS20_ADDRESS = "0x0000000000000000000000000000000000000802"
 DISTRIBUTION_CLAIM_ADDRESS = "0x0000000000000000000000000000000000000a01"
 DISTRIBUTION_ADDRESS = "0x0000000000000000000000000000000000000801"
-DISTRIBUTION_CLAIM_SIG = "claimRewardsAndConvertCoin(address,uint32,string)"
-
-
-def distribution_claim_call_data(
-    delegator_evm: str, max_retrieve: int, denom: str
-) -> str:
-    selector = keccak(DISTRIBUTION_CLAIM_SIG.encode())[:4]
-    args = encode(["address", "uint32", "string"], [delegator_evm, max_retrieve, denom])
-    return "0x" + (selector + args).hex()
+# Declared once so the selector, the return decode and the log decode all come
+# from the same source instead of being restated per call site.
+DISTRIBUTION_CLAIM = Contract.from_abi(
+    [
+        """
+        function claimRewardsAndConvertCoin(
+            address delegator, uint32 maxRetrieve, string memory denom
+        ) returns (uint256 converted)
+        """,
+        """
+        event ClaimRewardsAndConvertCoin(
+            address indexed delegator, string denom, uint256 amount
+        )
+        """,
+    ]
+)
 
 
 def ibc_timeout_ns(minutes: int = 10) -> int:
@@ -704,6 +711,9 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     block_gas_limit = int(w3.eth.get_block("latest")["gasLimit"])
     # unwrap may do extra work; stay under the block gas limit
     gas_limit = min(12_000_000, max(1_000_000, block_gas_limit - 500_000))
+    claim_call = DISTRIBUTION_CLAIM.fns.claimRewardsAndConvertCoin(
+        signer1_evm, max_retrieve, erc20_denom
+    )
 
     # require(withdrawAddr == delegator)
     signer2 = provider_cli.address("signer2")
@@ -713,16 +723,11 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
     )
 
-    bad_claim_data = distribution_claim_call_data(
-        signer1_evm,
-        max_retrieve,
-        erc20_denom,
-    )
     bad_claim_convert_receipt = send_transaction(
         w3,
         {
             "to": DISTRIBUTION_CLAIM_ADDRESS,
-            "data": bad_claim_data,
+            "data": claim_call.data,
             "gas": gas_limit,
         },
         KEYS["signer1"],
@@ -759,23 +764,16 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     wait_for_new_blocks(provider_cli, 5)
 
     def expected_converted_now() -> int:
-        data = distribution_claim_call_data(
-            signer1_evm,
-            max_retrieve,
-            erc20_denom,
-        )
-        res = decode(
-            ["uint256"],
+        return claim_call.decode(
             w3.eth.call(
                 {
                     "to": DISTRIBUTION_CLAIM_ADDRESS,
                     "from": signer1_evm,
-                    "data": data,
+                    "data": claim_call.data,
                     "gas": gas_limit,
                 }
-            ),
+            )
         )
-        return res[0]
 
     wait_for_fn(
         "expected_converted >= SCALAR",
@@ -789,12 +787,6 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     # This checks we don't end up with a leftover `erc20:<addr>` bank coin.
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
-    claim_data = distribution_claim_call_data(
-        signer1_evm,
-        max_retrieve,
-        erc20_denom,
-    )
-
     expected_converted = expected_converted_now()
     assert expected_converted > 0
 
@@ -803,33 +795,27 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         w3,
         {
             "to": DISTRIBUTION_CLAIM_ADDRESS,
-            "data": claim_data,
+            "data": claim_call.data,
             "gas": gas_limit,
         },
         KEYS["signer1"],
     )
     assert claim_convert_receipt.status == 1
 
-    event_sig = "ClaimRewardsAndConvertCoin(address,string,uint256)"
-    event_topic0 = keccak(event_sig.encode())
-    signer1_topic = (bytes.fromhex(signer1_evm[2:])).rjust(32, b"\x00")
-
     receipt = w3.eth.get_transaction_receipt(claim_convert_receipt.transactionHash)
-    logs = [
-        log
-        for log in receipt["logs"]
-        if log["address"].lower() == DISTRIBUTION_CLAIM_ADDRESS.lower()
-        and len(log["topics"]) >= 2
-        and bytes(log["topics"][0]) == event_topic0
-    ]
-    assert len(logs) == 1
-    log = logs[0]
-    assert bytes(log["topics"][1]) == signer1_topic
-    ev_denom, ev_amount = decode(
-        ["string", "uint256"],
-        bytes(log["data"]),
+    decoded = DISTRIBUTION_CLAIM.events.ClaimRewardsAndConvertCoin.parse_logs(
+        [
+            log
+            for log in receipt["logs"]
+            if log["address"].lower() == DISTRIBUTION_CLAIM_ADDRESS.lower()
+        ]
     )
-    assert ev_denom == erc20_denom
+    assert len(decoded) == 1, receipt["logs"]
+
+    args = decoded[0]["args"]
+    assert args["delegator"].lower() == signer1_evm.lower()
+    assert args["denom"] == erc20_denom
+    ev_amount = args["amount"]
     assert ev_amount > 0
 
     bal_wmantrausd_af = wmantrausd.functions.balanceOf(signer1_evm).call()
