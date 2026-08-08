@@ -35,6 +35,7 @@ from .doc_utils import (
     add_record,
     clear_accounts_override,
     consumer_eip1559_fees,
+    create_registry,
     do_test_add_and_query_records,
     do_test_add_record,
     do_test_add_record_same_checksum_maintains_record_id,
@@ -1052,6 +1053,67 @@ async def test_add_registry(ibc, setup_consumer_accounts):
         ibc.ibc2.async_w3,
         metadata=metadata,
     )
+
+
+@pytest.mark.skip(reason="test_registries_name_filter")
+async def test_registries_name_filter(ibc, setup_consumer_accounts):
+    w3 = ibc.ibc2.async_w3
+    api = ports.api_port(ibc.ibc2.base_port(0))
+    url = f"http://127.0.0.1:{api}/NVNM-Chain/nvnmchain/anchoring/v1/registries"
+
+    def rest(**params):
+        rsp = requests.get(url, params=params)
+        assert rsp.ok, f"{rsp.status_code} {rsp.reason}: {rsp.text}"
+        # uint64 comes back as a JSON string under the proto3 mapping
+        return {int(r["id"]) for r in rsp.json().get("registries") or []}
+
+    async def precompile(**f):
+        regs, _ = await DOCUMENT_PRECOMPILE.fns.registriesByName(
+            f.get("name", ""),
+            f.get("name_prefix", ""),
+            f.get("name_suffix", ""),
+            f.get("name_contains", ""),
+            (b"", 0, 200, False, False),
+        ).call(w3, to=DOCUMENT_ADDRESS)
+        return {int(r[0]) for r in regs}
+
+    # Two registries deliberately share a name, with a third interleaved, so
+    # the filter has to be multi-valued rather than resolving to a single id.
+    shared = "ccv-name-filter"
+    first_id = await create_registry(w3, shared, metadata="{}")
+    other_id = await create_registry(w3, f"{shared}-other", metadata="{}")
+    second_id = await create_registry(w3, shared, metadata="{}")
+    both = {first_id, second_id}
+
+    for filters, expected in (
+        ({"name": shared}, both),
+        ({"name": f"{shared}-other"}, {other_id}),
+        # An unknown name is an empty page rather than an error, and every mode
+        # is byte-exact: no case folding, trimming or partial match.
+        ({"name": f"{shared}-nope"}, set()),
+        ({"name": shared.upper()}, set()),
+        ({"name": f"{shared} "}, set()),
+        ({"name": shared[:-1]}, set()),
+        # Prefix, suffix and contains match substrings, and stay anchored.
+        ({"name_prefix": shared}, both | {other_id}),
+        ({"name_suffix": "-other"}, {other_id}),
+        ({"name_contains": "name-filter"}, both | {other_id}),
+        ({"name_prefix": "cv-name"}, set()),
+        ({"name_suffix": "-othe"}, set()),
+        # Filters combine with AND, so a contradictory set returns nothing
+        # rather than one of them quietly winning.
+        ({"name_prefix": shared, "name_suffix": "-other"}, {other_id}),
+        ({"name": shared, "name_suffix": "-other"}, set()),
+    ):
+        assert rest(**filters) == expected, filters
+        assert await precompile(**filters) == expected, filters
+
+    # registry_id and name combine rather than one overriding the other.
+    assert rest(registry_id=first_id, name=shared) == {first_id}
+    assert rest(registry_id=other_id, name=shared) == set()
+
+    # No filters leaves the listing unfiltered.
+    assert both | {other_id} <= rest(**{"pagination.limit": 200})
 
 
 async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_accounts):

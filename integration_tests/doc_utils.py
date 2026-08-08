@@ -149,6 +149,15 @@ DOCUMENT_PRECOMPILE_ABI = [
     ) returns (Registry[] memory, PageResponse memory)
     """,
     """
+    function registriesByName(
+        string memory name,
+        string memory namePrefix,
+        string memory nameSuffix,
+        string memory nameContains,
+        PageRequest memory pagination
+    ) returns (Registry[] memory, PageResponse memory)
+    """,
+    """
     function grantRole(
         uint64 registryId,
         string memory checksum,
@@ -599,24 +608,18 @@ async def get_registry_id(w3: AsyncWeb3, name: str) -> int:
     return int(reg[0])
 
 
-async def ensure_registry_exists(
+async def create_registry(
     w3: AsyncWeb3,
-    name=DOCUMENT_REGISTRY_DENOM,
+    name: str,
     *,
     metadata: str = "",
 ) -> int:
-    try:
-        reg = await _find_registry_by_name(w3, name)
-    except Exception:
-        reg = None
-    if reg is not None:
-        if metadata:
-            assert (
-                reg[5] == metadata
-            ), f"expected registry metadata {metadata}, got {reg[5]}"
-        return int(reg[0])
-    accounts = get_accounts()
-    admin = accounts["community"]
+    """Always create a registry and return its id.
+
+    Unlike ensure_registry_exists, which resolves an existing name back to its
+    id, so it cannot produce two registries sharing a name.
+    """
+    admin = get_accounts()["community"]
     call = DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata)
     txp = await _tx_params(
         w3,
@@ -636,6 +639,27 @@ async def ensure_registry_exists(
         registryId=int(registry_id),
         name=name,
     )
+    return int(registry_id)
+
+
+async def ensure_registry_exists(
+    w3: AsyncWeb3,
+    name=DOCUMENT_REGISTRY_DENOM,
+    *,
+    metadata: str = "",
+) -> int:
+    try:
+        reg = await _find_registry_by_name(w3, name)
+    except Exception:
+        reg = None
+    if reg is not None:
+        if metadata:
+            assert (
+                reg[5] == metadata
+            ), f"expected registry metadata {metadata}, got {reg[5]}"
+        return int(reg[0])
+
+    registry_id = await create_registry(w3, name, metadata=metadata)
 
     if metadata:
         reg = await _registry_by_id(w3, registry_id)
@@ -643,7 +667,7 @@ async def ensure_registry_exists(
             reg and reg[5] == metadata
         ), f"expected registry metadata {metadata}, got {reg and reg[5]}"
 
-    return int(registry_id)
+    return registry_id
 
 
 async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
