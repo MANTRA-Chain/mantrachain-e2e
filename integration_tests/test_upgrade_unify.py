@@ -387,6 +387,7 @@ async def exec(c, tmp_path):
     blacklist = cli.query_blacklist()
     V8_4_EXPLOITER = "mantra13n9sk3p8x7tpq9adgxvzv9q0qev953mld0hwva"
     assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.4.0: {blacklist}"
+    verify_v8_4_vesting_disabled(cli)
     await verify_provider(cli)
 
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
@@ -486,6 +487,27 @@ async def verify_provider(cli):
 
     wait_for_new_blocks(cli, 1)
     assert cli.provider_consumer_genesis(consumer_id) is not None
+
+
+def verify_v8_4_vesting_disabled(cli):
+    to_addr = cli.create_account(f"vesting_blocked{int(time.time())}")["address"]
+    try:
+        rsp = json.loads(
+            cli.raw(
+                "tx",
+                "vesting",
+                "create-permanent-locked-account",
+                to_addr,
+                f"1{DEFAULT_DENOM}",
+                "-y",
+                **(cli.get_kwargs_with_gas() | {"from": "community"}),
+            )
+        )
+    except Exception as e:  # CLI may exit non-zero when the ante rejects the tx
+        assert "tx type not allowed" in str(e), e
+        return
+    assert rsp.get("code", 0) != 0, f"vesting creation was not circuit-broken: {rsp}"
+    assert "tx type not allowed" in rsp.get("raw_log", ""), rsp
 
 
 def verify_removed_modules(cli):
