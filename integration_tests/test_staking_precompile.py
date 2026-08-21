@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from .utils import (
     build_contract,
     duration,
     edit_app_cfg,
+    eth_to_bech32,
     find_log_event_attrs,
     module_address,
     wait_for_eth_tx_result,
@@ -357,6 +359,48 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
         ]
         _, balance = await DELEGATION(caller, val_ops[0]).call(w3, to=STAKING)
         assert balance_bf[1] == balance[1] + redelegate_amt
+
+
+async def test_staking_delegate_from_vesting(mantra):
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+
+    # brand-new account: create-vesting-account rejects existing accounts
+    vester = Account.create()
+    vester_acc = eth_to_bech32(vester.address)
+    funder = cli.address("community")
+    locked, spendable, del_amt = 2 * 10**18, 8 * 10**18, 10**18
+
+    # fund `locked` (all locked as original vesting) + `spendable` extra
+    end_time = int(time.time()) + 365 * 24 * 3600
+    rsp = cli.create_periodic_vesting_acct(
+        vester_acc, f"{locked}{DEFAULT_DENOM}", end_time, from_=funder
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.transfer(funder, vester_acc, f"{spendable}{DEFAULT_DENOM}")
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    pre_bank = cli.balance(vester_acc, DEFAULT_DENOM)
+    assert pre_bank == locked + spendable, pre_bank
+
+    # delegate within both spendable and locked via the staking precompile
+    validator = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
+    res = await DELEGATE(vester.address, validator, del_amt).transact(
+        w3, vester, to=STAKING, gas=gas
+    )
+    assert res.status == 1
+
+    gas_fee = res["gasUsed"] * res["effectiveGasPrice"] // WEI_PER_DENOM
+    post_bank = cli.balance(vester_acc, DEFAULT_DENOM)
+    # bank balance drops by exactly delegation + gas, no spurious mint/burn
+    assert pre_bank - post_bank == del_amt + gas_fee, (pre_bank, post_bank, gas_fee)
+
+    # vesting structure preserved: OV unchanged, delegation tracked as vesting
+    bva = cli.account(vester_acc)["account"]["value"]["base_vesting_account"]
+    assert bva["original_vesting"] == [{"denom": DEFAULT_DENOM, "amount": str(locked)}]
+    assert bva["delegated_vesting"] == [
+        {"denom": DEFAULT_DENOM, "amount": str(del_amt)}
+    ]
 
 
 async def test_join_validator(mantra):
