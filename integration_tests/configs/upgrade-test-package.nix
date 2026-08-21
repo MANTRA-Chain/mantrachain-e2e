@@ -10,7 +10,8 @@ let
     "v8.0.0" = pkgs.callPackage ../../nix/v8.0.0/default.nix {};
     "v8.1.1" = pkgs.callPackage ../../nix/v8.1.1/default.nix {};
     "v8.2.0" = pkgs.callPackage ../../nix/v8.2.0/default.nix {};
-    "v8.3.0" = if useLiteMode
+    "v8.3.0" = pkgs.callPackage ../../nix/v8.3.0/default.nix {};
+    "v8.4.0" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };

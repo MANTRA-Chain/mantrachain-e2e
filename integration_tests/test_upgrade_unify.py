@@ -381,8 +381,12 @@ async def exec(c, tmp_path):
     cli = do_upgrade(c, "v8.1.1", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
     cli = do_upgrade(c, "v8.2.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
     cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
+    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
 
     verify_removed_modules(cli)
+    blacklist = cli.query_blacklist()
+    V8_4_EXPLOITER = "mantra13n9sk3p8x7tpq9adgxvzv9q0qev953mld0hwva"
+    assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.4.0: {blacklist}"
     await verify_provider(cli)
 
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
