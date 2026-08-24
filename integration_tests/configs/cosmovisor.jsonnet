@@ -44,9 +44,11 @@ config {
       app_state+: {
         gov+: {
           params+: {
-            // every upgrade waits out a voting period, so keep it short
-            voting_period: '4s',
-            max_deposit_period: '4s',
+            // long enough for every validator's vote to land, short enough (in
+            // blocks) to close before submit+WAIT_HEIGHT or the upgrade
+            // schedules in the past; fast blocks here
+            voting_period: '6s',
+            max_deposit_period: '6s',
           },
         },
         // the v8.0.0 upgrade handler seeded these; starting past it they have to
