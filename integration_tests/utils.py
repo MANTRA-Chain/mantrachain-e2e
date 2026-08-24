@@ -933,7 +933,11 @@ def build_batch_tx(w3, cli, txs, key=KEYS["community"]):
     ]
 
     msgs = [tx["body"]["messages"][0] for tx in tmp_txs]
-    fee = sum(int(tx["auth_info"]["fee"]["amount"][0]["amount"]) for tx in tmp_txs)
+    # a zero-fee chain (feemarket no_base_fee=true) yields an empty fee.amount
+    fee = sum(
+        int(amt[0]["amount"]) if (amt := tx["auth_info"]["fee"]["amount"]) else 0
+        for tx in tmp_txs
+    )
     gas_limit = sum(int(tx["auth_info"]["fee"]["gas_limit"]) for tx in tmp_txs)
 
     tx_hashes = [signed.hash for signed in signed_txs]
@@ -952,7 +956,12 @@ def build_batch_tx(w3, cli, txs, key=KEYS["community"]):
         "auth_info": {
             "signer_infos": [],
             "fee": {
-                "amount": [{"denom": DEFAULT_EXTENDED_DENOM, "amount": str(fee)}],
+                # zero fee must serialize as an empty list (a 0-coin is invalid)
+                "amount": (
+                    [{"denom": DEFAULT_EXTENDED_DENOM, "amount": str(fee)}]
+                    if fee
+                    else []
+                ),
                 "gas_limit": str(gas_limit),
                 "payer": "",
                 "granter": "",
