@@ -14,6 +14,7 @@ from pystarport.utils import wait_for_block, wait_for_port
 from .network import setup_custom_mantra
 from .utils import (
     DEFAULT_DENOM,
+    DEFAULT_GAS_PRICE,
     EVM_CHAIN_ID,
     approve_proposal,
     bech32_to_eth,
@@ -21,19 +22,11 @@ from .utils import (
     send_transaction,
 )
 
-LEGACY_DENOM = "uom"
-LEGACY_EXTENDED_DENOM = "aom"
 
-
-def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, scale=1):
+def do_upgrade(c, plan_name, target):
     print(f"upgrade {plan_name} height: {target}")
     cli = c.cosmos_cli()
     base_port = c.base_port(0)
-    rsp = {}
-    price = 100000000 * scale
-    min_deposit = 1 * scale
-    gas_prices = f"{price}{denom}"
-
     rsp = cli.software_upgrade(
         "community",
         {
@@ -42,13 +35,13 @@ def do_upgrade(c, plan_name, target, denom=DEFAULT_DENOM, scale=1):
             "note": "ditto",
             "upgrade-height": target,
             "summary": "summary",
-            "deposit": f"{min_deposit}{denom}",
+            "deposit": f"1{DEFAULT_DENOM}",
         },
         gas=300000,
-        gas_prices=gas_prices,
+        gas_prices=DEFAULT_GAS_PRICE,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(c, rsp["events"], gas_prices=gas_prices)
+    approve_proposal(c, rsp["events"], gas_prices=DEFAULT_GAS_PRICE)
 
     # update cli chain binary
     c.chain_binary = (

@@ -7,14 +7,11 @@ import requests
 import tomlkit
 from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
-from eth_contract.weth import WETH
-from eth_utils import to_checksum_address
 from pystarport import ports
 from pystarport.utils import wait_for_new_blocks, wait_for_port
 
 from .network import Mantra
 from .upgrade_utils import (
-    LEGACY_DENOM,
     cleanup_upgrades_folder,
     do_upgrade,
     setup_mantra_upgrade,
@@ -23,7 +20,7 @@ from .utils import (
     ADDRS,
     CHAIN_ID,
     DEFAULT_DENOM,
-    SCALE_FACTOR,
+    DEFAULT_GAS_PRICE,
     AsyncGreeter,
     Greeter,
     assert_create_tokenfactory_denom,
@@ -38,13 +35,9 @@ from .utils import (
     create_consumer_chain,
     create_periodic_vesting_acct,
     denom_to_erc20_address,
-    deploy_wom,
     derive_new_account,
     eth_to_bech32,
     module_address,
-)
-from .utils import send_transaction_async as send_transaction
-from .utils import (
     update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
@@ -53,7 +46,7 @@ from .utils import (
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
 STAKING = "0x0000000000000000000000000000000000000800"
-WAIT_HEIGHT = 30
+WAIT_HEIGHT = 16
 
 
 @pytest.fixture(scope="module")
@@ -75,7 +68,7 @@ async def exec(c, tmp_path):
     grpc_cmd = cli.raw.cmd
     community = "community"  # cli key name
     community_addr = ADDRS["community"]  # eth address
-    gas_prices = f"1{LEGACY_DENOM}"
+    gas_prices = DEFAULT_GAS_PRICE
 
     # capture an early height + state for the grpc-only archive checks below
     greeter = AsyncGreeter()
@@ -84,19 +77,19 @@ async def exec(c, tmp_path):
     assert "Hello" == await greeter.greet(block_identifier=old_height)
     balance_bf = await w3.eth.get_balance(community_addr, block_identifier=old_height)
 
-    # pre-v7 state: set up everything the v7 upgrade migrates
+    # pre-v8 state: everything below has to survive the v8.x upgrade chain
     addr_a = cli.address(community)
     subdenom = f"admin{time.time()}"
     gas = 300000
+    # the genesis binary pairs an erc20 with the denom, so these write through to
+    # the contract too; a mint alone measures ~305k, well over the plain 300k
+    tf_gas = 620000
     denom = assert_create_tokenfactory_denom(
-        cli, subdenom, is_legacy=True, _from=addr_a, gas=gas, gas_prices=gas_prices
+        cli, subdenom, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
     )
     assert_set_tokenfactory_denom(
-        cli, tmp_path, denom, _from=addr_a, gas=gas, gas_prices=gas_prices
+        cli, tmp_path, denom, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
     )
-
-    res = cli.oracle_query_currency_pairs()
-    assert len(res) > 0, res
 
     # fund a fresh eth account, deploy a contract and delegate later via it
     acc_c = derive_new_account(101)
@@ -106,8 +99,7 @@ async def exec(c, tmp_path):
         cli,
         addr_a,
         addr_c,
-        amt=10**6 + delegate_amt,
-        denom=LEGACY_DENOM,
+        amt=10**18 + delegate_amt,
         gas_prices=gas_prices,
     )
     contract = Greeter("Greeter", acc_c.key)
@@ -119,27 +111,19 @@ async def exec(c, tmp_path):
     tf_erc20_addr = denom_to_erc20_address(denom)
     tf_amt = 10**6
     transfer_amt = 1000
-    gas = 300000
 
-    assert_transfer(
-        cli, addr_a, addr_b, amt=tf_amt, denom=LEGACY_DENOM, gas_prices=gas_prices
-    )
+    # addr_b sends the erc20 tx below, so fund it for gas rather than with tf_amt
+    assert_transfer(cli, addr_a, addr_b, amt=10**18, gas_prices=gas_prices)
     assert_mint_tokenfactory_denom(
-        cli,
-        denom,
-        tf_amt,
-        is_legacy=True,
-        _from=community,
-        gas=gas,
-        gas_prices=gas_prices,
+        cli, denom, tf_amt, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
     )
     assert_transfer_tokenfactory_denom(
         cli,
         denom,
         addr_b,
         transfer_amt,
-        _from=community,
-        gas=gas,
+        _from=addr_a,
+        gas=tf_gas,
         gas_prices=gas_prices,
     )
 
@@ -164,31 +148,10 @@ async def exec(c, tmp_path):
         == transfer_amt2
     )
 
-    # historical anchor for pre-v7 contract/erc20 state
+    # historical anchor for pre-v8 contract/erc20 state
     hist_height = cli.block_height()
 
-    # tokenfactory denom auto-registers an erc20 pair owned by the module
-    # (v6.1.3 runtime behavior, x/tokenfactory/keeper/createdenom.go)
-    pair = cli.query_erc20_token_pair(denom)
-    assert pair["contract_owner"] == "OWNER_MODULE"
-
-    # deploy Wrapped OM (wOM); its migration to Wrapped MANTRA is a v7 effect
-    deployer = acc_c
-    wom = await deploy_wom(w3, deployer)
-    print("wom", wom)
-    await send_transaction(w3, deployer, to=wom, value=1000)  # deposit
-    spender = to_checksum_address(b"\x01" * 20)
-    weth = WETH(to=wom)
-    await weth.fns.approve(spender, 500).transact(w3, deployer, to=wom)
-
-    # before migration
-    assert await weth.fns.name().call(w3, to=wom) == "Wrapped OM"
-    assert await weth.fns.symbol().call(w3, to=wom) == "wOM"
-    assert await weth.fns.decimals().call(w3, to=wom) == 18
-    assert await weth.fns.balanceOf(deployer.address).call(w3, to=wom) == 1000
-    assert await weth.fns.allowance(deployer.address, spender).call(w3, to=wom) == 500
-
-    # fee grant + authorization grants (validated for scaling across v7)
+    # fee grant + authorization grants, checked again after the upgrades
     granter = cli.address("signer1")
     grantee = cli.address("signer2")
     rsp = cli.grant_fee_allowance(granter, grantee, gas_prices=gas_prices)
@@ -200,7 +163,7 @@ async def exec(c, tmp_path):
     rsp = cli.grant_fee_allowance(
         granter,
         grantee,
-        spend_limit=f"{fee_grant_spend_limit}{LEGACY_DENOM}",
+        spend_limit=f"{fee_grant_spend_limit}{DEFAULT_DENOM}",
         gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -218,7 +181,7 @@ async def exec(c, tmp_path):
         grantee,
         "delegate",
         from_=granter,
-        spend_limit=f"{max_tokens_limit}{LEGACY_DENOM}",
+        spend_limit=f"{max_tokens_limit}{DEFAULT_DENOM}",
         allow_list=[val_ops[0]],
         deny_validators=val_ops[1],
         gas_prices=gas_prices,
@@ -234,7 +197,7 @@ async def exec(c, tmp_path):
         grantee,
         "send",
         from_=granter,
-        spend_limit=f"{spend_limit}{LEGACY_DENOM}",
+        spend_limit=f"{spend_limit}{DEFAULT_DENOM}",
         gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -245,57 +208,47 @@ async def exec(c, tmp_path):
 
     rsp = cli.delegate_amount(
         val_ops[0],
-        f"{delegate_amt}{LEGACY_DENOM}",
+        f"{delegate_amt}{DEFAULT_DENOM}",
         _from="signer1",
         gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    # periodic vesting account (validated for scaling across v7)
     periodic_amt = 1
-    coin = f"{periodic_amt}{LEGACY_DENOM}"
+    coin = f"{periodic_amt}{DEFAULT_DENOM}"
     periodic_addr = create_periodic_vesting_acct(
         cli, tmp_path, coin, from_=community, gas_prices=gas_prices
     )
 
-    # v7.0.0 migration, triggered inside withdraw-rewards flow, cb freezes
-    # node2 at pre-v7 state as grpc-only archive node used later
+    # first upgrade, triggered inside withdraw-rewards flow, cb freezes node2 at
+    # its pre-upgrade state as the grpc-only archive node used later
     def cb(cli):
         wait_for_new_blocks(cli, 2)
         stop_height = cli.block_height()
         c.supervisorctl("stop", f"{CHAIN_ID}-node2")
         update_node_cmd(c.base_dir, grpc_cmd, 2, grpc_only=True)
         target_height = stop_height + WAIT_HEIGHT
-        cli = do_upgrade(c, "v7.0.0", target_height, denom=LEGACY_DENOM)
+        cli = do_upgrade(c, "v8.2.0", target_height)
         return cli, target_height
 
-    target_height = assert_withdraw_rewards(
-        c, cb, denom=LEGACY_DENOM, scale=SCALE_FACTOR, gas_prices=gas_prices
-    )
+    # validator self-delegation needs more than the cli's 200k default
+    target_height = assert_withdraw_rewards(c, cb, gas=gas, gas_prices=gas_prices)
     stop_height = target_height - WAIT_HEIGHT
 
     c.supervisorctl("start", "mantra-canary-net-1-node0")
     wait_for_new_blocks(c.cosmos_cli(), 1)
     cli = c.cosmos_cli()
 
-    verify_tax_distribution(
-        cli,
-        target_height,
-        denom=LEGACY_DENOM,
-        scale_factor=SCALE_FACTOR,
-    )
+    verify_tax_distribution(cli, target_height)
 
-    # post-v7 migration assertions
-    assert cli.get_params("mint")["max_supply"] == str(10_000_000_000 * 10**18)
-
-    # delegate via precompile after migration
+    # delegate via precompile after the upgrade
     staking = Contract(build_contract("StakingI")["abi"])
     res = await staking.fns.delegate(acc_c.address, val_ops[0], delegate_amt).transact(
         w3, acc_c, to=STAKING, gas=gas
     )
     assert res.status == 1
 
-    # tokenfactory erc20 transfer still works after migration
+    # tokenfactory erc20 transfer still works after the upgrade
     await ERC20.fns.transfer(receiver, transfer_amt2).transact(
         w3, sender, to=tf_erc20_addr, gasPrice=(await w3.eth.gas_price)
     )
@@ -305,45 +258,35 @@ async def exec(c, tmp_path):
         == transfer_amt - transfer_amt2 * 2
     )
 
-    # wom migrated to Wrapped MANTRA (4x scale is a v7 migration effect)
-    assert await weth.fns.name().call(w3, to=wom) == "Wrapped MANTRA"
-    assert await weth.fns.symbol().call(w3, to=wom) == "wMANTRA"
-    assert await weth.fns.decimals().call(w3, to=wom) == 18
-    assert await weth.fns.balanceOf(deployer.address).call(w3, to=wom) == 4000
-    assert await weth.fns.allowance(deployer.address, spender).call(w3, to=wom) == 2000
-    await weth.fns.withdraw(2000).transact(w3, deployer, to=wom)
-
-    # historical contract/erc20 calls against pre-v7 state
+    # historical contract/erc20 calls against pre-v8 state
     assert contract.contract.caller(block_identifier=hist_height).greet() == "Hello"
     await ERC20.fns.balanceOf(sender).call(
         w3, to=tf_erc20_addr, block_identifier=hist_height
     )
 
-    # periodic vesting scaled
+    # periodic vesting, fee grant and send authorization survive the upgrade
     acct = cli.account(periodic_addr)["account"]
     assert acct["type"] == "/cosmos.vesting.v1beta1.PeriodicVestingAccount"
-    expected_coin = {"denom": DEFAULT_DENOM, "amount": f"{periodic_amt * SCALE_FACTOR}"}
+    expected_coin = {"denom": DEFAULT_DENOM, "amount": f"{periodic_amt}"}
     assert acct["value"]["base_vesting_account"]["original_vesting"] == [expected_coin]
     assert acct["value"]["vesting_periods"][0]["amount"] == [expected_coin]
 
-    # fee grant scaled
     grant_detail = cli.query_grant(granter, grantee)
     assert grant_detail["allowance"]["value"] == {
         "spend_limit": [
             {
                 "denom": DEFAULT_DENOM,
-                "amount": str(fee_grant_spend_limit * SCALE_FACTOR),
+                "amount": str(fee_grant_spend_limit),
             }
         ]
     }
 
-    # send authorization scaled
     send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
     assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
         "amount"
-    ] == str(spend_limit * SCALE_FACTOR)
+    ] == str(spend_limit)
 
-    # block events / distribution export / oracle removal
+    # block events survive the upgrade and can be pruned afterwards
     def get_block_events():
         rsp = requests.get(
             f"{cli.node_rpc_http}/block_results?height={target_height}"
@@ -356,32 +299,17 @@ async def exec(c, tmp_path):
     assert len(get_block_events()) > 0
 
     # node2 is frozen as the grpc-only archive node, so only restart the
-    # two validators for the offline-export / block-events checks.
+    # two validators for the block-events check.
     nodes = [f"{CHAIN_ID}-node{i}" for i in range(2)]
-    c.supervisorctl("stop", "all")
-    distribution = cli.export(modules_to_export="distribution")["app_state"][
-        "distribution"
-    ]
-    assert "uom" not in json.dumps(distribution)
-
-    c.supervisorctl("start", *nodes)
-    wait_for_new_blocks(cli, 1)
-
-    res = cli.oracle_query_currency_pairs()
-    assert len(res) == 0, res
-
     c.supervisorctl("stop", "all")
     cli.cleanup_block_events(target_height)
     c.supervisorctl("start", *nodes)
     wait_for_new_blocks(cli, 1)
     assert len(get_block_events()) == 0
 
-    # remaining upgrades v8.0.0 -> v8.3.0
-    cli = do_upgrade(c, "v8.0.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
-    cli = do_upgrade(c, "v8.1.1", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
-    cli = do_upgrade(c, "v8.2.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
-    cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
-    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT, scale=SCALE_FACTOR)
+    # remaining upgrades v8.3.0 -> v8.4.0
+    cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
+    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
 
     verify_removed_modules(cli)
     blacklist = cli.query_blacklist()

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import tomlkit
 
 from .ibc_utils import (
     assert_ibc_transfer_flow,
@@ -9,7 +8,6 @@ from .ibc_utils import (
 )
 from .network import Mantra
 from .upgrade_utils import (
-    LEGACY_DENOM,
     build_upgrade_package,
     cleanup_upgrades_folder,
     do_upgrade,
@@ -17,12 +15,11 @@ from .upgrade_utils import (
 )
 from .utils import (
     CMD,
-    DEFAULT_DENOM,
-    DEFAULT_GAS_AMT,
-    SCALE_FACTOR,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
+
+WAIT_HEIGHT = 12
 
 
 @pytest.fixture(scope="module")
@@ -51,31 +48,13 @@ async def exec(c):
     cli = c.ibc1.cosmos_cli()
 
     def upgrade():
+        """Upgrade mid-flow, so the transfers back exercise a migrated chain."""
         nonlocal cli
-        wait_height = 30
-        target_height = cli.block_height() + wait_height
-        cli = do_upgrade(c.ibc1, "v7.0.0", target_height, denom=LEGACY_DENOM)
+        cli = do_upgrade(c.ibc1, "v8.2.0", cli.block_height() + WAIT_HEIGHT)
 
-        c.ibc1.supervisorctl("stop", "relayer-demo")
-        rly_cfg = c.hermes.configpath
-        cfg = tomlkit.parse(rly_cfg.read_text())
-        cfg["chains"][1]["gas_price"] = {
-            "denom": DEFAULT_DENOM,
-            "price": DEFAULT_GAS_AMT,
-        }
-        rly_cfg.write_text(tomlkit.dumps(cfg))
-        c.ibc1.supervisorctl("start", "relayer-demo")
-
-    await assert_ibc_transfer_flow(
-        c,
-        denom=LEGACY_DENOM,
-        upgrade_cb=upgrade,
-    )
-    cli = do_upgrade(c.ibc1, "v8.0.0", cli.block_height() + 15, scale=SCALE_FACTOR)
-    cli = do_upgrade(c.ibc1, "v8.1.1", cli.block_height() + 15, scale=SCALE_FACTOR)
-    cli = do_upgrade(c.ibc1, "v8.2.0", cli.block_height() + 15, scale=SCALE_FACTOR)
-    cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + 15, scale=SCALE_FACTOR)
-    cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + 15, scale=SCALE_FACTOR)
+    await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
+    cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
+    cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
