@@ -17,6 +17,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     CHAIN_ID,
     DEFAULT_DENOM,
@@ -39,6 +40,7 @@ from .utils import (
     ensure_comet_mempool_app,
     eth_to_bech32,
     module_address,
+    send_transaction_async,
     update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
@@ -318,6 +320,7 @@ async def run_upgrades(c, tmp_path):
     assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.4.0: {blacklist}"
     verify_v8_4_vesting_disabled(cli)
     await verify_provider(cli)
+    await verify_virtual_fee_metadata(c, w3)
 
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
@@ -416,6 +419,22 @@ async def verify_provider(cli):
 
     wait_for_new_blocks(cli, 1)
     assert cli.provider_consumer_genesis(consumer_id) is not None
+
+
+async def verify_virtual_fee_metadata(c, w3):
+    "v8.5.0 gates virtual fee collection on the display unit at exponent 18"
+    api = ports.api_port(c.base_port(0))
+    rsp = requests.get(
+        f"http://127.0.0.1:{api}/cosmos/bank/v1beta1/denoms_metadata/{DEFAULT_DENOM}"
+    ).json()
+    units = rsp["metadata"]["denom_units"]
+    display = next(u for u in units if u["denom"] == "mantra")
+    assert int(display["exponent"]) == 18, rsp
+
+    receipt = await send_transaction_async(
+        w3, ACCOUNTS["community"], to=ADDRS["signer1"], value=1000
+    )
+    assert receipt.status == 1
 
 
 def verify_v8_4_vesting_disabled(cli):

@@ -56,6 +56,22 @@ config {
             max_deposit_period: '6s',
           },
         },
+        // the v8.5.0 handler checks the fee denom's display unit is at
+        // exponent 18 before enabling virtual fee collection, and DeductFees
+        // walks the same metadata afterwards; seed it for both to read
+        bank+: {
+          denom_metadata: [{
+            description: 'The native token of MANTRA Chain',
+            denom_units: [
+              { denom: chain.evm_denom, exponent: 0 },
+              { denom: 'mantra', exponent: 18 },
+            ],
+            base: chain.evm_denom,
+            display: 'mantra',
+            name: 'MANTRA',
+            symbol: 'OM',
+          }],
+        },
         // the v8.0.0 upgrade handler seeded these; starting past it they have to
         // come from genesis instead (see verify_provider)
         provider+: {
