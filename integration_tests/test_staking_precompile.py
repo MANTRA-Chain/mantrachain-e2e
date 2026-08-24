@@ -362,9 +362,17 @@ async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
 
 
 async def test_staking_delegate_from_vesting(mantra):
-    cli = mantra.cosmos_cli()
-    w3 = mantra.async_w3
+    await _delegate_from_vesting(mantra.cosmos_cli(), mantra.async_w3)
 
+
+@pytest.mark.connect
+async def test_connect_staking_delegate_from_vesting(connect_mantra, tmp_path):
+    await _delegate_from_vesting(
+        connect_mantra.cosmos_cli(tmp_path), connect_mantra.async_w3
+    )
+
+
+async def _delegate_from_vesting(cli, w3):
     # brand-new account: create-vesting-account rejects existing accounts
     vester = Account.create()
     vester_acc = eth_to_bech32(vester.address)

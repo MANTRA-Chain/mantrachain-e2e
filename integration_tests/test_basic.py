@@ -246,27 +246,31 @@ async def test_transaction(mantra, connect_mantra):
 
     data = {"to": ADDRS["community"], "value": 10000, "gasPrice": gas_price, "gas": gas}
     res = await send_transaction_async(w3, acct, **data)
-    assert res["transactionIndex"] == 0
-    res = await w3.eth.get_transaction(res["transactionHash"])
-    assert res["transactionIndex"] == 0
 
-    # "nonce too low" when a fee bump made the first send differ from this resend
-    with pytest.raises(
-        web3.exceptions.Web3RPCError, match="tx already in mempool|nonce too low"
-    ):
-        data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
-        await send_transaction_async(w3, acct, **data)
+    # nonce-ordering semantics need a local node with exclusive nonce control;
+    # a shared live RPC races the nonce, so skip it in connect mode (mantra=None)
+    if mantra is not None:
+        assert res["transactionIndex"] == 0
+        res = await w3.eth.get_transaction(res["transactionHash"])
+        assert res["transactionIndex"] == 0
 
-    data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
-    signed = await sign_transaction(w3, acct, **data)
-    txhash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+        # "nonce too low" when a fee bump made the first send differ from this resend
+        with pytest.raises(
+            web3.exceptions.Web3RPCError, match="tx already in mempool|nonce too low"
+        ):
+            data["nonce"] = await w3.eth.get_transaction_count(sender) - 1
+            await send_transaction_async(w3, acct, **data)
 
-    data["nonce"] = await w3.eth.get_transaction_count(sender)
-    receipt = await send_transaction_async(w3, acct, **data)
-    assert receipt["status"] == 1
+        data["nonce"] = await w3.eth.get_transaction_count(sender) + 1
+        signed = await sign_transaction(w3, acct, **data)
+        txhash = await w3.eth.send_raw_transaction(signed.raw_transaction)
 
-    receipt = await wait_for_promoted_tx(w3, acct, txhash, data)
-    assert receipt["status"] == 1
+        data["nonce"] = await w3.eth.get_transaction_count(sender)
+        receipt = await send_transaction_async(w3, acct, **data)
+        assert receipt["status"] == 1
+
+        receipt = await wait_for_promoted_tx(w3, acct, txhash, data)
+        assert receipt["status"] == 1
 
     with pytest.raises(web3.exceptions.Web3RPCError, match="intrinsic gas too low"):
         await send_transaction_async(
