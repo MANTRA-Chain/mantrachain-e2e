@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
+import requests
 import tomlkit
 from eth_contract.erc20 import ERC20
 from pystarport import cluster, ports
@@ -31,14 +32,21 @@ from .utils import (
     DEFAULT_GAS_PRICE,
     KEYS,
     WETH_ADDRESS,
+    approve_proposal,
     build_and_deploy_contract_async,
     escrow_address,
     find_duplicate,
     find_fee,
     ibc_denom_address,
+    module_address,
     parse_events_rpc,
     wait_for_balance_change,
 )
+
+RATE_LIMIT_CHANNEL = "channel-0"
+# the v8.4 binary bundles the Stride fork; the ibc-go v11 module that replaces
+# it in v8.5.0 serves /ibc/apps/rate-limiting/v1 and ibc.applications.* msgs
+RATE_LIMIT_URL = "/Stride-Labs/ibc-rate-limiting/ratelimit"
 
 
 class IBCNetwork(NamedTuple):
@@ -302,6 +310,48 @@ def assert_ibc_transfer(
 
 def ibc_denom_hash(path):
     return hashlib.sha256(path.encode()).hexdigest().upper()
+
+
+def add_rate_limit(chain, tmp_path, max_percent_send, max_percent_recv, **kwargs):
+    """Pass a gov proposal rate limiting DEFAULT_DENOM on RATE_LIMIT_CHANNEL."""
+    proposal = tmp_path / "add_rate_limit.json"
+    proposal.write_text(
+        json.dumps(
+            {
+                "title": "add rate limit",
+                "summary": "add rate limit",
+                "deposit": f"1{DEFAULT_DENOM}",
+                "messages": [
+                    {
+                        "@type": "/ratelimit.v1.MsgAddRateLimit",
+                        "authority": module_address("gov"),
+                        "denom": DEFAULT_DENOM,
+                        "channel_or_client_id": RATE_LIMIT_CHANNEL,
+                        "max_percent_send": str(max_percent_send),
+                        "max_percent_recv": str(max_percent_recv),
+                        "duration_hours": "24",
+                    }
+                ],
+            }
+        )
+    )
+    # the default 200k gas falls just short of the proposal's deposit write
+    rsp = chain.cosmos_cli().submit_gov_proposal(
+        proposal, from_="community", gas=300000, **kwargs
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    approve_proposal(chain, rsp["events"], **kwargs)
+
+
+def api_url(chain, path):
+    return f"http://127.0.0.1:{ports.api_port(chain.base_port(0))}{path}"
+
+
+def query_rate_limit(chain, denom=DEFAULT_DENOM, channel=RATE_LIMIT_CHANNEL):
+    path = f"{RATE_LIMIT_URL}/ratelimit/{channel}/by_denom"
+    rsp = requests.get(api_url(chain, path), params={"denom": denom}).json()
+    assert "rate_limit" in rsp, rsp
+    return rsp["rate_limit"]
 
 
 def find_transfer_fee(cli):
