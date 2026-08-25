@@ -1,9 +1,12 @@
 import pytest
+import requests
 import web3
 
 from .utils import (
     ACCOUNTS,
     ADDRS,
+    DEFAULT_DENOM,
+    DEFAULT_GAS_PRICE,
     build_and_deploy_contract_async,
 )
 from .utils import send_transaction_async as send_transaction
@@ -96,3 +99,33 @@ async def test_block_gas_limit(mantra):
                 "gasPrice": gas_price,
             }
         )
+
+
+async def test_cosmos_tx_block_gas_limit(mantra):
+    """Cosmos tx above the block gas limit is rejected at CheckTx."""
+    cli = mantra.cosmos_cli(0)
+    rsp = requests.get(f"{cli.node_rpc_http}/consensus_params").json()
+    max_gas = int(rsp["result"]["consensus_params"]["block"]["max_gas"])
+    assert max_gas > 0, "the check only binds on a finite block gas limit"
+
+    community = cli.address("community")
+    receiver = cli.address("signer1")
+
+    def transfer(gas, **kwargs):
+        return cli.transfer(
+            community,
+            receiver,
+            f"1{DEFAULT_DENOM}",
+            gas=gas,
+            gas_prices=DEFAULT_GAS_PRICE,
+            **kwargs,
+        )
+
+    # sdk v0.54 disables the block gas meter, leaving SetUpContextDecorator
+    rsp = transfer(max_gas + 1, event_query_tx=False)
+    assert rsp["code"] != 0, rsp
+    assert "exceeds block max gas" in rsp["raw_log"], rsp["raw_log"]
+
+    # a normally sized transfer still goes through
+    rsp = transfer(200000)
+    assert rsp["code"] == 0, rsp["raw_log"]
