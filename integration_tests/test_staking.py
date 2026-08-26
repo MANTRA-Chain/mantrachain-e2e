@@ -51,13 +51,16 @@ def test_staking_unbond(mantra, connect_mantra, tmp_path):
         pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     name = "signer1"
     signer1 = cli.address(name)
-    validators = cli.validators()
+    # only bonded validators move the bonded pool, jailed ones land in not_bonded
+    bonded = BondStatus.BONDED.value
+    validators = [v for v in cli.validators() if v["status"] == bonded]
+    assert len(validators) >= 2, f"need 2 bonded validators, got {len(validators)}"
     val_ops = [v["operator_address"] for v in validators[:2]]
     balance_bf = cli.balance(signer1)
     bonded_bf = cli.staking_pool()
     amounts = [3, 4]
     fee = 0
-    gas = 250_000
+    gas = 400_000
 
     for i, amt in enumerate(amounts):
         rsp = cli.delegate_amount(
