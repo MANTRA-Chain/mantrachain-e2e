@@ -142,6 +142,7 @@
             pkgs.cosmovisor
             pkgs.rustc
             pkgs.cargo
+            pkgs.go # test_storage_damage.py installs iavlscan with it
             scripts.start-scripts
           ];
 

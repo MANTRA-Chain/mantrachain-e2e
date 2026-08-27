@@ -11,6 +11,7 @@ and asserts the node says so. That needs a binary built against all three:
 Without them the damage stays silent, which is the failure being covered.
 """
 
+import functools
 import os
 import re
 import shutil
@@ -31,6 +32,8 @@ from .utils import (
     send_transaction,
     sign_transaction,
 )
+
+IAVLSCAN = "github.com/mmsqe/iavlscan@latest"
 
 
 @pytest.fixture(scope="module")
@@ -75,26 +78,28 @@ def _tail_until(log, mark, needle, timeout=60):
         time.sleep(1)
 
 
-def _iavlscan(*args, check=True):
-    exe = os.getenv("IAVLSCAN")
-    if not exe or not os.path.exists(exe):
-        exe = shutil.which("iavlscan")
-    if not exe:
-        pytest.skip("iavlscan not installed")
-    res = subprocess.run([exe, *args], capture_output=True, text=True)
-    if check and res.returncode:
-        raise AssertionError(f"iavlscan {args}: {res.stderr[-2000:]}")
+def _go(*args):
+    env = {k: v for k, v in os.environ.items() if k != "GOROOT"}
+    res = subprocess.run(["go", *args], capture_output=True, text=True, env=env)
+    assert not res.returncode, f"go {' '.join(args)}: {res.stderr[-2000:]}"
     return res
 
 
-def _require_patched(mantra, module):
-    binary = shutil.which(mantra.chain_binary) or mantra.chain_binary
-    data = Path(binary).read_bytes()
-    dep = b"dep\t" + module.encode() + b"\t"
-    i = data.find(dep)
-    entry = data[i + len(dep) : i + len(dep) + 200] if i != -1 else b""
-    if b"=>\t" not in entry.split(b"dep\t")[0]:
-        pytest.skip(f"{binary} was built against unpatched {module.split('/')[-1]}")
+@functools.lru_cache(maxsize=1)
+def _iavlscan_bin():
+    exe = shutil.which("iavlscan")
+    if exe:
+        return exe
+    _go("install", IAVLSCAN)
+    gobin, gopath = _go("env", "GOBIN", "GOPATH").stdout.splitlines()
+    return str(Path(gobin or f"{gopath}/bin") / "iavlscan")
+
+
+def _iavlscan(*args, check=True):
+    res = subprocess.run([_iavlscan_bin(), *args], capture_output=True, text=True)
+    if check and res.returncode:
+        raise AssertionError(f"iavlscan {args}: {res.stderr[-2000:]}")
+    return res
 
 
 def _delete_cold_bank_leaf(mantra, seed):
@@ -124,7 +129,6 @@ def test_missing_node_surfaces_only_on_write(mantra_damaged):
     healthy until a write walks into that subtree.
     """
     mantra = mantra_damaged
-    # _require_patched(mantra, "github.com/cosmos/iavl")
     w3 = mantra.w3
     cli = mantra.cosmos_cli()
     cli3 = mantra.cosmos_cli(3)
@@ -165,7 +169,6 @@ def test_rebuild_refuses_a_tree_it_cannot_read(mantra_rebuild):
     writes becomes the live state.
     """
     mantra = mantra_rebuild
-    # _require_patched(mantra, "github.com/cosmos/iavl")
     home = mantra.node_home(3)
     _delete_cold_bank_leaf(mantra, 501)
 
@@ -239,7 +242,6 @@ def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
     compaction instead.
     """
     mantra = mantra_cold
-    # _require_patched(mantra, "github.com/cockroachdb/pebble")
     w3 = mantra.w3
     cli3 = mantra.cosmos_cli(3)
     proc = f"{mantra.config['chain_id']}-node3"
@@ -303,7 +305,6 @@ def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
     # Refusing the compaction is half of it: pebble reports the refusal through
     # BackgroundError, whose default writes to the Infof cosmos-db silences, so
     # without a listener of its own the node runs on and says nothing.
-    # _require_patched(mantra, "github.com/cosmos/cosmos-db")
     assert "background error" in reported, (
         "the compaction failed but nothing reached the node's log; "
         f"NewPebbleDB is where that listener belongs\n{reported[-2000:]}"
