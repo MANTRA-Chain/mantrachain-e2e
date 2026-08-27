@@ -1,3 +1,16 @@
+"""Storage damage a node cannot see.
+
+A store that has lost a node keeps answering reads, so each test here reaches
+for the moment the loss has to surface -- a write, a rebuild, a compaction --
+and asserts the node says so. That needs a binary built against all three:
+
+    pebble     https://github.com/mmsqe/pebble/tree/compaction
+    iavl       https://github.com/mmsqe/iavl/tree/fix_pebble
+    cosmos-db  https://github.com/mmsqe/cosmos-db/tree/fix_pebble
+
+Without them the damage stays silent, which is the failure being covered.
+"""
+
 import os
 import re
 import shutil
@@ -42,6 +55,17 @@ def mantra_cold(request, tmp_path_factory):
     )
 
 
+@pytest.fixture(scope="module")
+def mantra_rebuild(request, tmp_path_factory):
+    """A cluster whose node3 rebuilds its fast index over a missing node."""
+    yield from setup_custom_mantra(
+        tmp_path_factory.mktemp("rebuild"),
+        27200,
+        Path(__file__).parent / "configs/damaged-node.jsonnet",
+        chain=request.config.getoption("chain_config"),
+    )
+
+
 def _tail_until(log, mark, needle, timeout=60):
     deadline = time.time() + timeout
     while True:
@@ -73,11 +97,31 @@ def _require_patched(mantra, module):
         pytest.skip(f"{binary} was built against unpatched {module.split('/')[-1]}")
 
 
-def test_missing_node_surfaces_only_on_write(mantra_damaged):
-    """A missing cold node hides until a write reaches it.
+def _delete_cold_bank_leaf(mantra, seed):
+    """Fund an account that is never touched again, then unlink its leaf.
 
-    Reads answer from the fast index rather than the tree, so a store that has
-    lost a node looks healthy until a write walks into that subtree.
+    Leaves node3 stopped and its bank store missing a node no read goes near,
+    which is what a lost block leaves behind.
+    """
+    acct = derive_new_account(seed)
+    fund_acc(mantra.w3, acct)
+    wait_for_new_blocks(mantra.cosmos_cli(), 2)
+    key = bytes([0x02, 20]) + bytes.fromhex(acct.address[2:]) + DEFAULT_DENOM.encode()
+
+    mantra.supervisorctl("stop", f"{mantra.config['chain_id']}-node3")
+    db = mantra.node_home(3) / "data/application.db"
+    args = ("-db", str(db), "-store", "bank")
+    path = _iavlscan(*args, "-treekey", key.hex()).stdout
+    leaf = re.search(r"-delete ([0-9a-f]+)$", path, re.M).group(1)
+    _iavlscan(*args, "-delete", leaf)
+    return acct
+
+
+def test_missing_node_surfaces_only_on_write(mantra_damaged):
+    """A missing cold node hides until a write reaches it (iavl).
+
+    Reads answer from the fast index rather than the tree, so the store looks
+    healthy until a write walks into that subtree.
     """
     mantra = mantra_damaged
     # _require_patched(mantra, "github.com/cosmos/iavl")
@@ -88,20 +132,8 @@ def test_missing_node_surfaces_only_on_write(mantra_damaged):
     db = mantra.node_home(3) / "data/application.db"
     log = mantra.base_dir / "node3.log"
 
-    # A cold key: funded once, then never touched again.
-    acct = derive_new_account(500)
-    fund_acc(w3, acct)
-    wait_for_new_blocks(cli, 2)
-    balance = (
-        bytes([0x02, 20]) + bytes.fromhex(acct.address[2:]) + DEFAULT_DENOM.encode()
-    )
-
-    mantra.supervisorctl("stop", proc)
-    args = ("-db", str(db), "-store", "bank")
-    path = _iavlscan(*args, "-treekey", balance.hex()).stdout
-    leaf = re.search(r"-delete ([0-9a-f]+)$", path, re.M).group(1)
-    _iavlscan(*args, "-delete", leaf)
-    report = _iavlscan(*args, "-audit").stdout
+    acct = _delete_cold_bank_leaf(mantra, 500)
+    report = _iavlscan("-db", str(db), "-store", "bank", "-audit").stdout
     assert "affected stores: bank" in report, report
     mark = log.stat().st_size
     mantra.supervisorctl("start", proc)
@@ -123,6 +155,31 @@ def test_missing_node_surfaces_only_on_write(mantra_damaged):
     text = _tail_until(log, mark, "wrong Block.Header.AppHash")
     assert "iavl set error" in text, text[-2000:]
     assert "wrong Block.Header.AppHash" in text, text[-2000:]
+
+
+def test_rebuild_refuses_a_tree_it_cannot_read(mantra_rebuild):
+    """A fast index rebuild must fail on a missing node, not commit less (iavl).
+
+    Rolling back overwrites the latest version, which invalidates the fast
+    index, so the rollback rebuilds it from the whole tree, and what that walk
+    writes becomes the live state.
+    """
+    mantra = mantra_rebuild
+    # _require_patched(mantra, "github.com/cosmos/iavl")
+    home = mantra.node_home(3)
+    _delete_cold_bank_leaf(mantra, 501)
+
+    res = subprocess.run(
+        [mantra.chain_binary, "rollback", "--home", str(home)],
+        capture_output=True,
+        text=True,
+    )
+    said = res.stdout + res.stderr
+    assert res.returncode != 0, (
+        "the rollback rebuilt its fast index across a missing node and "
+        f"reported success; every key past it now reads as absent\n{said[-2000:]}"
+    )
+    assert "Value missing for key" in said, said[-2000:]
 
 
 def _corrupt_largest_sstable(db):
@@ -173,12 +230,13 @@ def _grow_cold_state(w3, batches, per_tx=500):
 
 
 def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
-    """A compaction must fail on damage rather than quietly pass over it.
+    """A compaction must fail on damage, not pass over it (pebble, cosmos-db).
 
-    Pebble 1.x passes over a block it cannot read and reports the compaction
-    a success, leaving an output missing exactly the keys that block held and
+    Pebble 1.x passes over a block it cannot read and calls the compaction a
+    success, leaving an output missing exactly the keys that block held and
     nothing in the log -- which is why the node that diverged on mainnet never
-    recorded a storage error. a6580b19 fails the compaction instead.
+    recorded a storage error. The branch backports a6580b19, which fails the
+    compaction instead.
     """
     mantra = mantra_cold
     # _require_patched(mantra, "github.com/cockroachdb/pebble")
