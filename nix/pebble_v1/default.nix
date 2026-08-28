@@ -1,3 +1,4 @@
+# v8.4.0 on pebble v1, carrying the format ratchet
 {
   lib,
   stdenv,
@@ -14,7 +15,7 @@ in
 builder {
   version = "v8.4.0";
   owner = "MANTRA-Chain";
-  rev = "b42c44db092f25a11209490ff42e6441a4a88688";
-  hash = "sha256-ei9hDgSUgGfSUy2srLcGpzwflSqyOpLeh7gUIkzRo2I=";
-  vendorHash = "sha256-9MwkeOT1/SBEXnDvfkDf1QJzIr7vXKM4LBEDf5QQmFc=";
+  rev = "1c47e01d4559feddb634f45fa28804c6093301b3";
+  hash = "sha256-6rVOxqle2+8rc3by7ibLCti6ye9c1KEvPsMJaLCxh9w=";
+  vendorHash = "sha256-/tJUPHXtGAWaYIDyX3Xo6bC62fLeGP+xzFSEz7t9U3A=";
 }

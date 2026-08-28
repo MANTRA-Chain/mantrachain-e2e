@@ -1,15 +1,13 @@
 """Storage damage a node cannot see.
 
-A store that has lost a node keeps answering reads, so each test here reaches
-for the moment the loss has to surface -- a write, a rebuild, a compaction --
-and asserts the node says so. That needs a binary built against all three:
+A store that has lost a node keeps answering reads, so each test reaches for
+the moment the loss has to surface -- a write, a rebuild, a compaction -- and
+asserts the node says so. Silence is the failure being covered, and breaking
+it takes a build carrying both, which pins:
 
-    pebble     https://github.com/mmsqe/pebble/tree/compaction
     iavl       https://github.com/mmsqe/iavl/tree/fix_pebble
-    cosmos-db  https://github.com/mmsqe/cosmos-db/tree/fix_pebble
-
-Without them the damage stays silent, which is the failure being covered.
-"""
+    cosmos-db  https://github.com/mmsqe/cosmos-db/tree/ratchet_pebble_format_bump_pebble_v2
+"""  # noqa: E501
 
 import functools
 import os
@@ -203,6 +201,13 @@ def _corrupt_largest_sstable(db):
     return target.name, off
 
 
+def _supervisor(mantra, *args):
+    try:
+        return mantra.supervisorctl(*args)
+    except subprocess.CalledProcessError as e:
+        return (e.output or b"").decode()
+
+
 def _restart(mantra, cli3, proc):
     mantra.supervisorctl("stop", proc)
     try:
@@ -238,8 +243,9 @@ def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
     Pebble 1.x passes over a block it cannot read and calls the compaction a
     success, leaving an output missing exactly the keys that block held and
     nothing in the log -- which is why the node that diverged on mainnet never
-    recorded a storage error. The branch backports a6580b19, which fails the
-    compaction instead.
+    recorded a storage error. From v2 the read error reaches
+    EventListener.DataCorruption, whose default ends the process, so node3
+    stops on the damage rather than quietly shedding the state behind it.
     """
     mantra = mantra_cold
     w3 = mantra.w3
@@ -271,23 +277,15 @@ def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
 
     name, off = _corrupt_largest_sstable(db)
     mark = log.stat().st_size
-    assert _restart(mantra, cli3, proc), (
-        f"node3 met the damage in {name} on startup, so it was not cold "
-        "and never reached a compaction"
-    )
 
-    # Every restart stacks another file above the damaged one, so compactions
-    # keep being offered it. A pebble that swallows the block consumes the
-    # table, and the damage leaves the database along with the keys.
-    for _ in range(8):
-        if name not in {p.name for p in db.glob("*.sst")}:
-            break
-        if not _restart(mantra, cli3, proc):
-            break
+    # Starting stacks another file above the damaged one, so a compaction is
+    # offered it soon after. A pebble that swallows the block consumes the
+    # table, and the damage leaves the database along with the keys; one that
+    # refuses says so and ends the node, so node3 is not expected to hold.
+    print(f"start said: {_supervisor(mantra, 'start', proc).strip()}")
+    reported = _tail_until(log, mark, "on-disk corruption", timeout=90)
+    _supervisor(mantra, "stop", proc)
     gone = name not in {p.name for p in db.glob("*.sst")}
-
-    reported = _tail_until(log, mark, "background error", timeout=30)
-    mantra.supervisorctl("stop", proc)
     audit = _iavlscan("-db", str(db), "-audit", check=False)
     print(f"corrupted {name} at {off}; compacted away: {gone}")
     print(audit.stdout[-600:] or audit.stderr[-600:])
@@ -302,10 +300,23 @@ def test_compaction_refuses_a_block_it_cannot_read(mantra_cold):
         "the damaged table survived but a scan no longer meets the damage, "
         f"which is neither behaviour this covers:\n{audit.stderr[-2000:]}"
     )
-    # Refusing the compaction is half of it: pebble reports the refusal through
-    # BackgroundError, whose default writes to the Infof cosmos-db silences, so
-    # without a listener of its own the node runs on and says nothing.
-    assert "background error" in reported, (
-        "the compaction failed but nothing reached the node's log; "
-        f"NewPebbleDB is where that listener belongs\n{reported[-2000:]}"
+    # Refusing the compaction is half of it: the refusal has to reach someone.
+    # Pebble names the file and ends the process, which is what a node should
+    # do with state it cannot read -- a stopped node is recoverable, one that
+    # keeps proposing without those keys is not.
+    assert "on-disk corruption" in reported, (
+        "the damaged table survived a compaction but nothing reached the "
+        f"node's log to say why\n{reported[-2000:]}"
+    )
+    assert name in reported, (
+        f"the log named a corruption but not {name}, the table this damaged"
+        f"\n{reported[-2000:]}"
+    )
+    # Which path met it is the whole point: a read reaching the damaged block
+    # would say so too, but only a compaction is in a position to rewrite the
+    # table without it. Pebble prints the stack it failed on, so that is where
+    # the compaction has to be named.
+    assert "internal/compact" in reported, (
+        "node3 stopped on the damage, but somewhere other than a compaction, "
+        f"so the block was not cold and this covered nothing\n{reported[-3000:]}"
     )

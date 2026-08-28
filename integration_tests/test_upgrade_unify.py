@@ -15,6 +15,7 @@ from .upgrade_utils import (
     cleanup_upgrades_folder,
     do_upgrade,
     setup_mantra_upgrade,
+    swap_binary,
 )
 from .utils import (
     ADDRS,
@@ -310,6 +311,11 @@ async def exec(c, tmp_path):
     # remaining upgrades v8.3.0 -> v8.4.0
     cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
     cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    # v8.4.0 ratchets the pebble format; only then can the v2 build open
+    # databases that have been through every release above. node1 is the
+    # pebbledb validator, so it is the one this is about. node2 stays frozen
+    # for the archive checks below.
+    cli = swap_binary(c, "pebble-v2", nodes=range(2))
 
     verify_removed_modules(cli)
     blacklist = cli.query_blacklist()

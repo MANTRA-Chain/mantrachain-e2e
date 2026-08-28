@@ -9,7 +9,7 @@ from pathlib import Path
 import tomlkit
 from pystarport import ports
 from pystarport.cluster import SUPERVISOR_CONFIG_FILE
-from pystarport.utils import wait_for_block, wait_for_port
+from pystarport.utils import wait_for_block, wait_for_new_blocks, wait_for_port
 
 from .network import setup_custom_mantra
 from .utils import (
@@ -51,6 +51,29 @@ def do_upgrade(c, plan_name, target):
     wait_for_block(c.cosmos_cli(), target + 1)
     wait_for_port(ports.rpc_port(base_port))
     return c.cosmos_cli()
+
+
+def swap_binary(c, name, nodes=None):
+    if nodes is None:
+        nodes = range(len(c.config["validators"]))
+
+    for i in nodes:
+        current = c.node_home(i) / "cosmovisor/current"
+        current.unlink(missing_ok=True)
+        # Absolute, as cosmovisor writes it: a relative target is resolved
+        # against the working directory rather than against the link.
+        current.symlink_to(c.node_home(i) / f"cosmovisor/upgrades/{name}")
+
+    # Named rather than "all": the ibc setup has a relayer under the same
+    # supervisor that has no reason to bounce.
+    c.supervisorctl("restart", *(f"{c.config['chain_id']}-node{i}" for i in nodes))
+    c.chain_binary = (
+        Path(c.chain_binary).parent.parent.parent / f"{name}/bin/mantrachaind"
+    )
+    wait_for_port(ports.rpc_port(c.base_port(0)))
+    cli = c.cosmos_cli()
+    wait_for_new_blocks(cli, 2)
+    return cli
 
 
 def init_cosmovisor(home, genesis):

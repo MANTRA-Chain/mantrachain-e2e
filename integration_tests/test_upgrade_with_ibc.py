@@ -12,6 +12,7 @@ from .upgrade_utils import (
     cleanup_upgrades_folder,
     do_upgrade,
     post_init,
+    swap_binary,
 )
 from .utils import (
     CMD,
@@ -55,6 +56,9 @@ async def exec(c):
     await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
     cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
     cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    # v8.4.0 ratchets the pebble format; only then can the v2 build open
+    # databases that have been through every release above.
+    cli = swap_binary(c.ibc1, "pebble-v2")
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

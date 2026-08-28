@@ -24,6 +24,11 @@
           })
           (_: pkgs: { cosmovisor = pkgs.callPackage ./nix/cosmovisor.nix { }; })
           (_: pkgs: { mantrachaind = pkgs.callPackage ./nix/mantrachain/default.nix { }; })
+          # The release before mantrachaind: pebble v1, carrying the format
+          # ratchet that mantrachaind needs a database to have been through.
+          (_: pkgs: {
+            mantrachaind-pebble-v1 = pkgs.callPackage ./nix/pebble_v1/default.nix { };
+          })
           (_: pkgs: { evmd = pkgs.callPackage ./nix/evm/default.nix { }; })
         ];
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
@@ -105,6 +110,7 @@
         in {
           default = pkgs.mantrachaind;
           mantrachaind = pkgs.mantrachaind;
+          mantrachaind-pebble-v1 = pkgs.mantrachaind-pebble-v1;
           evmd = pkgs.evmd;
           hermes = pkgs.hermes;
           cosmovisor = pkgs.cosmovisor;
