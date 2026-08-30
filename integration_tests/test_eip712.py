@@ -2,9 +2,7 @@ import base64
 import json
 
 import pytest
-import requests
 from eth_account import Account
-from pystarport import ports
 
 from .cosmostx_utils import (
     EPubKey,
@@ -20,17 +18,7 @@ from .eip712_utils import (
     encode_eip712_for_signing,
     signature_to_web3_extension,
 )
-from .utils import ADDRS, CHAIN_ID, DEFAULT_DENOM, KEYS
-
-
-def _broadcast_tx(mantra, tx_bytes_b64):
-    p = ports.api_port(mantra.base_port(0))
-    url = f"http://127.0.0.1:{p}/cosmos/tx/v1beta1/txs"
-    body = {"tx_bytes": tx_bytes_b64, "mode": "BROADCAST_MODE_SYNC"}
-    rsp = requests.post(url, json=body)
-    if not rsp.ok:
-        raise Exception(f"response code: {rsp.status_code}, {rsp.reason}, {rsp.json()}")
-    return rsp.json()["tx_response"]
+from .utils import ADDRS, CHAIN_ID, DEFAULT_DENOM, KEYS, broadcast_tx
 
 
 def _common_setup(mantra):
@@ -81,7 +69,7 @@ def test_without_extension(mantra):
     )
 
     tx_bytes_b64 = base64.b64encode(signed_tx.SerializeToString()).decode("utf-8")
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
+    rsp = broadcast_tx(mantra, tx_bytes_b64)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     events = cli.event_query_tx_for(rsp["txhash"])
@@ -100,7 +88,7 @@ def test_native_tx(mantra):
     tx_bytes_b64 = base64.b64encode(signed_tx["message"].SerializeToString()).decode(
         "utf-8"
     )
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
+    rsp = broadcast_tx(mantra, tx_bytes_b64)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     events = cli.event_query_tx_for(rsp["txhash"])
@@ -201,7 +189,7 @@ def test_multisig_eip712(mantra):
     )
 
     tx_bytes_b64 = base64.b64encode(signed_tx.SerializeToString()).decode("utf-8")
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
+    rsp = broadcast_tx(mantra, tx_bytes_b64)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     events = cli.event_query_tx_for(rsp["txhash"])

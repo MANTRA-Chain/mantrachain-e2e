@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "eureka-relayer-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1778060965,
+        "narHash": "sha256-5pM6+s9RnwLI4o1kFX0XEKrOT3OJHFYhZjw73wsnQLU=",
+        "owner": "cosmos",
+        "repo": "solidity-ibc-eureka",
+        "rev": "d1fdeda051c63bd3cace02ab73171f835f9d09a8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cosmos",
+        "repo": "solidity-ibc-eureka",
+        "rev": "d1fdeda051c63bd3cace02ab73171f835f9d09a8",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "locked": {
         "lastModified": 1761588595,
@@ -50,27 +67,46 @@
         "type": "github"
       }
     },
+    "ibc-attestor-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780051786,
+        "narHash": "sha256-FVDHYZmrcHvt9ky+iWhp+7EbIC3jhAomdNPnnaMtGeE=",
+        "owner": "mmsqe",
+        "repo": "ibc-attestor",
+        "rev": "a2f43d7b5067c1ee29e4b8978bbc39840fccc06e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mmsqe",
+        "repo": "ibc-attestor",
+        "rev": "a2f43d7b5067c1ee29e4b8978bbc39840fccc06e",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1772773020,
-        "narHash": "sha256-jW8DkUlojlNd8A9CzrMhKV+0p4T+1msKo3EI/aZB/9U=",
+        "lastModified": 1779560665,
+        "narHash": "sha256-tpyBcxPpcQb8ukyNF7DoCwfSY3VPsxHoYwj00Cayv5o=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "dd95486e5cc5c757e76b5682c5f6ed442824c346",
+        "rev": "64c08a7ca051951c8eae34e3e3cb1e202fe36786",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "release-25.11",
+        "ref": "nixos-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
     },
     "root": {
       "inputs": {
+        "eureka-relayer-src": "eureka-relayer-src",
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
         "hermes-src": "hermes-src",
+        "ibc-attestor-src": "ibc-attestor-src",
         "nixpkgs": "nixpkgs"
       }
     },

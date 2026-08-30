@@ -1,9 +1,10 @@
+import base64
 import json
 import subprocess
 
 import requests
 from pystarport.cosmoscli import CosmosCLI as PystarportCosmosCLI
-from pystarport.utils import build_cli_args_safe, interact
+from pystarport.utils import build_cli_args, build_cli_args_safe, interact
 
 from .utils import (
     DEFAULT_DENOM,
@@ -70,6 +71,48 @@ class CosmosCLI(PystarportCosmosCLI):
             home=data_dir,
         )
         return cls(data_dir, node_rpc, cmd)
+
+    def ibc_client_add_counterparty(
+        self,
+        client_id,
+        counterparty_client_id,
+        merkle_prefix,
+        from_,
+        denom,
+        gas=400_000,
+        gas_price=100_000_000_000,
+        **kwargs,
+    ):
+        prefixes = [base64.b64encode(p).decode() for p in merkle_prefix]
+        flags = build_cli_args(
+            from_=from_,
+            gas=gas,
+            gas_prices=f"{gas_price}{denom}",
+            **(self.get_kwargs() | kwargs),
+        )
+        proc = subprocess.run(
+            [
+                self.raw.cmd,
+                "tx",
+                "ibc",
+                "client",
+                "add-counterparty",
+                client_id,
+                counterparty_client_id,
+                *prefixes,
+                "-y",
+                *flags,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            proc.returncode == 0
+        ), f"add-counterparty failed: {proc.stdout}\n{proc.stderr}"
+        rsp = json.loads(proc.stdout)
+        assert rsp.get("code") == 0, f"add-counterparty failed: {rsp.get('raw_log')}"
+        return self.event_query_tx_for(rsp["txhash"])
 
     def balance(self, addr, denom=DEFAULT_DENOM, height=0):
         return super().balance(addr, denom=denom, height=height)

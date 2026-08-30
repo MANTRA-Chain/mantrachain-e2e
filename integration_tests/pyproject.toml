@@ -16,6 +16,7 @@ dependencies = [
     "flaky>=3.8.1",
     "pytest-asyncio>=1.0.0",
     "eth-contract @ git+https://github.com/yihuang/eth-contract.git@main",
+    "pydefi @ git+https://github.com/yihuang/pydefi.git@vyper_plan",
     "py-ecc>=8.0.0",
     "pyrevm @ git+https://github.com/yihuang/pyrevm.git@master",
     "backoff>=2.2.1",
@@ -24,6 +25,7 @@ dependencies = [
     "cryptography>=46.0.7",
     "requests>=2.33.0",
     "web3>=7.15.0",
+    "ibc-eureka-py @ git+https://github.com/mmsqe/ibc-eureka-py.git@main",
 ]
 
 [build-system]
