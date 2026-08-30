@@ -27,7 +27,11 @@ def ibc(request, tmp_path_factory):
 
 
 def test_rate_limited_transfer(ibc, tmp_path):
-    """Sends over the quota are rejected on the ICS4 send path."""
+    """Sends over the quota are rejected on the ICS4 send path.
+
+    The middleware only sees outgoing transfers when it is wired as the ICS4
+    wrapper of the callbacks middleware, so the rejection pins that wiring.
+    """
     cli = ibc.ibc1.cosmos_cli()
     cli2 = ibc.ibc2.cosmos_cli()
     community = cli.address("community")

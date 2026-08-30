@@ -3,18 +3,14 @@ local constant = import 'constant.jsonnet';
 local gas_price = constant.gas_price;
 local coins = constant.coins;
 local staked = constant.staked;
+local evm_mempool = import 'evm_mempool.jsonnet';
 local coin_type = if std.objectHas(chain, 'coin-type') && chain['coin-type'] != null then chain['coin-type'] else 60;
 
 {
   dotenv: '../../scripts/.env',
-  'mantra-canary-net-1': {
+  'mantra-canary-net-1': evm_mempool(chain) {
     cmd: chain.cmd,
     'start-flags': '--trace',
-    config: {
-      mempool: {
-        version: 'v1',
-      },
-    },
     'app-config': {
       evm: {
         'evm-chain-id': chain.evm_chain_id,

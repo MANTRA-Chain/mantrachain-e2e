@@ -44,9 +44,10 @@ from .utils import (
 )
 
 RATE_LIMIT_CHANNEL = "channel-0"
-# the v8.4 binary bundles the Stride fork; the ibc-go v11 module that replaces
-# it in v8.5.0 serves /ibc/apps/rate-limiting/v1 and ibc.applications.* msgs
-RATE_LIMIT_URL = "/Stride-Labs/ibc-rate-limiting/ratelimit"
+# v8.5.0 swaps the Stride fork for ibc-go v11, renaming the msgs and the REST
+# routes; the upgrade test reads a chain on either side of the swap
+RATE_LIMIT_URL = "/ibc/apps/rate-limiting/v1"
+LEGACY_RATE_LIMIT_URL = "/Stride-Labs/ibc-rate-limiting/ratelimit"
 
 
 class IBCNetwork(NamedTuple):
@@ -312,7 +313,9 @@ def ibc_denom_hash(path):
     return hashlib.sha256(path.encode()).hexdigest().upper()
 
 
-def add_rate_limit(chain, tmp_path, max_percent_send, max_percent_recv, **kwargs):
+def add_rate_limit(
+    chain, tmp_path, max_percent_send, max_percent_recv, legacy=False, **kwargs
+):
     """Pass a gov proposal rate limiting DEFAULT_DENOM on RATE_LIMIT_CHANNEL."""
     proposal = tmp_path / "add_rate_limit.json"
     proposal.write_text(
@@ -323,8 +326,12 @@ def add_rate_limit(chain, tmp_path, max_percent_send, max_percent_recv, **kwargs
                 "deposit": f"1{DEFAULT_DENOM}",
                 "messages": [
                     {
-                        "@type": "/ratelimit.v1.MsgAddRateLimit",
-                        "authority": module_address("gov"),
+                        "@type": (
+                            "/ratelimit.v1.MsgAddRateLimit"
+                            if legacy
+                            else "/ibc.applications.rate_limiting.v1.MsgAddRateLimit"
+                        ),
+                        "authority" if legacy else "signer": module_address("gov"),
                         "denom": DEFAULT_DENOM,
                         "channel_or_client_id": RATE_LIMIT_CHANNEL,
                         "max_percent_send": str(max_percent_send),
@@ -348,10 +355,15 @@ def api_url(chain, path):
 
 
 def query_rate_limit(chain, denom=DEFAULT_DENOM, channel=RATE_LIMIT_CHANNEL):
-    path = f"{RATE_LIMIT_URL}/ratelimit/{channel}/by_denom"
+    path = f"{RATE_LIMIT_URL}/ratelimit/ratelimit/{channel}/by_denom"
     rsp = requests.get(api_url(chain, path), params={"denom": denom}).json()
     assert "rate_limit" in rsp, rsp
     return rsp["rate_limit"]
+
+
+def query_legacy_rate_limits(chain):
+    "the fork's list route, served by v8.4.0 before the swap"
+    return requests.get(api_url(chain, f"{LEGACY_RATE_LIMIT_URL}/ratelimits"))
 
 
 def find_transfer_fee(cli):

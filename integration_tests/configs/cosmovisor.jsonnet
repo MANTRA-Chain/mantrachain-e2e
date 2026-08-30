@@ -4,7 +4,7 @@ local constant = import 'constant.jsonnet';
 local coins = constant.coins;
 local coin_type = config['mantra-canary-net-1'].validators[0]['coin-type'];
 
-// Merged upgrade genesis: starts from the v8.1.1 genesis binary and upgrades
+// Merged upgrade genesis: starts from the v8.3.0 genesis binary and upgrades
 // through the rest of v8.x. Topology is 2 validators (node0, node1) + 1
 // non-validating fullnode (node2). node2 is frozen at an early height and reused
 // as a grpc-only archive node for the historical-query checks, so it must not
@@ -12,6 +12,11 @@ local coin_type = config['mantra-canary-net-1'].validators[0]['coin-type'];
 config {
   'mantra-canary-net-1'+: {
     config+: {
+      mempool+: {
+        // genesis binary predates the app-side mempool; ensure_comet_mempool_app
+        // flips this back to 'app' before the v8.5.0 upgrade
+        type: 'flood',
+      },
       consensus+: {
         timeout_commit: '500ms',
       },
@@ -50,6 +55,22 @@ config {
             voting_period: '6s',
             max_deposit_period: '6s',
           },
+        },
+        // the v8.5.0 handler checks the fee denom's display unit is at
+        // exponent 18 before enabling virtual fee collection, and DeductFees
+        // walks the same metadata afterwards; seed it for both to read
+        bank+: {
+          denom_metadata: [{
+            description: 'The native token of MANTRA Chain',
+            denom_units: [
+              { denom: chain.evm_denom, exponent: 0 },
+              { denom: 'mantra', exponent: 18 },
+            ],
+            base: chain.evm_denom,
+            display: 'mantra',
+            name: 'MANTRA',
+            symbol: 'OM',
+          }],
         },
         // the v8.0.0 upgrade handler seeded these; starting past it they have to
         // come from genesis instead (see verify_provider)

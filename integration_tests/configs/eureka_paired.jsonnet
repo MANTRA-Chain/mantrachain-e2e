@@ -7,14 +7,13 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
 local constant = import 'constant.jsonnet';
 local coins = constant.coins;
-local evm_mempool = import 'evm_mempool.jsonnet';
 
 config {
   // need ``key_name`` for pystarport's multi-chain init (defaults to relayer)
-  'mantra-canary-net-1'+: evm_mempool(chain) {
+  'mantra-canary-net-1'+: {
     key_name: 'signer2',
   },
-  'mantra-canary-net-2': basic + evm_mempool(chain) {
+  'mantra-canary-net-2': basic {
     key_name: 'signer1',
     'app-config'+: {
       evm+: {

@@ -17,6 +17,7 @@ from .upgrade_utils import (
     setup_mantra_upgrade,
 )
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     CHAIN_ID,
     DEFAULT_DENOM,
@@ -36,8 +37,10 @@ from .utils import (
     create_periodic_vesting_acct,
     denom_to_erc20_address,
     derive_new_account,
+    ensure_comet_mempool_app,
     eth_to_bech32,
     module_address,
+    send_transaction_async,
     update_consumer_chain,
     update_node_cmd,
     verify_tax_distribution,
@@ -62,7 +65,7 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-async def exec(c, tmp_path):
+async def run_upgrades(c, tmp_path):
     cli = c.cosmos_cli()
     w3 = c.async_w3
     grpc_cmd = cli.raw.cmd
@@ -228,7 +231,7 @@ async def exec(c, tmp_path):
         c.supervisorctl("stop", f"{CHAIN_ID}-node2")
         update_node_cmd(c.base_dir, grpc_cmd, 2, grpc_only=True)
         target_height = stop_height + WAIT_HEIGHT
-        cli = do_upgrade(c, "v8.2.0", target_height)
+        cli = do_upgrade(c, "v8.4.0", target_height)
         return cli, target_height
 
     # validator self-delegation needs more than the cli's 200k default
@@ -307,9 +310,9 @@ async def exec(c, tmp_path):
     wait_for_new_blocks(cli, 1)
     assert len(get_block_events()) == 0
 
-    # remaining upgrades v8.3.0 -> v8.4.0
-    cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    # final upgrade, onto the first cometbft v0.39 binary
+    ensure_comet_mempool_app(c.base_dir)
+    cli = do_upgrade(c, "v8.5.0", cli.block_height() + WAIT_HEIGHT)
 
     verify_removed_modules(cli)
     blacklist = cli.query_blacklist()
@@ -317,6 +320,7 @@ async def exec(c, tmp_path):
     assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.4.0: {blacklist}"
     verify_v8_4_vesting_disabled(cli)
     await verify_provider(cli)
+    await verify_virtual_fee_metadata(c, w3)
 
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
@@ -417,6 +421,22 @@ async def verify_provider(cli):
     assert cli.provider_consumer_genesis(consumer_id) is not None
 
 
+async def verify_virtual_fee_metadata(c, w3):
+    "v8.5.0 gates virtual fee collection on the display unit at exponent 18"
+    api = ports.api_port(c.base_port(0))
+    rsp = requests.get(
+        f"http://127.0.0.1:{api}/cosmos/bank/v1beta1/denoms_metadata/{DEFAULT_DENOM}"
+    ).json()
+    units = rsp["metadata"]["denom_units"]
+    display = next(u for u in units if u["denom"] == "mantra")
+    assert int(display["exponent"]) == 18, rsp
+
+    receipt = await send_transaction_async(
+        w3, ACCOUNTS["community"], to=ADDRS["signer1"], value=1000
+    )
+    assert receipt.status == 1
+
+
 def verify_v8_4_vesting_disabled(cli):
     to_addr = cli.create_account(f"vesting_blocked{int(time.time())}")["address"]
     try:
@@ -450,5 +470,5 @@ def verify_removed_modules(cli):
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
-    await exec(custom_mantra, tmp_path)
+    await run_upgrades(custom_mantra, tmp_path)
     cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)

@@ -20,6 +20,7 @@ from .utils import (
     WEI_PER_DENOM,
     duration,
     edit_app_cfg,
+    ensure_comet_mempool_app,
     find_fee,
     find_log_event_attrs,
 )
@@ -133,6 +134,7 @@ def test_join_validator(mantra):
     res = cli0.transfer(cli0.address("community"), addr, fund)
     assert res["code"] == 0, res
     edit_app_cfg(clustercli, node_index)
+    ensure_comet_mempool_app(clustercli.data_root)
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     time.sleep(1)

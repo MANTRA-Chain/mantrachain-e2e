@@ -15,6 +15,7 @@ from .utils import (
     CMD,
     Greeter,
     edit_app_cfg,
+    ensure_comet_mempool_app,
     send_transaction,
 )
 
@@ -50,6 +51,7 @@ def test_statesync(mantra):
     # create a new node with statesync enabled
     i = clustercli.create_node(moniker="statesync", statesync=True)
     edit_app_cfg(clustercli, i)
+    ensure_comet_mempool_app(clustercli.data_root)
     clustercli.supervisor.startProcess(f"{clustercli.chain_id}-node{i}")
     # Wait 1 more block
     wait_for_block(clustercli.cosmos_cli(i), cli0.block_height() + 1)

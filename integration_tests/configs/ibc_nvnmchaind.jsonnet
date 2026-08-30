@@ -5,6 +5,7 @@ local chain = (import 'chains.jsonnet')[std.extVar('CHAIN_CONFIG')];
 local basic = config['mantra-canary-net-1'];
 local ibc_common = import 'ibc_common.jsonnet';
 local nvnmchaind_chain = (import 'chains.jsonnet').nvnmchaind;
+local evm_mempool = import 'evm_mempool.jsonnet';
 
 config {
   'mantra-canary-net-1'+: ibc_common {
@@ -27,7 +28,8 @@ config {
       },
     },
   },
-  'nvnm-canary-net-1': basic + ibc_common {
+  // ``basic`` carries the mempool of CHAIN_CONFIG's binary, this chain runs nvnmchaind
+  'nvnm-canary-net-1': basic + ibc_common + evm_mempool(nvnmchaind_chain) {
     key_name: 'signer1',
     'account-prefix': nvnmchaind_chain['account-prefix'],
     accounts: [account {

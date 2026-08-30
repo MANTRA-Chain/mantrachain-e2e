@@ -2,6 +2,7 @@ import json
 
 import pytest
 import web3
+from pystarport.utils import wait_for_block
 
 from .utils import (
     DEFAULT_DENOM,
@@ -22,7 +23,9 @@ def test_blacklist(mantra, tmp_path):
         pytest.skip("sanction module not enabled")
     community = cli.address("community")
     user = cli.create_account("user")["address"]
-    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
+    # eth_estimateGas requires the sender to afford gasLimit * baseFee, so
+    # underfunding fails with "insufficient funds" before the sanction ante runs
+    amt = 90_000_000_000_000_000 // WEI_PER_DENOM
     assert_transfer(cli, community, user, amt=amt)
     msg = {
         "@type": "/mantrachain.sanction.v1.MsgAddBlacklistAccounts",
@@ -42,15 +45,17 @@ def test_blacklist(mantra, tmp_path):
     approve_proposal(mantra, gov_rsp["events"])
     assert user in cli.query_blacklist()
 
-    err = f"{bech32_to_eth(user)} is blacklisted"
-    with pytest.raises(web3.exceptions.Web3RPCError, match=err):
-        mantra.w3.eth.send_transaction(
-            {
-                "from": bech32_to_eth(user),
-                "to": bech32_to_eth(community),
-                "value": 1000,
-            }
-        )
+    # eth_sendTransaction returns a hash before the ante runs, so the blacklisted
+    # sender isn't rejected at send, only dropped at recheck, hence never mined
+    recipient = bech32_to_eth(cli.create_account("recipient")["address"])
+    bal_before = mantra.w3.eth.get_balance(recipient)
+    txhash = mantra.w3.eth.send_transaction(
+        {"from": bech32_to_eth(user), "to": recipient, "value": 1000}
+    )
+    wait_for_block(cli, cli.block_height() + 3)
+    with pytest.raises(web3.exceptions.TransactionNotFound):
+        mantra.w3.eth.get_transaction_receipt(txhash)
+    assert mantra.w3.eth.get_balance(recipient) == bal_before
 
     msg["@type"] = "/mantrachain.sanction.v1.MsgRemoveBlacklistAccounts"
     submit_gov_proposal(mantra, tmp_path, messages=[msg])
