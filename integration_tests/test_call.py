@@ -68,54 +68,24 @@ def test_override_state(mantra):
     state = {
         ("0x" + "0" * 64): hex_state,
     }
-    data = encode_transaction_data(w3, "intValue", greeter.abi, args=[], kwargs={})
-    result = w3.eth.call(
-        {
-            "to": contract.address,
-            "data": data,
-        },
-        "latest",
-        {
-            contract.address: {
-                "code": greeter.code,
-                "stateDiff": state,
-            },
-        },
-    )
+
+    def call(fn, override):
+        data = encode_transaction_data(w3, fn, greeter.abi, args=[], kwargs={})
+        return w3.eth.call(
+            {"to": contract.address, "data": data},
+            "latest",
+            {contract.address: override},
+        )
+
+    result = call("intValue", {"code": greeter.code, "stateDiff": state})
     assert (int_value,) == w3.codec.decode(("uint256",), result)
 
     # stateDiff don't affect the other state slots
-    data = encode_transaction_data(w3, "greet", greeter.abi, args=[], kwargs={})
-    result = w3.eth.call(
-        {
-            "to": contract.address,
-            "data": data,
-        },
-        "latest",
-        {
-            contract.address: {
-                "to": contract.address,
-                "stateDiff": state,
-            },
-        },
-    )
+    result = call("greet", {"to": contract.address, "stateDiff": state})
     assert ("Hello",) == w3.codec.decode(("string",), result)
 
     # state will overrides the whole state
-    data = encode_transaction_data(w3, "greet", greeter.abi, args=[], kwargs={})
-    result = w3.eth.call(
-        {
-            "to": contract.address,
-            "data": data,
-        },
-        "latest",
-        {
-            contract.address: {
-                "to": contract.address,
-                "state": state,
-            },
-        },
-    )
+    result = call("greet", {"to": contract.address, "state": state})
     assert ("",) == w3.codec.decode(("string",), result)
 
 

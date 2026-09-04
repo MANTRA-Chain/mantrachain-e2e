@@ -103,36 +103,33 @@ def with_receipt_guard(w3):
     return w3
 
 
-class Mantra:
-    def __init__(self, base_dir, chain_binary=CMD):
+class W3Endpoints:
+    """Lazily built, cached web3 clients; subclasses supply the endpoints.
+
+    `use_websocket` drops the cache so the next access rebuilds it.
+    """
+
+    def __init__(self):
         self._w3 = None
         self._async_w3 = None
-        self.base_dir = base_dir
-        self.config = json.loads((base_dir / "config.json").read_text())
-        self.chain_binary = chain_binary
         self._use_websockets = False
 
-    def copy(self):
-        return Mantra(self.base_dir)
-
     def w3_http_endpoint(self, i=0):
-        port = ports.evmrpc_port(self.base_port(i))
-        return f"http://localhost:{port}"
+        raise NotImplementedError
 
     def w3_ws_endpoint(self, i=0):
-        port = ports.evmrpc_ws_port(self.base_port(i))
-        return f"ws://localhost:{port}"
+        raise NotImplementedError
 
     @property
     def w3(self):
         if self._w3 is None:
-            self._w3 = self.node_w3(0)
+            self._w3 = self.node_w3()
         return self._w3
 
     @property
-    def async_w3(self, i=0):
+    def async_w3(self):
         if self._async_w3 is None:
-            self._async_w3 = self.async_node_w3(0)
+            self._async_w3 = self.async_node_w3()
         return self._async_w3
 
     def node_w3(self, i=0):
@@ -151,6 +148,26 @@ class Mantra:
             AsyncWeb3(async_http_provider(self.w3_http_endpoint(i)))
         )
 
+    def use_websocket(self, use=True):
+        self._w3 = None
+        self._use_websockets = use
+
+
+class Mantra(W3Endpoints):
+    def __init__(self, base_dir, chain_binary=CMD):
+        super().__init__()
+        self.base_dir = base_dir
+        self.config = json.loads((base_dir / "config.json").read_text())
+        self.chain_binary = chain_binary
+
+    def w3_http_endpoint(self, i=0):
+        port = ports.evmrpc_port(self.base_port(i))
+        return f"http://localhost:{port}"
+
+    def w3_ws_endpoint(self, i=0):
+        port = ports.evmrpc_ws_port(self.base_port(i))
+        return f"ws://localhost:{port}"
+
     def base_port(self, i):
         return self.config["validators"][i]["base_port"]
 
@@ -163,10 +180,6 @@ class Mantra:
     def node_home(self, i=0):
         return self.base_dir / f"node{i}"
 
-    def use_websocket(self, use=True):
-        self._w3 = None
-        self._use_websockets = use
-
     def supervisorctl(self, *args):
         return supervisorctl(self.base_dir / "../tasks.ini", *args)
 
@@ -178,47 +191,23 @@ class Hermes:
         self.port = 3000
 
 
-class ConnectMantra:
+class ConnectMantra(W3Endpoints):
     def __init__(self, rpc, evm_rpc, evm_rpc_ws, chain_id, chain_binary="mantrachaind"):
-        self._w3 = None
-        self._async_w3 = None
+        super().__init__()
         self.rpc = rpc
         self.evm_rpc = evm_rpc
         self.evm_rpc_ws = evm_rpc_ws
         self.chain_id = chain_id
         self.chain_binary = chain_binary
-        self._use_websockets = False
 
-    @property
-    def w3(self):
-        if self._w3 is None:
-            self._w3 = self.node_w3()
-        return self._w3
+    def w3_http_endpoint(self, i=0):
+        return self.evm_rpc
 
-    @property
-    def async_w3(self):
-        if self._async_w3 is None:
-            self._async_w3 = self.async_node_w3()
-        return self._async_w3
-
-    def node_w3(self):
-        if self._use_websockets:
-            w3 = web3.Web3(WebSocketProvider(self.evm_rpc_ws))
-        else:
-            w3 = web3.Web3(
-                HTTPProvider(self.evm_rpc, exception_retry_configuration=RETRY_CONFIG)
-            )
-        return with_receipt_guard(w3)
-
-    def async_node_w3(self):
-        return with_receipt_guard(AsyncWeb3(async_http_provider(self.evm_rpc)))
+    def w3_ws_endpoint(self, i=0):
+        return self.evm_rpc_ws
 
     def cosmos_cli(self, home) -> CosmosCLI:
         return CosmosCLI(home, self.rpc, self.chain_binary, self.chain_id)
-
-    def use_websocket(self, use=True):
-        self._w3 = None
-        self._use_websockets = use
 
 
 def setup_mantra(path, base_port, chain):

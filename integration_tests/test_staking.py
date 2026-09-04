@@ -18,6 +18,7 @@ from .utils import (
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
     WEI_PER_DENOM,
+    assert_validator_bonded,
     duration,
     edit_app_cfg,
     find_fee,
@@ -146,16 +147,7 @@ def test_join_validator(mantra):
     time.sleep(2)
     assert len(cli.validators()) == count + 1
 
-    val = cli.validator(val_addr)
-    assert not val.get("jailed")
-    assert val["status"] == BondStatus.BONDED.value
-    assert val["tokens"] == str(staked)
-    assert val["description"]["moniker"] == moniker
-    assert val["commission"]["commission_rates"] == {
-        "rate": "0.100000000000000000",
-        "max_rate": "0.200000000000000000",
-        "max_change_rate": "0.010000000000000000",
-    }
+    assert_validator_bonded(cli, val_addr, staked, moniker)
     rsp = cli.edit_validator(commission_rate="0.2", **opts)
     assert rsp["code"] == 12, rsp["raw_log"]
     assert "commission cannot be changed more than once in 24h" in rsp["raw_log"]

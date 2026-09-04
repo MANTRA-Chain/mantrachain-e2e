@@ -1,10 +1,14 @@
-import time
-
 import pytest
 from eth_contract.erc20 import ERC20
 from pystarport.utils import wait_for_fn_async
 
-from .ibc_utils import assert_ibc_transfer_flow, prepare_network, prepare_src_callback
+from .ibc_utils import (
+    assert_ibc_transfer_flow,
+    build_ics20_tx,
+    ibc_timeout_ns,
+    prepare_network,
+    prepare_src_callback,
+)
 from .utils import (
     ACCOUNTS,
     ADDRS,
@@ -57,34 +61,32 @@ async def test_ibc_src_ack_nested_forward_blocked(ibc):
     assert receipt["status"] == 1
 
     addr_signer1 = eth_to_bech32(ADDRS["signer1"])
-    timeout_height = (0, 0)
-    timeout_timestamp = int((time.time() + 600) * 10**9)
+    # one deadline for both txs, so the forward inherits the transfer's timeout
+    timeout_timestamp = ibc_timeout_ns()
 
     # configure callback contract to attempt a nested ICS20 transfer on ack
     nested_amt = max(1, send_amt // 2)
-    cfg_tx = await cb.functions.configureNestedAckForward(
-        "transfer",
-        "channel-0",
-        erc20_denom,
-        nested_amt,
-        addr_signer1,
-        timeout_height,
-        timeout_timestamp,
-        "",
-    ).build_transaction({"from": signer2, "gas": 900_000})
+    cfg_tx = await build_ics20_tx(
+        cb.functions.configureNestedAckForward,
+        sender=signer2,
+        denom=erc20_denom,
+        amt=nested_amt,
+        receiver=addr_signer1,
+        memo="",
+        timeout_timestamp=timeout_timestamp,
+    )
     cfg_receipt = await send_transaction_async(w3, ACCOUNTS["signer2"], **cfg_tx)
     assert cfg_receipt["status"] == 1
 
-    tx = await cb.functions.ibcTransfer(
-        "transfer",
-        "channel-0",
-        erc20_denom,
-        send_amt,
-        addr_signer1,
-        timeout_height,
-        timeout_timestamp,
-        src_cb_memo,
-    ).build_transaction({"from": signer2, "gas": 900_000})
+    tx = await build_ics20_tx(
+        cb.functions.ibcTransfer,
+        sender=signer2,
+        denom=erc20_denom,
+        amt=send_amt,
+        receiver=addr_signer1,
+        memo=src_cb_memo,
+        timeout_timestamp=timeout_timestamp,
+    )
 
     txreceipt = await send_transaction_async(w3, ACCOUNTS["signer2"], **tx)
     assert txreceipt["status"] == 1

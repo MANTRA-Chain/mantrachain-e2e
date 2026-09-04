@@ -62,6 +62,7 @@ from .doc_utils import (
     ensure_registry_exists,
     get_accounts,
     get_add_registry_event_registry_id,
+    new_record,
     set_accounts_override,
     sha256_hex,
 )
@@ -1270,17 +1271,10 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
     assert registry_id > 0
 
     checksum = sha256_hex(f"ccv-gas-{registry_id}")
-    record = Record(
-        uri=f"ipfs://{checksum}",
-        checksum=checksum,
-        checksumAlgo="sha256",
+    record = new_record(
+        checksum,
+        registry_id,
         metadata=json.dumps({"document": "ccv-gas-matrix", "kind": "record"}),
-        timestamp="",
-        status="active",
-        recordId=0,
-        index=0,
-        isLatest=False,
-        registryId=registry_id,
     )
     add_record_call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
     await run_method(
@@ -1411,18 +1405,12 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
     registry_name = "oversize-algo-registry"
     registry_id = await ensure_registry_exists(w3, name=registry_name, metadata="{}")
 
-    oversized_algo = "a" * 129
-    record = Record(
-        uri="ipfs://oversize-algo",
-        checksum=sha256_hex("abc123def456"),
-        checksumAlgo=oversized_algo,
+    record = new_record(
+        sha256_hex("abc123def456"),
+        registry_id,
         metadata=json.dumps({"document": "oversize-algo"}),
-        timestamp="",
-        status="active",
-        recordId=0,
-        index=0,
-        isLatest=False,
-        registryId=registry_id,
+        uri="ipfs://oversize-algo",
+        checksum_algo="a" * 129,
     )
 
     call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))

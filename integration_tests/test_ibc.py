@@ -9,6 +9,7 @@ from pystarport.utils import wait_for_fn_async
 from .ibc_utils import (
     assert_hermes_transfer,
     assert_ibc_transfer_flow,
+    build_ics20_tx,
     ibc_denom_hash,
     prepare_network,
     prepare_src_callback,
@@ -355,19 +356,15 @@ async def test_ibc_src_ack_callback(ibc):
     cb, src_cb_memo = await prepare_src_callback(w3, "signer2", send_amt)
 
     addr_signer1 = eth_to_bech32(ADDRS["signer1"])
-    timeout_height = (0, 0)
-    timeout_timestamp = int((time.time() + 600) * 10**9)
 
-    tx = await cb.functions.ibcTransfer(
-        "transfer",
-        "channel-0",
-        erc20_denom,
-        send_amt,
-        addr_signer1,
-        timeout_height,
-        timeout_timestamp,
-        src_cb_memo,
-    ).build_transaction({"from": signer2, "gas": 900_000})
+    tx = await build_ics20_tx(
+        cb.functions.ibcTransfer,
+        sender=signer2,
+        denom=erc20_denom,
+        amt=send_amt,
+        receiver=addr_signer1,
+        memo=src_cb_memo,
+    )
 
     txreceipt = await send_transaction_async(w3, ACCOUNTS["signer2"], **tx)
     assert txreceipt["status"] == 1
@@ -392,8 +389,6 @@ async def test_ibc_src_callback_malformed_memo(ibc):
     cb_balance_bf = await ERC20.fns.balanceOf(cb.address).call(w3, to=WETH_ADDRESS)
 
     addr_signer1 = eth_to_bech32(ADDRS["signer1"])
-    timeout_height = (0, 0)
-
     cases = [
         ("empty-callback-address", '{"src_callback": {"address": ""}}'),
         (
@@ -408,18 +403,15 @@ async def test_ibc_src_callback_malformed_memo(ibc):
 
     for name, memo in cases:
         print(f"case {name}: memo={memo}")
-        timeout_timestamp = int((time.time() + 600) * 10**9)
 
-        tx = await cb.functions.ibcTransfer(
-            "transfer",
-            "channel-0",
-            erc20_denom,
-            send_amt,
-            addr_signer1,
-            timeout_height,
-            timeout_timestamp,
-            memo,
-        ).build_transaction({"from": signer2, "gas": 900_000})
+        tx = await build_ics20_tx(
+            cb.functions.ibcTransfer,
+            sender=signer2,
+            denom=erc20_denom,
+            amt=send_amt,
+            receiver=addr_signer1,
+            memo=memo,
+        )
 
         receipt = await send_transaction_async(
             w3, ACCOUNTS["signer2"], check=False, **tx

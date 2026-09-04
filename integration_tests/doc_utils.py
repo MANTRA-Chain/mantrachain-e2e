@@ -273,6 +273,19 @@ async def _tx_params(
         return {"gas": gas_limit}
 
 
+async def _send_document_call(w3: AsyncWeb3, call, signer, message: str):
+    "Transact `call` against the document precompile with fitted gas/fee params."
+    txp = await _tx_params(
+        w3,
+        sender=signer.address,
+        to=DOCUMENT_ADDRESS,
+        data=call.data,
+    )
+    receipt = await call.transact(w3, signer, to=DOCUMENT_ADDRESS, **txp)
+    assert receipt["status"] == 1, message
+    return receipt
+
+
 def _as_bytes(value) -> bytes:
     if value is None:
         return b""
@@ -621,14 +634,9 @@ async def create_registry(
     """
     admin = get_accounts()["community"]
     call = DOCUMENT_PRECOMPILE.fns.addRegistry(name, name, metadata)
-    txp = await _tx_params(
-        w3,
-        sender=admin.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+    receipt = await _send_document_call(
+        w3, call, admin, f"failed to create registry {name}"
     )
-    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
-    assert receipt.status == 1, f"failed to create registry {name}"
 
     # Read the id from the event; a name scan can't tell apart same-named registries.
     registry_id = get_add_registry_event_registry_id(receipt, caller=admin.address)
@@ -675,16 +683,12 @@ async def grant_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     call = DOCUMENT_PRECOMPILE.fns.grantRole(
         registry_id, checksum, user.address, role_value
     )
-    txp = await _tx_params(
+    receipt = await _send_document_call(
         w3,
-        sender=sender.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+        call,
+        sender,
+        f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed",
     )
-    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
-    assert (
-        receipt.status == 1
-    ), f"grantRole({registry_id}, {checksum}, {user.address}, {role}) failed"
 
     assert_document_event(
         receipt,
@@ -703,16 +707,12 @@ async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     call = DOCUMENT_PRECOMPILE.fns.revokeRole(
         registry_id, checksum, user.address, role_value
     )
-    txp = await _tx_params(
+    receipt = await _send_document_call(
         w3,
-        sender=sender.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+        call,
+        sender,
+        f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed",
     )
-    receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, **txp)
-    assert (
-        receipt.status == 1
-    ), f"revokeRole({registry_id}, {checksum}, {user.address}, {role}) failed"
 
     assert_document_event(
         receipt,
@@ -726,15 +726,25 @@ async def revoke_role(w3: AsyncWeb3, registry_id, checksum, user, role, sender):
     return receipt
 
 
-async def add_record(
-    w3: AsyncWeb3, admin, checksum, name="Test Record", registry=DOCUMENT_REGISTRY_DENOM
-):
-    registry_id = await get_registry_id(w3, registry)
-    metadata = json.dumps({"document": name, "figi": "", "individualId": ""})
-    doc = Record(
-        uri=f"ipfs://{checksum}",
+def record_metadata(document, figi="", individual_id=""):
+    return json.dumps(
+        {"document": document, "figi": figi, "individualId": individual_id}
+    )
+
+
+def new_record(
+    checksum,
+    registry_id,
+    *,
+    metadata="",
+    uri=None,
+    checksum_algo="sha256",
+) -> Record:
+    "A record to submit: the fields the chain assigns are left at their zero values."
+    return Record(
+        uri=f"ipfs://{checksum}" if uri is None else uri,
         checksum=checksum,
-        checksumAlgo="sha256",
+        checksumAlgo=checksum_algo,
         metadata=metadata,
         timestamp="",
         status="active",
@@ -743,17 +753,26 @@ async def add_record(
         isLatest=False,
         registryId=registry_id,
     )
-    call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc))
-    txp = await _tx_params(
-        w3,
-        sender=admin.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+
+
+async def add_record(
+    w3: AsyncWeb3,
+    admin,
+    checksum,
+    name="Test Record",
+    registry=DOCUMENT_REGISTRY_DENOM,
+    metadata=None,
+):
+    registry_id = await get_registry_id(w3, registry)
+    doc = new_record(
+        checksum,
+        registry_id,
+        metadata=record_metadata(name) if metadata is None else metadata,
     )
-    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
-    assert (
-        receipt.status == 1
-    ), f"failed to add record {checksum} to registry {registry}"
+    call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(doc))
+    receipt = await _send_document_call(
+        w3, call, admin, f"failed to add record {checksum} to registry {registry}"
+    )
 
     await _assert_add_record_event(
         w3,
@@ -778,14 +797,9 @@ async def update_record_status(
         record.index,
         status,
     )
-    txp = await _tx_params(
-        w3,
-        sender=admin.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+    receipt = await _send_document_call(
+        w3, call, admin, f"updateRecordStatus({status}) failed"
     )
-    receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
-    assert receipt.status == 1, f"updateRecordStatus({status}) failed"
 
     assert_document_event(
         receipt,
@@ -870,14 +884,9 @@ async def do_test_module_admin_emergency_admin_recovery(w3: AsyncWeb3):
         registry_name,
         "{}",
     )
-    txp = await _tx_params(
-        w3,
-        sender=registry_admin.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
+    await _send_document_call(
+        w3, call, registry_admin, f"failed to create registry {registry_name}"
     )
-    receipt = await call.transact(w3, registry_admin, to=DOCUMENT_ADDRESS, **txp)
-    assert receipt["status"] == 1, f"failed to create registry {registry_name}"
 
     registry_id = await get_registry_id(w3, registry_name)
 
@@ -1141,39 +1150,13 @@ async def do_test_shared_checksum_in_multi_registries(w3: AsyncWeb3):
     checksum = sha256_hex("shared_checksum_abc123")
     registry_ids = {}
     for name, document, figi, individual_id in registries:
-        registry_id = await ensure_registry_exists(w3, name=name)
-        registry_ids[name] = registry_id
-        metadata = json.dumps(
-            {"document": document, "figi": figi, "individualId": individual_id}
-        )
-        record = Record(
-            uri=f"ipfs://{checksum}",
-            checksum=checksum,
-            checksumAlgo="sha256",
-            metadata=metadata,
-            timestamp="",
-            status="active",
-            recordId=0,
-            index=0,
-            isLatest=False,
-            registryId=registry_id,
-        )
-        call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
-        txp = await _tx_params(
+        registry_ids[name] = await ensure_registry_exists(w3, name=name)
+        await add_record(
             w3,
-            sender=admin.address,
-            to=DOCUMENT_ADDRESS,
-            data=call.data,
-        )
-        receipt = await call.transact(w3, admin, to=DOCUMENT_ADDRESS, **txp)
-        assert receipt.status == 1, f"failed to add record to {name}"
-
-        await _assert_add_record_event(
-            w3,
-            receipt,
-            caller=admin.address,
-            registry_id=registry_id,
-            checksum=checksum,
+            admin,
+            checksum,
+            registry=name,
+            metadata=record_metadata(document, figi, individual_id),
         )
     records, _ = await DOCUMENT_PRECOMPILE.fns.records(
         0, checksum, 0, 0, (b"", 0, 100, False, False)

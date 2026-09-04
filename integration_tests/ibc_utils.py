@@ -4,6 +4,7 @@ import math
 import os
 import subprocess
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
@@ -55,60 +56,49 @@ class IBCNetwork(NamedTuple):
     hermes: Hermes | None
 
 
+def hermes_cmd(hermes, *args):
+    subprocess.check_call(["hermes", "--config", hermes.configpath, *args])
+
+
 def add_key(hermes, chain, mnemonic_env, key_name):
     with tempfile.NamedTemporaryFile("w", delete=False) as f:
         f.write(os.getenv(mnemonic_env))
         path = f.name
     try:
-        subprocess.check_call(
-            [
-                "hermes",
-                "--config",
-                hermes.configpath,
-                "keys",
-                "add",
-                "--hd-path",
-                "m/44'/60'/0'/0/0",
-                "--chain",
-                chain,
-                "--mnemonic-file",
-                path,
-                "--key-name",
-                key_name,
-                "--overwrite",
-            ]
+        hermes_cmd(
+            hermes,
+            "keys",
+            "add",
+            "--hd-path",
+            "m/44'/60'/0'/0/0",
+            "--chain",
+            chain,
+            "--mnemonic-file",
+            path,
+            "--key-name",
+            key_name,
+            "--overwrite",
         )
     finally:
         os.unlink(path)
 
 
 def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"):
-    subprocess.check_call(
-        [
-            "hermes",
-            "--config",
-            hermes.configpath,
-            "create",
-            "channel",
-            "--a-port",
-            "transfer",
-            "--b-port",
-            "transfer",
-            "--a-chain",
-            CHAIN_ID,
-            "--b-chain",
-            b_chain,
-            "--new-client-connection",
-            "--yes",
-        ]
-        + (
-            [
-                "--channel-version",
-                json.dumps(version),
-            ]
-            if incentivized
-            else []
-        )
+    hermes_cmd(
+        hermes,
+        "create",
+        "channel",
+        "--a-port",
+        "transfer",
+        "--b-port",
+        "transfer",
+        "--a-chain",
+        CHAIN_ID,
+        "--b-chain",
+        b_chain,
+        "--new-client-connection",
+        "--yes",
+        *(["--channel-version", json.dumps(version)] if incentivized else []),
     )
     add_key(hermes, CHAIN_ID, "SIGNER1_MNEMONIC", "signer1")
     add_key(hermes, b_chain, "SIGNER2_MNEMONIC", "signer2")
@@ -116,44 +106,36 @@ def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"
 
 def create_connection(hermes, chain_id):
     client_id = "07-tendermint-0"
-    subprocess.check_call(
-        [
-            "hermes",
-            "--config",
-            hermes.configpath,
-            "create",
-            "connection",
-            "--a-chain",
-            chain_id,
-            "--a-client",
-            client_id,
-            "--b-client",
-            client_id,
-        ]
+    hermes_cmd(
+        hermes,
+        "create",
+        "connection",
+        "--a-chain",
+        chain_id,
+        "--a-client",
+        client_id,
+        "--b-client",
+        client_id,
     )
 
 
 def create_channel(hermes, chain_id, a_port, b_port):
-    subprocess.check_call(
-        [
-            "hermes",
-            "--config",
-            hermes.configpath,
-            "create",
-            "channel",
-            "--a-chain",
-            chain_id,
-            "--a-port",
-            a_port,
-            "--b-port",
-            b_port,
-            "--order",
-            "ordered",
-            "--channel-version",
-            "1",
-            "--a-connection",
-            "connection-0",
-        ]
+    hermes_cmd(
+        hermes,
+        "create",
+        "channel",
+        "--a-chain",
+        chain_id,
+        "--a-port",
+        a_port,
+        "--b-port",
+        b_port,
+        "--order",
+        "ordered",
+        "--channel-version",
+        "1",
+        "--a-connection",
+        "connection-0",
     )
 
 
@@ -260,7 +242,7 @@ def assert_hermes_transfer(
         dst_denom = src_cli.ibc_denom(denom).get("base")
     else:
         path = f"{port}/{channel}/{denom}"
-        denom_hash = hashlib.sha256(path.encode()).hexdigest().upper()
+        denom_hash = ibc_denom_hash(path)
         dst_denom = f"ibc/{denom_hash}"
         if should_deduct_fee(hermes, src_cli.chain_id, denom):
             fee = find_transfer_fee(src_cli)
@@ -354,31 +336,38 @@ def query_rate_limit(chain, denom=DEFAULT_DENOM, channel=RATE_LIMIT_CHANNEL):
     return rsp["rate_limit"]
 
 
+MSG_TRANSFER = "/ibc.applications.transfer.v1.MsgTransfer"
+MSG_RECV_PACKET = "/ibc.core.channel.v1.MsgRecvPacket"
+MSG_CHANNEL_OPEN_INIT = "/ibc.core.channel.v1.MsgChannelOpenInit"
+
+
+def first_tx_by_action(cli, action):
+    "The oldest tx carrying `action`."
+    return cli.tx_search(f"message.action='{action}'")["txs"][0]
+
+
+def latest_tx_events(cli, action):
+    "Decoded events of the most recent tx carrying `action`."
+    tx = cli.tx_search(f"message.action='{action}'", order_by="desc", limit=1)["txs"][0]
+    return parse_events_rpc(tx["events"])
+
+
 def find_transfer_fee(cli):
-    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
-    tx = cli.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
-    events = parse_events_rpc(tx["events"])
-    return int(parse_amount(events["tx"]["fee"]))
+    return int(parse_amount(latest_tx_events(cli, MSG_TRANSFER)["tx"]["fee"]))
 
 
 def assert_receiver_events(cli, cli2: CosmosCLI, dst_eth_addr: str):
-    criteria = "message.action='/ibc.applications.transfer.v1.MsgTransfer'"
-    events = cli.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
-    events = parse_events_rpc(events["events"])
+    events = latest_tx_events(cli, MSG_TRANSFER)
     assert events.get("ibc_transfer").get("receiver") == dst_eth_addr
 
-    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
-    events = cli2.tx_search(criteria, order_by="desc", limit=1)["txs"][0]
-    events = parse_events_rpc(events["events"])
+    events = latest_tx_events(cli2, MSG_RECV_PACKET)
     assert events.get("fungible_token_packet").get("receiver") == dst_eth_addr
 
 
 def assert_dynamic_fee(cli):
     # assert that the relayer transactions do enables the dynamic fee extension option.
-    criteria = "message.action='/ibc.core.channel.v1.MsgChannelOpenInit'"
-    tx = cli.tx_search(criteria)["txs"][0]
-    events = parse_events_rpc(tx["events"])
-    fee = int(parse_amount(events["tx"]["fee"]))
+    tx = first_tx_by_action(cli, MSG_CHANNEL_OPEN_INIT)
+    fee = int(parse_amount(parse_events_rpc(tx["events"])["tx"]["fee"]))
     gas = int(tx["gas_wanted"])
     # the effective fee is decided by the max_priority_fee (base fee is zero)
     # rather than the normal gas price
@@ -388,9 +377,7 @@ def assert_dynamic_fee(cli):
 
 def assert_dup_events(cli):
     # check duplicate OnRecvPacket events
-    criteria = "message.action='/ibc.core.channel.v1.MsgRecvPacket'"
-    events = cli.tx_search(criteria)["txs"][0]["events"]
-    for event in events:
+    for event in first_tx_by_action(cli, MSG_RECV_PACKET)["events"]:
         dup = find_duplicate(event["attributes"])
         assert not dup, f"duplicate {dup} in {event['type']}"
 
@@ -547,6 +534,43 @@ async def wait_for_balance_change_async(
         return current_balance if current_balance != init_balance else None
 
     return await wait_for_fn_async("balance change", check_balance)
+
+
+def ibc_timeout_ns(seconds=600):
+    return int((time.time() + seconds) * 10**9)
+
+
+async def build_ics20_tx(
+    fn,
+    *,
+    sender,
+    denom,
+    amt,
+    receiver,
+    memo,
+    timeout_timestamp=None,
+    port="transfer",
+    channel="channel-0",
+    timeout_height=(0, 0),
+    gas=900_000,
+):
+    """Build a tx for a CounterWithCallbacks entrypoint taking ICS20 args.
+
+    Both entrypoints take the same eight positionals, so the order is spelled
+    out once here. Pass `timeout_timestamp` to share one deadline across txs.
+    """
+    if timeout_timestamp is None:
+        timeout_timestamp = ibc_timeout_ns()
+    return await fn(
+        port,
+        channel,
+        denom,
+        amt,
+        receiver,
+        timeout_height,
+        timeout_timestamp,
+        memo,
+    ).build_transaction({"from": sender, "gas": gas})
 
 
 async def prepare_src_callback(w3, funder_name: str, amt: int, gas=400_000):

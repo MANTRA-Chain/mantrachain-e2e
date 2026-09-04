@@ -35,6 +35,7 @@ from .utils import (
     address_to_bytes32,
     assert_estimate_covers_receipt,
     assert_gas_estimate_within_floor,
+    assert_validator_bonded,
     bech32_to_eth,
     build_contract,
     duration,
@@ -464,16 +465,7 @@ async def test_join_validator(mantra):
     await asyncio.sleep(2)
     assert len(cli.validators()) == count + 1
 
-    val = cli.validator(val_addr)
-    assert not val.get("jailed")
-    assert val["status"] == BondStatus.BONDED.value
-    assert val["tokens"] == str(staked)
-    assert val["description"]["moniker"] == moniker
-    assert val["commission"]["commission_rates"] == {
-        "rate": "0.100000000000000000",
-        "max_rate": "0.200000000000000000",
-        "max_change_rate": "0.010000000000000000",
-    }
+    assert_validator_bonded(cli, val_addr, staked, moniker)
 
     EDIT_VALIDATOR = PRECOMPILE.fns.editValidator
     msg = "commission cannot be changed more than once in 24h"

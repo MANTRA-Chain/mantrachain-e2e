@@ -42,6 +42,7 @@ from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from pystarport import cluster
 from pystarport.utils import (
+    BondStatus,
     wait_for_block_time,
     wait_for_fn,
     wait_for_new_blocks,
@@ -595,32 +596,21 @@ def bech32_to_eth(addr):
 
 
 def hash_func(address_type_bytes, key):
-    hasher = hashlib.sha256()
-    hasher.update(address_type_bytes)
-    th = hasher.digest()
-    hasher = hashlib.sha256()
-    hasher.update(th)
-    hasher.update(key)
-    return hasher.digest()
-
-
-def derive(address_type_bytes, key):
-    return hash_func(address_type_bytes, key)
+    "ADR-028 derivation step: sha256(sha256(type) || key)."
+    th = hashlib.sha256(address_type_bytes).digest()
+    return hashlib.sha256(th + key).digest()
 
 
 def module_address(name, *derivation_keys, prefix=ADDRESS_PREFIX):
     m_key = name.encode()
-    if len(derivation_keys) == 0:
+    if not derivation_keys:
         address_bytes = hashlib.sha256(m_key).digest()[:20]
     else:
-        m_key = m_key + b"\x00"
-        first_key = m_key + derivation_keys[0]
-        addr = hash_func("module".encode(), first_key)
+        addr = hash_func(b"module", m_key + b"\x00" + derivation_keys[0])
         for k in derivation_keys[1:]:
-            addr = derive(addr, k)
+            addr = hash_func(addr, k)
         address_bytes = addr[:20]
-    eth_address = "0x" + address_bytes.hex()
-    return eth_to_bech32(eth_address, prefix=prefix)
+    return eth_to_bech32("0x" + address_bytes.hex(), prefix=prefix)
 
 
 def generate_isolated_address(channel_id, sender):
@@ -628,24 +618,23 @@ def generate_isolated_address(channel_id, sender):
     return module_address(name, channel_id.encode(), sender.encode())
 
 
-def get_balance(cli, name):
+def resolve_address(cli, name):
+    "Look `name` up in the keyring, falling back to treating it as an address."
     try:
-        addr = cli.address(name, skip_create=True)
+        return cli.address(name, skip_create=True)
     except Exception as e:
         if "key not found" not in str(e):
             raise
-        addr = name
-    return cli.balance(addr)
+        return name
+
+
+def get_balance(cli, name):
+    return cli.balance(resolve_address(cli, name))
 
 
 def assert_balance(cli, w3, name, evm=False):
-    try:
-        addr = cli.address(name, skip_create=True)
-    except Exception as e:
-        if "key not found" not in str(e):
-            raise
-        addr = name
-    balance = get_balance(cli, name)
+    addr = resolve_address(cli, name)
+    balance = cli.balance(addr)
     wei = w3.eth.get_balance(bech32_to_eth(addr))
     assert balance == wei // WEI_PER_DENOM
     print(
@@ -655,8 +644,9 @@ def assert_balance(cli, w3, name, evm=False):
 
 
 def find_fee(rsp):
-    res = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
-    return int("".join(takewhile(lambda s: s.isdigit() or s == ".", res["fee"])))
+    "Fee amount of a tx response, stripped of its denom suffix."
+    attrs = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
+    return int("".join(takewhile(lambda s: s.isdigit() or s == ".", attrs["fee"])))
 
 
 def assert_transfer(cli, addr_a, addr_b, amt=1, denom=DEFAULT_DENOM, **kwargs):
@@ -880,8 +870,7 @@ def transfer_via_cosmos(cli, from_addr, to_addr, amount):
     )
     rsp = cli.broadcast_tx_json(tx_json, home=cli.data_dir)
     assert rsp["code"] == 0, rsp["raw_log"]
-    attrs = find_log_event_attrs(rsp["events"], "tx", lambda attrs: "fee" in attrs)
-    return int("".join(takewhile(lambda s: s.isdigit() or s == ".", attrs["fee"])))
+    return find_fee(rsp)
 
 
 class ContractAddress(rlp.Serializable):
@@ -1304,7 +1293,26 @@ async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
     receiver_balance_bf = receiver_balance
 
 
-def edit_app_cfg(cli, i, app_config={}):
+# the rates create_validator defaults to when the flags are left off
+DEFAULT_COMMISSION_RATES = {
+    "rate": "0.100000000000000000",
+    "max_rate": "0.200000000000000000",
+    "max_change_rate": "0.010000000000000000",
+}
+
+
+def assert_validator_bonded(cli, val_addr, staked, moniker):
+    "A just-created validator is bonded, unjailed and on the default commission."
+    val = cli.validator(val_addr)
+    assert not val.get("jailed")
+    assert val["status"] == BondStatus.BONDED.value
+    assert val["tokens"] == str(staked)
+    assert val["description"]["moniker"] == moniker
+    assert val["commission"]["commission_rates"] == DEFAULT_COMMISSION_RATES
+    return val
+
+
+def edit_app_cfg(cli, i, app_config=None):
     # Modify the json-rpc addresses to avoid conflict
     cluster.edit_app_cfg(
         cli.home(i) / "config/app.toml",
@@ -1447,17 +1455,15 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
     height_bf = height - 1
     denom_af = DEFAULT_DENOM if scale_factor > 1 else denom
 
-    balances_bf = {
-        "distribution": cli.balance(distribution_addr, denom=denom, height=height_bf),
-        "fee_collector": cli.balance(fee_collector_addr, denom=denom, height=height_bf),
-    }
-    balances_bf["mca"] = cli.balance(mca_addr, denom=denom, height=height_bf)
+    def balances_at(d, h):
+        return {
+            "distribution": cli.balance(distribution_addr, denom=d, height=h),
+            "fee_collector": cli.balance(fee_collector_addr, denom=d, height=h),
+            "mca": cli.balance(mca_addr, denom=d, height=h),
+        }
 
-    balances_af = {
-        "distribution": cli.balance(distribution_addr, denom=denom_af, height=height),
-        "fee_collector": cli.balance(fee_collector_addr, denom=denom_af, height=height),
-    }
-    balances_af["mca"] = cli.balance(mca_addr, denom=denom_af, height=height)
+    balances_bf = balances_at(denom, height_bf)
+    balances_af = balances_at(denom_af, height)
 
     # v8 remove precisebank, keep backward compatibility
     has_precisebank = True
@@ -1465,23 +1471,17 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
     try:
         fee_frac = cli.query_precisebank_fraction(fee_collector_addr, height=height_bf)
         balances_bf["precisebank"] = cli.balance(
-            precisebank_addr,
-            denom=denom,
-            height=height_bf,
+            precisebank_addr, denom=denom, height=height_bf
         )
         balances_af["precisebank"] = cli.balance(
-            precisebank_addr,
-            denom=denom_af,
-            height=height,
+            precisebank_addr, denom=denom_af, height=height
         )
     except Exception:
         has_precisebank = False
 
+    assert balances_af["fee_collector"] == 0
     if has_precisebank:
-        assert balances_af["fee_collector"] == 0
         assert balances_af["precisebank"] == 0
-    else:
-        assert balances_af["fee_collector"] == 0
 
     rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
     block_mint = int(
@@ -1494,24 +1494,18 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
         f"precisebank={has_precisebank} in {height}"
     )
 
-    # verify tax split
+    # verify tax split: mca takes the tax rate, distribution takes the rest
     precision = 10**18
-    expected = {}
-    for k in ["mca", "distribution"]:
-        tax_rate_int = int(mca_tax * precision)
-        if k == "mca":
-            rate = tax_rate_int
-        else:
-            rate = precision - tax_rate_int
-
-        exp = (block_mint * rate) // precision
-        # add fee_collector fractional: (frac * 4 * rate) / precision
-        if has_precisebank and fee_frac > 0 and scale_factor > 1:
-            fee_frac_scaled = fee_frac * 4
-            frac_portion = (fee_frac_scaled * rate) // precision
-            exp += frac_portion
-
-        expected[k] = exp
+    tax_rate_int = int(mca_tax * precision)
+    rates = {"mca": tax_rate_int, "distribution": precision - tax_rate_int}
+    # fee_collector fractional, rounded separately from the mint share
+    frac = (
+        fee_frac * 4 if (has_precisebank and fee_frac > 0 and scale_factor > 1) else 0
+    )
+    expected = {
+        k: (block_mint * rate) // precision + (frac * rate) // precision
+        for k, rate in rates.items()
+    }
 
     tolerance = 1
     increases = {
@@ -1597,35 +1591,37 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
     return target_height
 
 
-def create_consumer_chain(
-    cli,
-    chain_id,
-    dummy_hash="2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE",
-    **kwargs,
-):
+DUMMY_HASH = "2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE"
+CONSUMER_METADATA = {
+    "name": "name",
+    "description": "description",
+    "metadata": "metadata",
+}
+
+
+def consumer_init_params(dummy_hash=DUMMY_HASH):
     spawn_time = datetime.datetime.now(datetime.UTC)
-    top_n = 0
+    return {
+        "initial_height": {"revision_number": 1, "revision_height": 1},
+        "genesis_hash": dummy_hash,
+        "binary_hash": dummy_hash,
+        "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
+        "ccv_timeout_period": 2419200000000000,
+        "unbonding_period": 80000000000,
+        "transfer_timeout_period": 60000000000,
+        "consumer_redistribution_fraction": "0.75",
+        "blocks_per_distribution_transmission": 10,
+        "historical_entries": 1000,
+        "distribution_transmission_channel": "",
+    }
+
+
+def create_consumer_chain(cli, chain_id, dummy_hash=DUMMY_HASH, **kwargs):
     consumer_msg = {
         "chain_id": chain_id,
-        "metadata": {
-            "name": "name",
-            "description": "description",
-            "metadata": "metadata",
-        },
-        "initialization_parameters": {
-            "initial_height": {"revision_number": 1, "revision_height": 1},
-            "genesis_hash": dummy_hash,
-            "binary_hash": dummy_hash,
-            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
-            "ccv_timeout_period": 2419200000000000,
-            "unbonding_period": 80000000000,
-            "transfer_timeout_period": 60000000000,
-            "consumer_redistribution_fraction": "0.75",
-            "blocks_per_distribution_transmission": 10,
-            "historical_entries": 1000,
-            "distribution_transmission_channel": "",
-        },
-        "power_shaping_parameters": {"top_N": top_n},
+        "metadata": CONSUMER_METADATA,
+        "initialization_parameters": consumer_init_params(dummy_hash),
+        "power_shaping_parameters": {"top_N": 0},
     }
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -1651,30 +1647,12 @@ def update_consumer_chain(
     allowlisted_reward_denoms=None,
     **kwargs,
 ):
-    dummy_hash = "2D5C2110941DA54BE07CBB9FACD7E4A2E3253E79BE7BE3E5A1A7BDA518BAA4BE"
-    spawn_time = datetime.datetime.now(datetime.UTC)
     update_msg = {
         "consumer_id": consumer_id,
         "owner_address": owner_address,
         "new_owner_address": new_owner_address,
-        "metadata": {
-            "name": "name",
-            "description": "description",
-            "metadata": "metadata",
-        },
-        "initialization_parameters": {
-            "initial_height": {"revision_number": 1, "revision_height": 1},
-            "genesis_hash": dummy_hash,
-            "binary_hash": dummy_hash,
-            "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
-            "ccv_timeout_period": 2419200000000000,
-            "unbonding_period": 80000000000,
-            "transfer_timeout_period": 60000000000,
-            "consumer_redistribution_fraction": "0.75",
-            "blocks_per_distribution_transmission": 10,
-            "historical_entries": 1000,
-            "distribution_transmission_channel": "",
-        },
+        "metadata": CONSUMER_METADATA,
+        "initialization_parameters": consumer_init_params(),
         "power_shaping_parameters": {
             "top_N": 0,
             "validators_power_cap": 0,

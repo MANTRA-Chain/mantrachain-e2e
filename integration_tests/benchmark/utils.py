@@ -31,18 +31,8 @@ _chain_config = {
 
 
 def load_chain_config(config: dict):
-    if "address_prefix" in config:
-        _chain_config["address_prefix"] = config["address_prefix"]
-    if "chain_id" in config:
-        _chain_config["chain_id"] = config["chain_id"]
-    if "evm_denom" in config:
-        _chain_config["evm_denom"] = config["evm_denom"]
-    if "extended_denom" in config:
-        _chain_config["extended_denom"] = config["extended_denom"]
-    if "evm_chain_id" in config:
-        _chain_config["evm_chain_id"] = config["evm_chain_id"]
-    if "binary" in config:
-        _chain_config["binary"] = config["binary"]
+    "Override the defaults with whichever of them `config` carries."
+    _chain_config.update({k: v for k, v in config.items() if k in _chain_config})
 
 
 def get_address_prefix():
@@ -127,7 +117,7 @@ def wait_for_port(port, host="127.0.0.1", timeout=40.0):
 
 def wait_for_block(cli, target: int, timeout=40):
     height = -1
-    for i in range(timeout):
+    for _ in range(timeout):
         status = json.loads(cli("status", output="json"))
         height = int(status["sync_info"]["latest_block_height"])
 
