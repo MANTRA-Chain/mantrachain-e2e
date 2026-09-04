@@ -32,7 +32,7 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    ```sh
    jsonnet --ext-str CHAIN_CONFIG=mantrachaind integration_tests/configs/default.jsonnet | jq
    ```
-   or config with other binary 
+   or config with other binary
    ```sh
    jsonnet --ext-str CHAIN_CONFIG=evmd integration_tests/configs/default.jsonnet | jq
    ```
@@ -63,6 +63,17 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
    pytest -vv -s test_basic.py::test_simple --chain-config evmd
    ```
 
+### Make Targets
+
+- `test-e2e-nix` — build `mantrachaind` via nix, then run the suite
+- `test-e2e-nix-skip-mantrachaind-build` — reuse the `mantrachaind` on `PATH`
+- `test-connect-e2e-nix` — run the `connect` marker against a running chain
+- `dev` / `dev-lite` — enter the nix dev shell
+- `lint-py` — `flake8` over `integration_tests/`, as CI runs it
+
+`make test-e2e-nix CHAIN_CONFIG=evmd TESTS_TO_RUN=slow` —
+`TESTS_TO_RUN` does not reach `test-connect-e2e-nix`.
+
 ### Nix Build Targets
 
 - Build mantrachain for a specific platform:
@@ -77,7 +88,8 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 - `test_eip1559.py`: Tests EIP-1559 dynamic fee transactions and base fee adjustment.
 - `test_eip7702.py`: Tests EIP-7702 account abstraction and related flows.
 - `test_subscribe.py`: Tests websocket subscriptions and log/event streaming.
-- `test_upgrade.py`: Tests cosmovisor-based binary upgrades and verifies chain functionality before and after upgrade.
+- `test_upgrade_unify.py`: Tests cosmovisor-based binary upgrades and verifies chain functionality before and after upgrade.
+- `test_upgrade_with_ibc.py`: Tests the same upgrade path with an IBC counterparty chain attached.
 - `test_fee_history.py`: Tests eth_feeHistory with various scenarios including concurrent requests, parameter changes, and edge cases like beyond-head blocks and invalid percentiles.
 - `test_contract.py`: Tests deploy contract with create2 create3 and multicall.
 - `test_ibc.py` Tests IBC cross-chain transactions covering OnRecvPacket packet handling (token pairs with IBC coins, tokenfactory coins, native ERC20 tokens) and callback contract interactions.

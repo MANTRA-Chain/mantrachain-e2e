@@ -1,8 +1,7 @@
 [project]
 name = "integration-tests"
 version = "0.1.0"
-description = ""
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "End-to-end integration tests for MANTRA Chain"
 requires-python = ">=3.12"
 dependencies = [
     "pytest>=9.0.3",

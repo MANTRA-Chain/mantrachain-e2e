@@ -207,3 +207,6 @@ result
 artifacts
 benchmark-testcase
 *.tar.gz
+
+# macOS
+.DS_Store

@@ -16,7 +16,6 @@
           (_: pkgs: {
             flake-compat = flake-compat;
             go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
-            dapp = pkgs.dapp;
             solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
           })
           (_: pkgs: {
@@ -29,7 +28,9 @@
       forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in
     {
-      overlays.default = overlays;
+      # the schema wants a single overlay here, so the list has to be composed;
+      # exposing the list itself makes this unusable from a consuming flake
+      overlays.default = nixpkgs.lib.composeManyExtensions overlays;
 
       legacyPackages = forAllSystems (system:
         import nixpkgs {
