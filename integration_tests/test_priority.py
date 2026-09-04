@@ -22,15 +22,6 @@ from .utils import (
 PRIORITY_REDUCTION = 1000000
 
 
-def effective_gas_price(tx, base_fee):
-    if "maxFeePerGas" in tx:
-        # dynamic fee tx
-        return min(base_fee + tx["maxPriorityFeePerGas"], tx["maxFeePerGas"])
-    else:
-        # legacy tx
-        return tx["gasPrice"]
-
-
 def tx_priority(tx, base_fee):
     if "maxFeePerGas" in tx:
         # dynamic fee tx

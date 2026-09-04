@@ -101,11 +101,6 @@ class LegacyAminoPubKey(ProtoEntity):
     public_keys = Field("bytes", 2, repeated=True)
 
 
-class Tip(ProtoEntity):
-    amount = Field(Coin, 1, repeated=True)
-    tipper = Field("string", 2)
-
-
 class MsgEthereumTx(ProtoEntity):
     MSG_URL = "/cosmos.evm.vm.v1.MsgEthereumTx"
     data = Field(ProtoAny, 1)

@@ -66,33 +66,6 @@ def pytest_collection_modifyitems(items, config):
                 item.add_marker(skip_rollback)
 
 
-@pytest.fixture(scope="session")
-def suspend_capture(pytestconfig):
-    """
-    used to pause in testing
-
-    Example:
-    ```
-    def test_simple(suspend_capture):
-        with suspend_capture:
-            # read user input
-            print(input())
-    ```
-    """
-
-    class SuspendGuard:
-        def __init__(self):
-            self.capmanager = pytestconfig.pluginmanager.getplugin("capturemanager")
-
-        def __enter__(self):
-            self.capmanager.suspend_global_capture(in_=True)
-
-        def __exit__(self, _1, _2, _3):
-            self.capmanager.resume_global_capture()
-
-    yield SuspendGuard()
-
-
 @pytest.fixture(scope="session", params=[True])
 def mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")

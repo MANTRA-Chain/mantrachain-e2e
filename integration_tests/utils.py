@@ -81,7 +81,6 @@ WEI_PER_ETH = 10**18  # 10^18 wei == 1 ether
 WEI_PER_DENOM = int(os.getenv("WEI_PER_DENOM", 1))  # 1 wei == 1 amantra
 ADDRESS_PREFIX = os.getenv("ADDRESS_PREFIX", "mantra")
 CMD = os.getenv("CMD", "mantrachaind")
-SCALE_FACTOR = 4_000_000_000_000
 
 
 WETH_SALT = 999
@@ -725,29 +724,6 @@ async def retry_on_nonce_mismatch(fn, *args, max_retries=3, **kwargs):
                 continue
             raise e
     return None
-
-
-def call_with_retry(fn, expect_error=False, max_retries=3, retry_delay=0.1):
-    for attempt in range(1, max_retries + 1):
-        try:
-            fn()
-            if expect_error:
-                print(f"no error but query succeeded on attempt {attempt}")
-                return False
-            print(f"query successful on attempt {attempt}")
-            return True
-        except web3.exceptions.Web3RPCError as e:
-            error_str = str(e)
-            if "Error while dialing" in error_str or "connection refused" in error_str:
-                if expect_error:
-                    return True
-                if attempt == max_retries:
-                    print(f"failed after {max_retries} attempts")
-                    return False
-                time.sleep(retry_delay)
-            else:
-                raise
-    return False
 
 
 async def call_with_retry_async(fn, expect_error=False, max_retries=3, retry_delay=0.1):

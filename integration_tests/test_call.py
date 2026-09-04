@@ -7,7 +7,6 @@ from typing import Iterable, Unpack
 import aiohttp
 import pyrevm
 import pytest
-from cprotobuf import Field, ProtoEntity
 from eth_contract.erc20 import ERC20
 from eth_contract.slots import parse_balance_slot
 from eth_contract.utils import ZERO_ADDRESS
@@ -160,17 +159,6 @@ async def test_override_erc20_state(mantra):
             {WETH_ADDRESS: {state_type: state}},
         )
         assert fn.decode(res) == int_value
-
-
-class StateEntry(ProtoEntity):
-    key = Field("bytes", 1)
-    value = Field("bytes", 2)
-    delete = Field("bool", 3)
-
-
-class StoreStateDiff(ProtoEntity):
-    name = Field("string", 1)
-    entries = Field(StateEntry, 2, repeated=True)
 
 
 def create_bank_balance_key(addr_bytes, denom):

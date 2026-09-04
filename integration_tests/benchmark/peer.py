@@ -31,10 +31,6 @@ def get_val_initial_balance():
     return Balance(amount=VAL_INITIAL_AMOUNT, denom=get_evm_denom())
 
 
-def get_val_staked_balance():
-    return Balance(amount=VAL_STAKED_AMOUNT, denom=get_evm_denom())
-
-
 def get_acc_initial_balance():
     return Balance(amount=ACC_INITIAL_AMOUNT, denom=get_evm_denom())
 

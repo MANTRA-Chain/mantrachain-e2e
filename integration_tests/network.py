@@ -286,7 +286,6 @@ def setup_custom_mantra(
         yield c
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        # proc.terminate()
         proc.wait()
 
 
@@ -342,5 +341,4 @@ def setup_geth(path, base_port):
             yield Geth(w3, async_w3)
         finally:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            # proc.terminate()
             proc.wait()
