@@ -178,27 +178,28 @@ class Contract:
         self.code = res["code"]
         self.abi = res["abi"]
         self.contract = None
+        self.receipt = None
         self.w3 = None
 
     def deploy(self, w3, exp_gas_used=None):
-        "Deploy contract on `w3` and return the receipt."
-        if self.contract is None:
-            self.w3 = w3
-            contract = self.w3.eth.contract(abi=self.abi, bytecode=self.bytecode)
-            transaction = contract.constructor().build_transaction(
-                {"chainId": self.chain_id, "from": self.owner}
-            )
-            receipt = send_transaction(self.w3, transaction, self.private_key)
-            if exp_gas_used is not None:
-                assert (
-                    exp_gas_used == receipt.gasUsed
-                ), f"exp {exp_gas_used}, got {receipt.gasUsed}"
-            self.contract = self.w3.eth.contract(
-                address=receipt.contractAddress, abi=self.abi
-            )
-            return receipt
-        else:
-            return receipt
+        "Deploy contract on `w3` and return the receipt; a redeploy is a no-op."
+        if self.contract is not None:
+            return self.receipt
+        self.w3 = w3
+        contract = self.w3.eth.contract(abi=self.abi, bytecode=self.bytecode)
+        transaction = contract.constructor().build_transaction(
+            {"chainId": self.chain_id, "from": self.owner}
+        )
+        receipt = send_transaction(self.w3, transaction, self.private_key)
+        if exp_gas_used is not None:
+            assert (
+                exp_gas_used == receipt.gasUsed
+            ), f"exp {exp_gas_used}, got {receipt.gasUsed}"
+        self.contract = self.w3.eth.contract(
+            address=receipt.contractAddress, abi=self.abi
+        )
+        self.receipt = receipt
+        return receipt
 
 
 class Greeter(Contract):
@@ -1340,7 +1341,7 @@ def edit_app_cfg(cli, i, app_config={}):
                     "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
                 },
             },
-            app_config,
+            app_config or {},
         ),
     )
 

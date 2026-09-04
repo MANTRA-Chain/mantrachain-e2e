@@ -179,7 +179,8 @@ def test_concurrent(custom_mantra, tmp_path):
     assert all(sublist == res[0] for sublist in res), res
 
 
-def assert_histories(w3, cli, blk, percentiles=[]):
+def assert_histories(w3, cli, blk, percentiles=None):
+    percentiles = percentiles or []
     call = w3.provider.make_request
     method = "eth_feeHistory"
     field = "baseFeePerGas"
