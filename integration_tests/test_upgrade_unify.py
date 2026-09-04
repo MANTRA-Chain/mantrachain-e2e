@@ -318,6 +318,11 @@ async def exec(c, tmp_path):
     verify_v8_4_vesting_disabled(cli)
     await verify_provider(cli)
 
+    # final hop: v8.5.0-pre.1 is a code-only hotfix (evm atomic-commit patch,
+    # migrations only) -- there is no new on-chain state to assert; do_upgrade
+    # itself proves the chain cosmovisor-upgrades past the height without halting.
+    cli = do_upgrade(c, "v8.5.0-pre.1", cli.block_height() + WAIT_HEIGHT)
+
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
     api_port = ports.api_port(c.base_port(grpc_node))

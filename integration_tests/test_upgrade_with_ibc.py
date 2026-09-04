@@ -55,6 +55,7 @@ async def exec(c):
     await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
     cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
     cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
+    cli = do_upgrade(c.ibc1, "v8.5.0-pre.1", cli.block_height() + WAIT_HEIGHT)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):

@@ -8,7 +8,8 @@ let
     genesis = pkgs.callPackage ../../nix/v8.1.1/default.nix {};
     "v8.2.0" = pkgs.callPackage ../../nix/v8.2.0/default.nix {};
     "v8.3.0" = pkgs.callPackage ../../nix/v8.3.0/default.nix {};
-    "v8.4.0" = if useLiteMode
+    "v8.4.0" = pkgs.callPackage ../../nix/v8.4.0/default.nix {};
+    "v8.5.0-pre.1" = if useLiteMode
       then common.localMantrachaindWrapper
       else pkgs.mantrachaind;
   };
