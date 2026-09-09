@@ -1416,11 +1416,27 @@ async def do_test_registries_by_name(w3: AsyncWeb3, search_url: str):
         # of them normalizes differently.
         assert rest(name, mode) == expected, (name, mode)
 
-    # LIKE metacharacters are escaped, so they match literally instead of
-    # turning the lookup into a wildcard over every registry.
-    for wildcard in ("%", "_", f"{base[:3]}%"):
-        hits = await registries_by_name(w3, wildcard, MatchMode.CONTAINS)
-        assert not hits & all_three, wildcard
+    # LIKE metacharacters are matched literally instead of turning the lookup
+    # into a wildcard over every registry.
+    hits = await registries_by_name(w3, f"{base[:3]}%", MatchMode.CONTAINS)
+    assert not hits & all_three
+
+    # CONTAINS is served from a trigram index, so it needs three characters;
+    # shorter queries are refused on both interfaces rather than scanned.
+    for short in ("%", "cc"):
+        await _assert_call_reverts_contains(
+            w3,
+            sender=ADDRS["community"],
+            to=DOCUMENT_ADDRESS,
+            data=DOCUMENT_PRECOMPILE.fns.registriesByName(
+                short, int(MatchMode.CONTAINS), NAME_INDEX_PAGE
+            ).data,
+            expect_err="at least 3 characters",
+        )
+        rsp = requests.get(
+            search_url, params={"name": short, "mode": int(MatchMode.CONTAINS)}
+        )
+        assert rsp.status_code == 400, f"{short!r}: {rsp.status_code} {rsp.text}"
 
     # An unknown mode is rejected rather than falling back to exact, which
     # would read as "no such registry".
