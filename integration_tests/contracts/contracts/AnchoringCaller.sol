@@ -43,6 +43,34 @@ interface IAnchoringPrecompile {
         address account,
         string calldata role
     ) external;
+
+    struct Registry {
+        uint64 id;
+        string name;
+        string description;
+        string creator;
+        string createdAt;
+        string metadata;
+    }
+
+    struct PageRequest {
+        bytes key;
+        uint64 offset;
+        uint64 limit;
+        bool countTotal;
+        bool reverse;
+    }
+
+    struct PageResponse {
+        bytes nextKey;
+        uint64 total;
+    }
+
+    function registriesByName(
+        string calldata name,
+        uint8 matchMode,
+        PageRequest calldata pagination
+    ) external returns (Registry[] memory, PageResponse memory);
 }
 
 contract AnchoringCaller {
@@ -138,6 +166,24 @@ contract AnchoringCaller {
                 checksum,
                 account,
                 role
+            )
+        );
+    }
+
+    // registriesByName is a view, but the precompile still refuses a contract
+    // caller: its answer comes from a node-local index, so no contract may
+    // build on it. Routed through call() rather than staticcall() so the
+    // rejection is attributable to the EOA gate and not to write protection.
+    function callRegistriesByName(
+        string calldata name,
+        uint8 matchMode
+    ) external {
+        _callAnchoring(
+            abi.encodeWithSelector(
+                IAnchoringPrecompile.registriesByName.selector,
+                name,
+                matchMode,
+                IAnchoringPrecompile.PageRequest("", 0, 200, false, false)
             )
         );
     }

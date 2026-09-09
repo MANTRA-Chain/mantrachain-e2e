@@ -5,6 +5,7 @@ from dataclasses import astuple, dataclass
 from enum import Enum
 
 import pytest
+import requests
 from eth_contract.contract import Contract as ContractAsync
 from web3 import AsyncWeb3
 
@@ -55,6 +56,20 @@ def get_accounts():
 class Role(str, Enum):
     EDITOR = "editor"
     VIEWER = "viewer"
+
+
+class MatchMode(int, Enum):
+    """Mirrors anchoring's RegistryNameMatchMode, passed as uint8 over the ABI.
+
+    UNSPECIFIED is a distinct wire value that the chain treats as EXACT; both
+    are kept so a test can pin that equivalence rather than assume it.
+    """
+
+    UNSPECIFIED = 0
+    EXACT = 1
+    PREFIX = 2
+    SUFFIX = 3
+    CONTAINS = 4
 
 
 @dataclass
@@ -151,9 +166,7 @@ DOCUMENT_PRECOMPILE_ABI = [
     """
     function registriesByName(
         string memory name,
-        string memory namePrefix,
-        string memory nameSuffix,
-        string memory nameContains,
+        uint8 matchMode,
         PageRequest memory pagination
     ) returns (Registry[] memory, PageResponse memory)
     """,
@@ -455,6 +468,23 @@ def assert_document_event(receipt, *, event: str, caller: str, **expected):
 def get_add_registry_event_registry_id(receipt, *, caller: str) -> int:
     args = find_document_event(receipt, event="AddRegistry", caller=caller)
     return int(args["registryId"])
+
+
+async def deploy_anchoring_caller(w3, sender=ADDRS["community"]):
+    """Deploy AnchoringCaller and return (address, contract)."""
+    artifact = build_contract("AnchoringCaller")
+    receipt = send_transaction(
+        w3,
+        {
+            "from": sender,
+            "data": artifact["bytecode"],
+            "gas": 2_000_000,
+            **consumer_eip1559_fees(w3),
+        },
+        KEYS["community"],
+    )
+    assert receipt.status == 1
+    return receipt.contractAddress, ContractAsync(artifact["abi"])
 
 
 async def do_test_contract_cannot_call_anchoring_sensitive_methods(
@@ -1328,3 +1358,146 @@ async def do_test_registry_only_query_respects_limit(w3: AsyncWeb3):
     assert len(page) == 1
     assert page[0].registryId == registry_id_b
     assert page[0].checksum == checksum_b
+
+
+NAME_INDEX_PAGE = (b"", 0, 200, False, False)
+
+
+async def registries_by_name(w3: AsyncWeb3, name: str, mode: MatchMode) -> set[int]:
+    """Ids returned by the registriesByName precompile query."""
+    regs, _ = await DOCUMENT_PRECOMPILE.fns.registriesByName(
+        name, int(mode), NAME_INDEX_PAGE
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    return {int(r[0]) for r in regs}
+
+
+async def do_test_registries_by_name(w3: AsyncWeb3, search_url: str):
+    def rest(name, mode):
+        # grpc-gateway populates this enum with strconv.ParseInt, so the numeric
+        # value is required; the enum's name is rejected as a bad request.
+        rsp = requests.get(search_url, params={"name": name, "mode": int(mode)})
+        assert rsp.ok, f"{rsp.status_code} {rsp.reason}: {rsp.text}"
+        # uint64 comes back as a JSON string under the proto3 mapping
+        return {int(r["id"]) for r in rsp.json().get("registries") or []}
+
+    # Two registries differing only in case: the index lowercases at write time,
+    # so either spelling returns both — and the result is multi-valued, which
+    # names being non-unique demands.
+    base = "ccv-name-index"
+    mixed_id = await create_registry(w3, "CCV-Name-Index", metadata="{}")
+    lower_id = await create_registry(w3, base, metadata="{}")
+    tail_id = await create_registry(w3, f"{base}-tail", metadata="{}")
+    both = {mixed_id, lower_id}
+    all_three = both | {tail_id}
+
+    for name, mode, expected in (
+        # UNSPECIFIED is what a caller gets by leaving the field out; pin that
+        # it behaves as EXACT rather than assuming it.
+        (base, MatchMode.UNSPECIFIED, both),
+        (base, MatchMode.EXACT, both),
+        ("CCV-NAME-INDEX", MatchMode.EXACT, both),
+        (f"{base}-tail", MatchMode.EXACT, {tail_id}),
+        # Exact stays exact: no partial, no trimming.
+        (f"{base}-nope", MatchMode.EXACT, set()),
+        ("ccv-name", MatchMode.EXACT, set()),
+        (f"{base} ", MatchMode.EXACT, set()),
+        # Prefix/suffix/contains stay anchored, and all fold case.
+        ("ccv-name", MatchMode.PREFIX, all_three),
+        ("CCV-NAME", MatchMode.PREFIX, all_three),
+        ("cv-name", MatchMode.PREFIX, set()),
+        ("-tail", MatchMode.SUFFIX, {tail_id}),
+        ("index", MatchMode.SUFFIX, both),
+        ("-tai", MatchMode.SUFFIX, set()),
+        ("name-index", MatchMode.CONTAINS, all_three),
+        ("AME-IND", MatchMode.CONTAINS, all_three),
+    ):
+        assert await registries_by_name(w3, name, mode) == expected, (name, mode)
+        # Both interfaces read the same index, so a divergence here means one
+        # of them normalizes differently.
+        assert rest(name, mode) == expected, (name, mode)
+
+    # LIKE metacharacters are escaped, so they match literally instead of
+    # turning the lookup into a wildcard over every registry.
+    for wildcard in ("%", "_", f"{base[:3]}%"):
+        hits = await registries_by_name(w3, wildcard, MatchMode.CONTAINS)
+        assert not hits & all_three, wildcard
+
+    # An unknown mode is rejected rather than falling back to exact, which
+    # would read as "no such registry".
+    await _assert_call_reverts_contains(
+        w3,
+        sender=ADDRS["community"],
+        to=DOCUMENT_ADDRESS,
+        data=DOCUMENT_PRECOMPILE.fns.registriesByName(base, 9, NAME_INDEX_PAGE).data,
+        expect_err="invalid matchMode",
+    )
+
+    # The plain registries listing is untouched by any of this.
+    listing, _ = await DOCUMENT_PRECOMPILE.fns.registries(0, NAME_INDEX_PAGE).call(
+        w3, to=DOCUMENT_ADDRESS
+    )
+    assert all_three <= {int(r[0]) for r in listing}
+
+
+async def do_test_registries_by_name_rejects_transaction(async_w3: AsyncWeb3, w3):
+    """Served as a call, refused as a transaction.
+
+    The index is opt-in per node and may lag, so validators can disagree about
+    the answer; letting it into block execution would make them disagree about
+    the block. EOA-gating alone would not catch this — the sender here is an
+    EOA calling the precompile directly.
+    """
+    # Shares no substring with the registries in do_test_registries_by_name, so
+    # neither test depends on the order the two run in.
+    name = "ccv-txgate-registry"
+    registry_id = await create_registry(async_w3, name, metadata="{}")
+    call = DOCUMENT_PRECOMPILE.fns.registriesByName(
+        name, int(MatchMode.EXACT), NAME_INDEX_PAGE
+    )
+
+    assert await registries_by_name(async_w3, name, MatchMode.EXACT) == {registry_id}
+
+    receipt = send_transaction(
+        w3,
+        {
+            "to": DOCUMENT_ADDRESS,
+            "from": ADDRS["community"],
+            "data": call.data,
+            "gas": 1_000_000,
+            **consumer_eip1559_fees(w3),
+        },
+        KEYS["community"],
+    )
+    assert receipt.status == 0, "registriesByName must not succeed in a transaction"
+
+    # The same input as a call at that block is served, so the refusal was the
+    # gate and not a bad request. An eth_call always runs as a query, so the
+    # revert reason is only observable from the transaction path; the unit
+    # tests pin its text.
+    regs, _ = await call.call(
+        async_w3, to=DOCUMENT_ADDRESS, block_identifier=receipt.blockNumber
+    )
+    assert {int(r[0]) for r in regs} == {registry_id}
+
+
+async def do_test_contract_cannot_call_registries_by_name(
+    w3,
+    *,
+    sender=ADDRS["community"],
+):
+    """Refused for a contract even though registriesByName is a view.
+
+    Reads of consensus state stay open to contracts; this one does not, because
+    its answer is node-local.
+    """
+    contract_addr, caller = await deploy_anchoring_caller(w3, sender)
+    # The name is immaterial: the call is refused before the index is read.
+    call = caller.fns.callRegistriesByName("ccv-contract-caller", int(MatchMode.EXACT))
+    await _assert_call_reverts_contains(
+        w3,
+        sender=sender,
+        to=contract_addr,
+        data=call.data,
+        expect_err="sender not an eoa",
+        gas=1_000_000,
+    )

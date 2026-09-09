@@ -38,6 +38,12 @@ config {
         'evm-chain-id': nvnmchaind_chain.evm_chain_id,
       },
       'minimum-gas-prices': '0' + nvnmchaind_chain.evm_denom,
+      // Off by default on a real node. Turned on here so registriesByName and
+      // Query/SearchRegistriesByName have an index to read; without it both
+      // report the index is disabled rather than answering.
+      'anchoring-name-index': {
+        enabled: true,
+      },
     },
     cmd: nvnmchaind_chain.cmd,
     genesis+: {
