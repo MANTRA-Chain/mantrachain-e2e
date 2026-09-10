@@ -5,8 +5,13 @@ import pytest
 from .utils import DEFAULT_DENOM, find_log_event_attrs
 
 
-def test_wasm(mantra):
-    cli = mantra.cosmos_cli()
+@pytest.mark.connect
+def test_connect_wasm(connect_mantra, tmp_path):
+    test_wasm(None, connect_mantra, tmp_path)
+
+
+def test_wasm(mantra, connect_mantra, tmp_path):
+    cli = connect_mantra.cosmos_cli(tmp_path)
     if not cli.has_module("wasm"):
         pytest.skip("wasm module not enabled")
     name = "signer1"
