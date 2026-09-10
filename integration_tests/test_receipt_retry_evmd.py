@@ -22,6 +22,8 @@ MATRIX = {
 }
 PROMPT = 0.5
 CLIENT_TIMEOUT = 70  # past the node's 30s http-timeout
+# without the app-side mempool the node serves queries but rejects submission
+MEMPOOL_DISABLED = "EVM mempool is disabled"
 
 
 @pytest.fixture(scope="module", params=list(MATRIX))
@@ -31,9 +33,19 @@ def matrix(request):
 
 @pytest.fixture(scope="module")
 def node(matrix, tmp_path_factory):
+    "mantrachaind does not carry the receipt fix yet"
     path = tmp_path_factory.mktemp(matrix)
     cfg = Path(__file__).parent / f"configs/receipt-{matrix}.jsonnet"
     yield from setup_custom_mantra(path, MATRIX[matrix], cfg, chain="evmd")
+
+
+def mempool_on(matrix):
+    return matrix.endswith("mempool-on")
+
+
+def queued(w3):
+    status = w3.provider.make_request("txpool_status", [])["result"]
+    return int(status["queued"], 16)
 
 
 def raw_receipt(node, tx_hash):
@@ -68,9 +80,14 @@ def test_unknown_hash(node):
     assert elapsed < PROMPT, f"null took {elapsed:.2f}s"
 
 
-def test_mined_tx(node):
+def test_mined_tx(node, matrix):
     w3 = node.w3
-    receipt = send_transaction(w3, {"to": ADDRS["signer1"], "value": 1000})
+    tx = {"to": ADDRS["signer1"], "value": 1000}
+    if not mempool_on(matrix):
+        with pytest.raises(web3.exceptions.Web3RPCError, match=MEMPOOL_DISABLED):
+            send_transaction(w3, tx)
+        pytest.skip("tx submission over JSON-RPC needs the app-side mempool")
+    receipt = send_transaction(w3, tx)
     result, elapsed = raw_receipt(node, w3.to_hex(receipt["transactionHash"]))
     assert result is not None
     assert elapsed < PROMPT, f"receipt took {elapsed:.2f}s"
@@ -79,15 +96,13 @@ def test_mined_tx(node):
 def test_queued_tx(node, matrix):
     w3 = node.w3
     signed = nonce_gap_tx(w3, KEYS["signer2"])
-    mempool_on = matrix.endswith("mempool-on")
-    try:
-        w3.eth.send_raw_transaction(signed.raw_transaction)
-    except web3.exceptions.Web3RPCError as e:
-        assert not mempool_on, e
+    if not mempool_on(matrix):
+        with pytest.raises(web3.exceptions.Web3RPCError, match=MEMPOOL_DISABLED):
+            w3.eth.send_raw_transaction(signed.raw_transaction)
+        assert queued(w3) == 0, "txpool namespace must still answer, with an empty pool"
         pytest.skip("no app-side mempool to queue in")
-    assert mempool_on, "nonce-gap tx accepted without an app-side mempool"
-    status = w3.provider.make_request("txpool_status", [])["result"]
-    assert int(status["queued"], 16) >= 1, status
+    w3.eth.send_raw_transaction(signed.raw_transaction)
+    assert queued(w3) >= 1
 
     result, elapsed = raw_receipt(node, w3.to_hex(signed.hash))
     assert result is None

@@ -59,8 +59,8 @@ buildGoModule' rec {
   src = fetchFromGitHub {
     owner = "mmsqe";
     repo = "evm";
-    rev = "7f888f34bbb58ccbb41302d9b484b6d3469bbbd2";
-    hash = "sha256-faBs1PiV0E615+VUdFLYxG2ThCf3TTooHx558sX93jQ=";
+    rev = "224695e75b023661e797f32c00216bf40a390c03";
+    hash = "sha256-jznsai1wSvm7dz9371kUsZUdqpsNoH9IPx+SY+3D0v4=";
   };
   
   vendorHash = "sha256-EX/tigeu/n8NjXbxZrEai/giG1WPqn29WDM74tWTSAA=";
