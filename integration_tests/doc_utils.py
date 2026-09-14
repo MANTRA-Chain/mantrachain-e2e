@@ -3,6 +3,7 @@ import json
 import time
 from dataclasses import astuple, dataclass
 from enum import Enum
+from pathlib import Path
 
 import pytest
 import requests
@@ -90,148 +91,11 @@ class Record:
         return cls(*t)
 
 
-DOCUMENT_PRECOMPILE_ABI = [
-    """
-    struct Record {
-        string uri;
-        string checksum;
-        string checksumAlgo;
-        string metadata;
-        string timestamp;
-        string status;
-        uint64 recordId;
-        uint64 index;
-        bool isLatest;
-        uint64 registryId;
-    }
-    """,
-    """
-    struct Registry {
-        uint64 id;
-        string name;
-        string description;
-        string creator;
-        string createdAt;
-        string metadata;
-    }
-    """,
-    """
-    struct PageRequest {
-        bytes key;
-        uint64 offset;
-        uint64 limit;
-        bool countTotal;
-        bool reverse;
-    }
-    """,
-    """
-    struct PageResponse {
-        bytes nextKey;
-        uint64 total;
-    }
-    """,
-    """
-    function addRegistry(
-        string memory name,
-        string memory description,
-        string memory metadata
-    ) returns (uint64 registryId)
-    """,
-    """
-    function addRecord(Record memory record) returns (uint64 recordId)
-    """,
-    """
-    function updateRecordStatus(
-        uint64 registryId,
-        uint64 recordId,
-        uint64 index,
-        string memory status
-    )
-    """,
-    """
-    function records(
-        uint64 registryId,
-        string memory checksum,
-        uint64 recordId,
-        uint64 index,
-        PageRequest memory pagination
-    ) returns (Record[] memory, PageResponse memory)
-    """,
-    """
-    function registries(
-        uint64 registryId,
-        PageRequest memory pagination
-    ) returns (Registry[] memory, PageResponse memory)
-    """,
-    """
-    function registriesByName(
-        string memory name,
-        uint8 matchMode,
-        PageRequest memory pagination
-    ) returns (Registry[] memory, PageResponse memory)
-    """,
-    """
-    function grantRole(
-        uint64 registryId,
-        string memory checksum,
-        address account,
-        string memory role
-    )
-    """,
-    """
-    function revokeRole(
-        uint64 registryId,
-        string memory checksum,
-        address account,
-        string memory role
-    )
-    """,
-    """
-    event AddRegistry(
-        address indexed caller,
-        uint64 registryId,
-        string name
-    )
-    """,
-    """
-    event AddRecord(
-        address indexed caller,
-        uint64 registryId,
-        uint64 recordId,
-        uint64 index,
-        string checksum
-    )
-    """,
-    """
-    event UpdateRecordStatus(
-        address indexed caller,
-        uint64 registryId,
-        uint64 recordId,
-        uint64 index,
-        string status
-    )
-    """,
-    """
-    event GrantRole(
-        address indexed caller,
-        uint64 registryId,
-        string checksum,
-        address account,
-        string role
-    )
-    """,
-    """
-    event RevokeRole(
-        address indexed caller,
-        uint64 registryId,
-        string checksum,
-        address account,
-        string role
-    )
-    """,
-]
+ANCHORING_ABI = json.loads(
+    (Path(__file__).parents[1] / "contracts/layout/anchoring.abi.json").read_text()
+)
 
-DOCUMENT_PRECOMPILE = ContractAsync.from_abi(DOCUMENT_PRECOMPILE_ABI)
+DOCUMENT_PRECOMPILE = ContractAsync(ANCHORING_ABI)
 DOCUMENT_ADDRESS = "0x0000000000000000000000000000000000000A00"
 DOCUMENT_REGISTRY_DENOM = "test-registry"
 DOCUMENT_GAS = 100_000

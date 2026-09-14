@@ -16,7 +16,7 @@
           (_: pkgs: {
             flake-compat = flake-compat;
             go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
-            solc_0_8_21 = pkgs.callPackage ./nix/solc.nix { };
+            solc_0_8_28 = pkgs.callPackage ./nix/solc.nix { };
           })
           (_: pkgs: {
             hermes = pkgs.callPackage ./nix/hermes.nix { src = hermes-src; };
@@ -132,7 +132,7 @@
 
           commonInputs = [
             pkgs.nixfmt-rfc-style
-            pkgs.solc_0_8_21
+            pkgs.solc_0_8_28
             pkgs.python312
             pkgs.python312Packages.jsonnet
             pkgs.uv

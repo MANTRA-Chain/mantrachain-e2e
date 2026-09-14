@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.28;
 
-interface IAnchoringPrecompileCtor {
-    function addRegistry(
-        string calldata name,
-        string calldata description,
-        string calldata metadata
-    ) external returns (uint64 registryId);
-}
+import {IAnchoring} from "nvnm-contracts/IAnchoring.sol";
 
 contract AnchoringConstructorCaller {
-    IAnchoringPrecompileCtor internal constant ANCHORING =
-        IAnchoringPrecompileCtor(0x0000000000000000000000000000000000000A00);
+    IAnchoring internal constant ANCHORING =
+        IAnchoring(0x0000000000000000000000000000000000000A00);
 
     bool public registryCreated;
     uint64 public createdRegistryId;

@@ -161,7 +161,7 @@ def test_connect_events(connect_mantra):
     test_events(None, connect_mantra, exp_gas_used=None)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=806200):
+def test_events(mantra, connect_mantra, exp_gas_used=778887):
     w3 = connect_mantra.w3
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
@@ -403,7 +403,7 @@ def test_message_call(mantra, connect_mantra, diff=10):
     assert elapsed < diff  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx, key=key)
-    assert 22768266 == receipt.cumulativeGasUsed
+    assert 22300228 == receipt.cumulativeGasUsed
     assert receipt.status == 1, "shouldn't fail"
     assert len(receipt.logs) == iterations
 

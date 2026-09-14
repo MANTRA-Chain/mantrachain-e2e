@@ -40,7 +40,7 @@ async def test_gas_call(mantra):
         {"from": ADDRS["community"], "gasPrice": await w3.eth.gas_price}
     )
     receipt = await w3.eth.wait_for_transaction_receipt(txhash)
-    assert receipt.gasUsed == 267649
+    assert receipt.gasUsed == 267441
 
 
 async def _send_eip7623_tx(w3, gas: int):

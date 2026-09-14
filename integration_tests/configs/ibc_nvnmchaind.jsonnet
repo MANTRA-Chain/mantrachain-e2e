@@ -89,12 +89,12 @@ config {
             permissionless_registration: true,
           },
           token_pairs: [{
-            erc20_address: '0x85a3167Ff6b19c2f25CA4d3636941FFF1bC19b80',
+            erc20_address: '0x35AB55d8a491d6926DFa91d1C8E226e1Cabd419E',
             denom: nvnmchaind_chain.evm_denom,
             enabled: true,
             contract_owner: 'OWNER_MODULE',
           }],
-          native_precompiles: ['0x85a3167Ff6b19c2f25CA4d3636941FFF1bC19b80'],
+          native_precompiles: ['0x35AB55d8a491d6926DFa91d1C8E226e1Cabd419E'],
         },
         gov+: {
           params+: {

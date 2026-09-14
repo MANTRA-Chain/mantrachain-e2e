@@ -1,81 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.28;
 
-interface IAnchoringPrecompile {
-    struct Record {
-        string uri;
-        string checksum;
-        string checksumAlgo;
-        string metadata;
-        string timestamp;
-        string status;
-        uint64 recordId;
-        uint64 index;
-        bool isLatest;
-        uint64 registryId;
-    }
-
-    function addRegistry(
-        string calldata name,
-        string calldata description,
-        string calldata metadata
-    ) external returns (uint64 registryId);
-
-    function addRecord(Record calldata record) external returns (uint64 recordId);
-
-    function updateRecordStatus(
-        uint64 registryId,
-        uint64 recordId,
-        uint64 index,
-        string calldata status
-    ) external;
-
-    function grantRole(
-        uint64 registryId,
-        string calldata checksum,
-        address account,
-        string calldata role
-    ) external;
-
-    function revokeRole(
-        uint64 registryId,
-        string calldata checksum,
-        address account,
-        string calldata role
-    ) external;
-
-    struct Registry {
-        uint64 id;
-        string name;
-        string description;
-        string creator;
-        string createdAt;
-        string metadata;
-    }
-
-    struct PageRequest {
-        bytes key;
-        uint64 offset;
-        uint64 limit;
-        bool countTotal;
-        bool reverse;
-    }
-
-    struct PageResponse {
-        bytes nextKey;
-        uint64 total;
-    }
-
-    function registriesByName(
-        string calldata name,
-        uint8 matchMode,
-        PageRequest calldata pagination
-    ) external returns (Registry[] memory, PageResponse memory);
-}
+import {IAnchoring} from "nvnm-contracts/IAnchoring.sol";
 
 contract AnchoringCaller {
-    IAnchoringPrecompile internal constant ANCHORING =
-        IAnchoringPrecompile(0x0000000000000000000000000000000000000A00);
+    IAnchoring internal constant ANCHORING =
+        IAnchoring(0x0000000000000000000000000000000000000A00);
 
     function _callAnchoring(bytes memory data) internal {
         (bool ok, bytes memory ret) = address(ANCHORING).call(data);
@@ -96,7 +26,7 @@ contract AnchoringCaller {
         string calldata metadata
     ) external returns (uint64 registryId) {
         bytes memory data = abi.encodeWithSelector(
-            IAnchoringPrecompile.addRegistry.selector,
+            IAnchoring.addRegistry.selector,
             name,
             description,
             metadata
@@ -121,7 +51,7 @@ contract AnchoringCaller {
     ) external {
         _callAnchoring(
             abi.encodeWithSelector(
-                IAnchoringPrecompile.grantRole.selector,
+                IAnchoring.grantRole.selector,
                 registryId,
                 checksum,
                 account,
@@ -130,9 +60,9 @@ contract AnchoringCaller {
         );
     }
 
-    function callAddRecord(IAnchoringPrecompile.Record calldata record) external {
+    function callAddRecord(IAnchoring.Record calldata record) external {
         _callAnchoring(
-            abi.encodeWithSelector(IAnchoringPrecompile.addRecord.selector, record)
+            abi.encodeWithSelector(IAnchoring.addRecord.selector, record)
         );
     }
 
@@ -144,7 +74,7 @@ contract AnchoringCaller {
     ) external {
         _callAnchoring(
             abi.encodeWithSelector(
-                IAnchoringPrecompile.updateRecordStatus.selector,
+                IAnchoring.updateRecordStatus.selector,
                 registryId,
                 recordId,
                 index,
@@ -161,7 +91,7 @@ contract AnchoringCaller {
     ) external {
         _callAnchoring(
             abi.encodeWithSelector(
-                IAnchoringPrecompile.revokeRole.selector,
+                IAnchoring.revokeRole.selector,
                 registryId,
                 checksum,
                 account,
@@ -180,10 +110,10 @@ contract AnchoringCaller {
     ) external {
         _callAnchoring(
             abi.encodeWithSelector(
-                IAnchoringPrecompile.registriesByName.selector,
+                IAnchoring.registriesByName.selector,
                 name,
                 matchMode,
-                IAnchoringPrecompile.PageRequest("", 0, 200, false, false)
+                IAnchoring.PageRequest("", 0, 200, false, false)
             )
         );
     }

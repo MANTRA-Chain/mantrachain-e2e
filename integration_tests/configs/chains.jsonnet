@@ -76,7 +76,7 @@
   },
   nvnmchaind: {
     'account-prefix': 'nvnm',
-    evm_denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
+    evm_denom: 'ibc/63C02A419B6F71F81AB7350335AB55D8A491D6926DFA91D1C8E226E1CABD419E',
     cmd: 'nvnmchaind',
     chain_id: 'nvnm_58886-1',
     evm_chain_id: 58886,
@@ -85,7 +85,7 @@
         description: 'The wrapped version of MantraUSD, which is the ERC20 token bridged from the provider chain and used as the gas token on the consumer chain.',
         denom_units: [
           {
-            denom: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
+            denom: 'ibc/63C02A419B6F71F81AB7350335AB55D8A491D6926DFA91D1C8E226E1CABD419E',
             exponent: 0,
           },
           {
@@ -93,7 +93,7 @@
             exponent: 18,
           },
         ],
-        base: 'ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80',
+        base: 'ibc/63C02A419B6F71F81AB7350335AB55D8A491D6926DFA91D1C8E226E1CABD419E',
         display: 'wmantrausd',
         name: 'transfer/channel-1/wmantraUSD IBC token',
         symbol: 'wmantraUSD',

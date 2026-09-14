@@ -112,7 +112,8 @@ def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
     return f"ibc/{ibc_denom_hash(f'transfer/{transfer_channel_id}/{WMANTRAUSD_DENOM}')}"
 
 
-# ibc/88C1928A7164E0F5166D1D1585A3167FF6B19C2F25CA4D3636941FFF1BC19B80
+# Follow wmantraUSD's bytecode via its CREATE2 address, so a compiler change moves it:
+# ibc/63C02A419B6F71F81AB7350335AB55D8A491D6926DFA91D1C8E226E1CABD419E
 WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
 
 # tokenfactory denom used by test_provider_bank_hooks_fire_on_reward_distribution.

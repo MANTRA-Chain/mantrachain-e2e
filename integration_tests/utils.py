@@ -528,6 +528,9 @@ def build_contract(
         "--no-cbor-metadata",
         "--base-path",
         str(contracts_dir),
+        # The contracts submodule sits outside base-path; remappings.txt points at it.
+        "--include-path",
+        str(base_dir.parent),
         # "$(cat contracts/remappings.txt)",
     ]
 
