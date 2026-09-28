@@ -1,3 +1,4 @@
+import json
 import struct
 from pathlib import Path
 
@@ -6,7 +7,7 @@ import rlp
 from eth_hash.auto import keccak
 from eth_keys import keys
 from eth_rlp import HashableRLP
-from pystarport.ledger import ZEMU_API_PORT, Ledger
+from pystarport.ledger import SPECULOS_IMAGE, ZEMU_API_PORT, Ledger
 from pystarport.ledger_utils import (
     LedgerAPDU,
     LedgerButton,
@@ -15,10 +16,9 @@ from pystarport.ledger_utils import (
 from rlp.sedes import big_endian_int, binary
 
 from .network import setup_custom_mantra
-from .utils import bech32_to_eth
+from .utils import DEFAULT_DENOM, WEI_PER_DENOM, bech32_to_eth, find_fee
 
 pytestmark = pytest.mark.slow
-pytest.skip("wait next bump deps", allow_module_level=True)
 
 
 class EthereumTransaction(HashableRLP):
@@ -39,7 +39,7 @@ class EthereumTransaction(HashableRLP):
 def custom_mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("hw_evm")
-    ledger = Ledger(elf_file="app_evm.elf", model="nanosp")
+    ledger = Ledger(elf_file="app_evm.elf", model="nanosp", image=SPECULOS_IMAGE)
     ledger.start()
     assert ledger.is_running(), "Failed to start Ledger simulator"
     try:
@@ -128,7 +128,7 @@ def test_ledger(custom_mantra):
     cli = custom_mantra.cosmos_cli()
     w3 = custom_mantra.w3
     hw = cli.address("hw")
-    assert cli.balance(hw) == 8000
+    assert cli.balance(hw) == 8_000_000_000_000_000_000 // WEI_PER_DENOM
     tx = {
         "from": bech32_to_eth(hw),
         "to": bech32_to_eth(cli.address("community")),
@@ -140,3 +140,31 @@ def test_ledger(custom_mantra):
     txhash = w3.eth.send_raw_transaction(signed_tx["rawTransaction"])
     receipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert receipt["status"] == 1
+
+
+def test_ledger_cosmos_tx(custom_mantra):
+    """A Ledger key on the Ethereum app signs a cosmos tx from the CLI, no flags."""
+    cli = custom_mantra.cosmos_cli()
+    hw = cli.address("hw")
+    community = cli.address("community")
+    hw_balance = cli.balance(hw)
+    community_balance = cli.balance(community)
+    amt = 1000
+    output = cli.raw(
+        "tx",
+        "bank",
+        "send",
+        hw,
+        community,
+        f"{amt}{DEFAULT_DENOM}",
+        "-y",
+        **cli.get_kwargs_with_gas(),
+    )
+    # the sdk prints its sign-mode fallback on stdout before the json
+    assert b"using sign-mode 'amino-json'" in output
+    rsp = json.loads(output.splitlines()[-1])
+    assert rsp["code"] == 0, rsp["raw_log"]
+    rsp = cli.event_query_tx_for(rsp["txhash"])
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert cli.balance(hw) == hw_balance - amt - find_fee(rsp)
+    assert cli.balance(community) == community_balance + amt
