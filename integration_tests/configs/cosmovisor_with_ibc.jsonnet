@@ -1,6 +1,6 @@
 local ibc = import 'ibc_evmd.jsonnet';
 
-// Same v8.1.1 genesis binary as cosmovisor.jsonnet, paired with an evmd chain so
+// Same v8.3.0 genesis binary as cosmovisor.jsonnet, paired with an evmd chain so
 // the upgrades run while an IBC channel is live.
 ibc {
   'mantra-canary-net-1'+: {
@@ -9,14 +9,6 @@ ibc {
         'evm-chain-id': 5887,
       },
     },
-    // hidden ``coin-type`` keeps pystarport from passing --coin-type, which the
-    // genesis binary does not accept; its built-in default is the same 60
-    validators: [validator {
-      'coin-type':: validator['coin-type'],
-    } for validator in super.validators],
-    accounts: [account {
-      'coin-type':: account['coin-type'],
-    } for account in super.accounts],
     genesis+: {
       consensus_params: {
         block: {

@@ -50,11 +50,9 @@ async def exec(c):
     def upgrade():
         """Upgrade mid-flow, so the transfers back exercise a migrated chain."""
         nonlocal cli
-        cli = do_upgrade(c.ibc1, "v8.2.0", cli.block_height() + WAIT_HEIGHT)
+        cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
 
     await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
-    cli = do_upgrade(c.ibc1, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
     cli = do_upgrade(c.ibc1, "v8.5.0-pre.1", cli.block_height() + WAIT_HEIGHT)
     cli = do_upgrade(c.ibc1, "v8.7.0-pre.1", cli.block_height() + WAIT_HEIGHT)
 

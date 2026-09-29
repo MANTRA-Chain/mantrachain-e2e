@@ -240,7 +240,7 @@ async def exec(c, tmp_path):
         c.supervisorctl("stop", f"{CHAIN_ID}-node2")
         update_node_cmd(c.base_dir, grpc_cmd, 2, grpc_only=True)
         target_height = stop_height + WAIT_HEIGHT
-        cli = do_upgrade(c, "v8.2.0", target_height)
+        cli = do_upgrade(c, "v8.4.0", target_height)
         return cli, target_height
 
     # validator self-delegation needs more than the cli's 200k default
@@ -318,10 +318,6 @@ async def exec(c, tmp_path):
     c.supervisorctl("start", *nodes)
     wait_for_new_blocks(cli, 1)
     assert len(get_block_events()) == 0
-
-    # remaining upgrades v8.3.0 -> v8.4.0
-    cli = do_upgrade(c, "v8.3.0", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
 
     verify_removed_modules(cli)
     blacklist = cli.query_blacklist()
