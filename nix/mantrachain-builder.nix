@@ -23,19 +23,33 @@ let
   buildStdenv = buildPackages.stdenv;
   buildGo125Module' = if stdenv.isLinux then buildPackages.buildGo125Module else buildGo125Module;
 
+  # Release asset hashes per wasmvm version, from its checksums.txt
+  wasmvmHashes = {
+    "v3.0.0" = {
+      darwin = "sha256-D3D8Ad1Jd8jRwlBDb6eVoMGlPDlKohI4rt0xe+kOdlQ=";
+      linux-x86_64 = "sha256-zv5z8Mqlqeq6NzPGOc31BAxHRqk8IGcLpskof+OUSLo=";
+      linux-aarch64 = "sha256-oElptPkxvh0uLz8jE6aKIKICaT9nVZ96rx3ZclCCOuw=";
+    };
+    "v3.0.8" = {
+      darwin = "sha256-iG77pkCAMcqQZaCELlp/31+JHmYLgxtM5ysNAeQT3M4=";
+      linux-x86_64 = "sha256-simchdSfrM89y7hJhPMPVeiHARHfmMEPAX+GIE0AdHA=";
+      linux-aarch64 = "sha256-xzoNXTQONRiOE4WE3dZmKhYJAq3vGwiyCeONFrQ6TCg=";
+    };
+  }.${wasmvmVersion};
+
   # Download wasmvm libraries as fixed-output derivations
   wasmvmLibs = {
     darwin = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvmstatic_darwin.a";
-      sha256 = "sha256-D3D8Ad1Jd8jRwlBDb6eVoMGlPDlKohI4rt0xe+kOdlQ=";
+      sha256 = wasmvmHashes.darwin;
     };
     linux-x86_64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.x86_64.a";
-      sha256 = "sha256-zv5z8Mqlqeq6NzPGOc31BAxHRqk8IGcLpskof+OUSLo=";
+      sha256 = wasmvmHashes.linux-x86_64;
     };
     linux-aarch64 = fetchurl {
       url = "https://github.com/CosmWasm/wasmvm/releases/download/${wasmvmVersion}/libwasmvm_muslc.aarch64.a";
-      sha256 = "sha256-oElptPkxvh0uLz8jE6aKIKICaT9nVZ96rx3ZclCCOuw=";
+      sha256 = wasmvmHashes.linux-aarch64;
     };
   };
 

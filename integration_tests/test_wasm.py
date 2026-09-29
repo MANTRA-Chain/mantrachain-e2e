@@ -2,7 +2,26 @@ from pathlib import Path
 
 import pytest
 
-from .utils import DEFAULT_DENOM, find_log_event_attrs
+from .utils import (
+    DEFAULT_DENOM,
+    FIELD_EXTENSION,
+    all_contract_infos,
+    find_log_event_attrs,
+    ibc2_port_field,
+    verify_contract_info,
+)
+
+
+def skip_unless_can_upload(cli, wallet):
+    "Live chains may restrict MsgStoreCode; skip rather than fail."
+    if not cli.has_module("wasm"):
+        pytest.skip("wasm module not enabled")
+    access = cli._query("wasm", "params")["code_upload_access"]
+    allowed = access["permission"] == "Everybody" or wallet in (
+        access.get("addresses") or []
+    )
+    if not allowed:
+        pytest.skip(f"code_upload_access ({access['permission']}) excludes {wallet}")
 
 
 @pytest.mark.connect
@@ -12,10 +31,9 @@ def test_connect_wasm(connect_mantra, tmp_path):
 
 def test_wasm(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
-    if not cli.has_module("wasm"):
-        pytest.skip("wasm module not enabled")
     name = "signer1"
     wallet = cli.address(name)
+    skip_unless_can_upload(cli, wallet)
     gas = 2500000
 
     contract = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
@@ -46,6 +64,8 @@ def test_wasm(mantra, connect_mantra, tmp_path):
         contract_addresses.append(contract_address)
 
     print(f"All contracts instantiated. Addresses: {contract_addresses}")
+    for addr in contract_addresses:
+        verify_contract_info(cli, addr)
 
     # Testing instantiation with unauthorized wallet (should fail)
     unauthorized = "signer2"
@@ -115,3 +135,20 @@ def test_wasm(mantra, connect_mantra, tmp_path):
             cli.query_wasm_contract_state(
                 contract1, {"get_entry_from_map": {"entry": entry}}
             )
+
+
+@pytest.mark.connect
+def test_connect_stored_contract_info_numbering(connect_mantra, tmp_path):
+    test_stored_contract_info_numbering(None, connect_mantra, tmp_path)
+
+
+def test_stored_contract_info_numbering(mantra, connect_mantra, tmp_path):
+    "No stored ContractInfo may keep its ibc2 port at the retracted field."
+    cli = connect_mantra.cosmos_cli(tmp_path)
+    if not cli.has_module("wasm"):
+        pytest.skip("wasm module not enabled")
+    infos = all_contract_infos(cli)
+    stale = sorted(
+        a for a, bz in infos.items() if ibc2_port_field(bz) == FIELD_EXTENSION
+    )
+    assert not stale, f"{len(stale)} of {len(infos)} contracts are stale: {stale[:5]}"

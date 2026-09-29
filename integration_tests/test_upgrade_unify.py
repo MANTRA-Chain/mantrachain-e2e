@@ -1,6 +1,7 @@
 import json
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 import requests
@@ -21,6 +22,8 @@ from .utils import (
     CHAIN_ID,
     DEFAULT_DENOM,
     DEFAULT_GAS_PRICE,
+    FIELD_EXTENSION,
+    FIELD_IBC2_PORT_ID,
     AsyncGreeter,
     Greeter,
     assert_create_tokenfactory_denom,
@@ -37,9 +40,11 @@ from .utils import (
     denom_to_erc20_address,
     derive_new_account,
     eth_to_bech32,
+    find_log_event_attrs,
     module_address,
     update_consumer_chain,
     update_node_cmd,
+    verify_contract_info,
     verify_tax_distribution,
 )
 
@@ -47,6 +52,8 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
 STAKING = "0x0000000000000000000000000000000000000800"
 WAIT_HEIGHT = 16
+WASM_CONTRACT = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
+WASM_GAS = 2500000
 
 
 @pytest.fixture(scope="module")
@@ -150,6 +157,11 @@ async def exec(c, tmp_path):
 
     # historical anchor for pre-v8 contract/erc20 state
     hist_height = cli.block_height()
+
+    # wasmd v0.61.1 stores the ibc2 port at the retracted field; v8.7.0-pre.1
+    # moves it
+    legacy_contracts = instantiate_contract_pair(cli)
+    verify_contract_pair(cli, legacy_contracts, FIELD_EXTENSION)
 
     # fee grant + authorization grants, checked again after the upgrades
     granter = cli.address("signer1")
@@ -318,10 +330,14 @@ async def exec(c, tmp_path):
     verify_v8_4_vesting_disabled(cli)
     await verify_provider(cli)
 
-    # final hop: v8.5.0-pre.1 is a code-only hotfix (evm atomic-commit patch,
-    # migrations only) -- there is no new on-chain state to assert; do_upgrade
-    # itself proves the chain cosmovisor-upgrades past the height without halting.
+    # v8.5.0-pre.1 is a code-only hotfix (evm atomic-commit patch, migrations
+    # only) -- there is no new on-chain state to assert; do_upgrade itself
+    # proves the chain cosmovisor-upgrades past the height without halting.
     cli = do_upgrade(c, "v8.5.0-pre.1", cli.block_height() + WAIT_HEIGHT)
+
+    # skips v8.6.0-pre.1, which only ran module migrations
+    cli = do_upgrade(c, "v8.7.0-pre.1", cli.block_height() + WAIT_HEIGHT)
+    verify_contract_pair(cli, legacy_contracts, FIELD_IBC2_PORT_ID)
 
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
@@ -420,6 +436,38 @@ async def verify_provider(cli):
 
     wait_for_new_blocks(cli, 1)
     assert cli.provider_consumer_genesis(consumer_id) is not None
+
+
+def instantiate_contract_pair(cli, name="signer1"):
+    "Store the test contract and instantiate a (caller, callee) pair."
+    wallet = cli.address(name)
+    kwargs = {"_from": name, "gas": WASM_GAS, "gas_prices": DEFAULT_GAS_PRICE}
+    res = cli.wasm_store(str(WASM_CONTRACT), wallet, **kwargs)
+    assert res["code"] == 0, res["raw_log"]
+    code_id = find_log_event_attrs(res["events"], "store_code").get("code_id")
+    addrs = []
+    for label in ("caller", "callee"):
+        res = cli.wasm_instantiate(code_id, wallet, label=label, **kwargs)
+        assert res["code"] == 0, res["raw_log"]
+        attrs = find_log_event_attrs(res["events"], "instantiate")
+        addrs.append(attrs.get("_contract_address"))
+    return addrs
+
+
+def verify_contract_pair(cli, addrs, field, name="signer1"):
+    "Both ContractInfos sit at `field`, and a cross-contract call decodes them."
+    for addr in addrs:
+        verify_contract_info(cli, addr, field)
+    caller, callee = addrs
+    res = cli.wasm_execute(
+        caller,
+        {"call_contract": {"contract": callee, "reply": True}},
+        f"10{DEFAULT_DENOM}",
+        _from=name,
+        gas=WASM_GAS,
+        gas_prices=DEFAULT_GAS_PRICE,
+    )
+    assert res["code"] == 0, res["raw_log"]
 
 
 def verify_v8_4_vesting_disabled(cli):

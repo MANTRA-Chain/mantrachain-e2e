@@ -12,10 +12,9 @@ let
   };
 in
 builder {
-  version = "v8.7.0";
+  version = "v8.5.0";
   owner = "MANTRA-Chain";
-  rev = "afb891f54a5732b9c8f301e44d30d95d2453a1ef";
-  hash = "sha256-TousxERhNk0Ft3QcSVfwBSGyGTfqYvrnQEjj9gwvggA=";
-  vendorHash = "sha256-vb1gCuy23aSkRAcN2vsI0i4O0wxUyVwC6L8vSDjSQo8=";
-  wasmvmVersion = "v3.0.8";
+  rev = "68dfcdafdac4c470d48fea7d04864d97887bacf0";
+  hash = "sha256-diXDuC+k0UnVyKPA4TZoj4srQHz1w6+ufNFcPxt9Xjw=";
+  vendorHash = "sha256-v1g7ppxQB0MOIb+nU3HyTtIfZ7EYCVlAIHB2cpIM6Kc=";
 }

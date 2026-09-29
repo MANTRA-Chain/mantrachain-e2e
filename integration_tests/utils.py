@@ -1762,3 +1762,89 @@ def assert_estimate_covers_receipt(
         f"under-estimate: estimate={estimated} below receipt={receipt_gas_used} "
         f"by {(receipt_gas_used / estimated - 1) * 100:.1f}%"
     )
+
+
+# --- raw wasm ContractInfo ---
+
+# ContractInfo field numbers since wasmd v0.61.5. The retracted v0.61.0-v0.61.4
+# swapped them (CosmWasm/wasmd#2390); decoded as an Any, a port string left at
+# field 7 fails with `illegal wireType 7`.
+FIELD_EXTENSION = 7
+FIELD_IBC2_PORT_ID = 8
+IBC2_PORT_PREFIX = b"wasm2"  # wasmkeeper.PortIDPrefixV2
+CONTRACT_KEY_PREFIX = b"\x02"  # wasmtypes.ContractKeyPrefix
+
+
+def store_query(cli, path, data):
+    "Raw ABCI store query; a missing key reads as b''."
+    rsp = requests.get(
+        f"{cli.node_rpc_http}/abci_query",
+        params={"path": f'"{path}"', "data": "0x" + data.hex()},
+    ).json()["result"]["response"]
+    assert not rsp.get("code"), rsp.get("log")
+    return base64.b64decode(rsp.get("value") or "")
+
+
+def raw_contract_info(cli, addr):
+    "ContractInfo bytes as stored, before any proto decoding."
+    _, data = bech32.bech32_decode(addr)
+    key = CONTRACT_KEY_PREFIX + bytes(bech32.convertbits(data, 5, 8, False))
+    bz = store_query(cli, "/store/wasm/key", key)
+    assert bz, f"no ContractInfo stored for {addr}"
+    return bz
+
+
+def all_contract_infos(cli):
+    "Every stored ContractInfo, as {address: raw bytes}."
+    buf = store_query(cli, "/store/wasm/subspace", CONTRACT_KEY_PREFIX)
+    infos = {}
+    for _, pair in proto_iter(buf):
+        kv = dict(proto_iter(pair))  # Pair{bytes key = 1; bytes value = 2}
+        addr = bech32.convertbits(kv[1][len(CONTRACT_KEY_PREFIX) :], 8, 5)
+        infos[bech32.bech32_encode(ADDRESS_PREFIX, addr)] = kv[2]
+    return infos
+
+
+def ibc2_port_field(bz):
+    "The ContractInfo field holding the ibc2 port, or None if it has none."
+    fields = dict(proto_iter(bz))
+    for num in (FIELD_EXTENSION, FIELD_IBC2_PORT_ID):
+        if fields.get(num, b"").startswith(IBC2_PORT_PREFIX):
+            return num
+    return None
+
+
+def verify_contract_info(cli, addr, field=FIELD_IBC2_PORT_ID):
+    "ContractInfo decodes, and its ibc2 port is stored at `field`."
+    bz = raw_contract_info(cli, addr)
+    found = ibc2_port_field(bz)
+    assert found == field, f"{addr}: ibc2 port stored at field {found}, not {field}"
+    info = cli._query("wasm", "contract", addr)["contract_info"]
+    assert dict(proto_iter(bz))[field].decode() == info["ibc2_port_id"]
+
+
+def _proto_varint(buf, i):
+    val = shift = 0
+    while True:
+        b = buf[i]
+        i += 1
+        val |= (b & 0x7F) << shift
+        shift += 7
+        if not b & 0x80:
+            return val, i
+
+
+def proto_iter(buf):
+    "Yield (field number, raw value) for each field of a protobuf message."
+    i = 0
+    while i < len(buf):
+        tag, i = _proto_varint(buf, i)
+        num, wire = tag >> 3, tag & 7
+        if wire == 0:
+            val, i = _proto_varint(buf, i)
+        elif wire == 2:
+            ln, i = _proto_varint(buf, i)
+            val, i = buf[i : i + ln], i + ln
+        else:
+            raise AssertionError(f"field {num}: unsupported wire type {wire}")
+        yield num, val
