@@ -1237,9 +1237,9 @@ async def registries_by_name(w3: AsyncWeb3, name: str, mode: MatchMode) -> set[i
 
 async def do_test_registries_by_name(w3: AsyncWeb3, search_url: str):
     def rest(name, mode):
-        # grpc-gateway populates this enum with strconv.ParseInt, so the numeric
-        # value is required; the enum's name is rejected as a bad request.
-        rsp = requests.get(search_url, params={"name": name, "mode": int(mode)})
+        # By name; the short-query loop below keeps the numeric spelling.
+        params = {"name": name, "mode": f"REGISTRY_NAME_MATCH_MODE_{mode.name}"}
+        rsp = requests.get(search_url, params=params)
         assert rsp.ok, f"{rsp.status_code} {rsp.reason}: {rsp.text}"
         # uint64 comes back as a JSON string under the proto3 mapping
         return {int(r["id"]) for r in rsp.json().get("registries") or []}
@@ -1311,6 +1311,8 @@ async def do_test_registries_by_name(w3: AsyncWeb3, search_url: str):
         data=DOCUMENT_PRECOMPILE.fns.registriesByName(base, 9, NAME_INDEX_PAGE).data,
         expect_err="invalid matchMode",
     )
+    rsp = requests.get(search_url, params={"name": base, "mode": 9})
+    assert rsp.status_code == 400, f"{rsp.status_code} {rsp.text}"
 
     # The plain registries listing is untouched by any of this.
     listing, _ = await DOCUMENT_PRECOMPILE.fns.registries(0, NAME_INDEX_PAGE).call(
