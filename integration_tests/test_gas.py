@@ -16,11 +16,21 @@ from .utils import (
 
 pytestmark = pytest.mark.asyncio
 
-# 2048 non-zero calldata bytes. Per EIP-7623 the floor is
-# 21000 + 10 * 4 * non_zero_bytes; the intrinsic cost is 21000 + 16 * bytes
-# so the floor strictly exceeds intrinsic + a value-transfer to an EOA.
-EIP7623_DATA = b"\x01" * 2048
-EIP7623_FLOOR = 21000 + 10 * 4 * len(EIP7623_DATA)  # 102_920
+PRECOMPILE_P256 = "0x0000000000000000000000000000000000000100"
+
+
+def eip7623_floor(data: bytes) -> int:
+    """21000 + 10 gas per calldata token: 1 per zero byte, 4 per non-zero byte."""
+    zeros = data.count(0)
+    return 21000 + 10 * (zeros + 4 * (len(data) - zeros))
+
+
+# drop once mantrachaind picks up evm#1186
+evmd_only = pytest.mark.skipif(
+    "config.getoption('chain_config') != 'evmd'",
+    reason="evm#1186 is not in mantrachaind yet",
+)
+
 
 BURN_GAS_CONTRACT = None
 
@@ -43,28 +53,48 @@ async def test_gas_call(mantra):
     assert receipt.gasUsed == 267441
 
 
-async def _send_eip7623_tx(w3, gas: int):
-    tx = {
-        "to": ADDRS["signer1"],
-        "value": 1,
-        "data": EIP7623_DATA,
-        "gas": gas,
-    }
-    return await send_transaction(w3, ACCOUNTS["community"], **tx)
+class TestEIP7623:
+    """gasUsed never drops below the calldata floor, whatever the tx executes."""
 
+    # non-zero bytes: the floor (40 gas each) exceeds intrinsic (16 gas each)
+    DATA = b"\x01" * 2048
+    FLOOR = eip7623_floor(DATA)  # 102_920
+    # under 2x the floor so min_gas_multiplier (0 here, 0.5 upstream) cannot mask it
+    GAS = 40_000
 
-async def test_eip7623_floor_data_gas_is_charged(mantra):
-    """Calldata-heavy EOA transfer is charged at least the EIP-7623 floor."""
-    receipt = await _send_eip7623_tx(mantra.async_w3, gas=200_000)
-    assert (
-        receipt.gasUsed >= EIP7623_FLOOR
-    ), f"gasUsed={receipt.gasUsed} below floor={EIP7623_FLOOR}"
+    async def _send(self, w3, to, data, gas):
+        return await send_transaction(
+            w3, ACCOUNTS["community"], to=to, data=data, gas=gas
+        )
 
+    async def test_floor_is_charged(self, mantra):
+        """plain EOA call: 53768 intrinsic, charged the 102920 floor"""
+        receipt = await self._send(
+            mantra.async_w3, ADDRS["signer1"], self.DATA, 200_000
+        )
+        assert receipt.gasUsed == self.FLOOR, receipt.gasUsed
 
-async def test_eip7623_below_floor_is_rejected(mantra):
-    """gasLimit below the EIP-7623 floor is rejected."""
-    with pytest.raises(web3.exceptions.Web3RPCError, match="floor data gas"):
-        await _send_eip7623_tx(mantra.async_w3, gas=EIP7623_FLOOR - 1)
+    async def test_below_floor_is_rejected(self, mantra):
+        with pytest.raises(web3.exceptions.Web3RPCError, match="floor data gas"):
+            await self._send(
+                mantra.async_w3, ADDRS["signer1"], self.DATA, self.FLOOR - 1
+            )
+
+    @evmd_only
+    async def test_floor_binds_after_refund(self, mantra):
+        """23048 intrinsic + ~5000 SSTORE > 26120 floor until the 4800 clear refund"""
+        w3 = mantra.async_w3
+        contract = await build_and_deploy_contract_async(w3, "StorageClear")
+        data = b"\x01" * 128
+        receipt = await self._send(w3, contract.address, data, self.GAS)
+        assert receipt.gasUsed == eip7623_floor(data), receipt.gasUsed
+
+    @evmd_only
+    async def test_floor_binds_on_precompile_call(self, mantra):
+        """23560 intrinsic + 3450 P-256 verify < 27400 floor, with no refund"""
+        data = b"\x01" * 160
+        receipt = await self._send(mantra.async_w3, PRECOMPILE_P256, data, self.GAS)
+        assert receipt.gasUsed == eip7623_floor(data), receipt.gasUsed
 
 
 async def test_block_gas_limit(mantra):
