@@ -1,3 +1,4 @@
+import base64
 import datetime
 import json
 import shutil
@@ -1002,6 +1003,46 @@ async def test_registries_by_name(ibc):
         w3, to=DOCUMENT_ADDRESS
     )
     assert all_three <= {int(r[0]) for r in listing}
+
+
+async def test_registries_by_name_pages_by_next_key(ibc):
+    """Name search pages by `nextKey` like the registries list, and counts nothing."""
+    w3 = ibc.ibc2.async_w3
+    base = "ccv-paging"
+    ids = [await create_registry(w3, f"{base}-{i}", metadata="{}") for i in range(3)]
+    # The third id, in the registries list's key encoding.
+    third = ids[2].to_bytes(8, "big")
+
+    def search(key=b"", offset=0):
+        page = (key, offset, 2, True, False)
+        return DOCUMENT_PRECOMPILE.fns.registriesByName(
+            base, int(MatchMode.PREFIX), page
+        )
+
+    # Two pages; the total stays 0 although countTotal is asked for.
+    for key, rows, next_key in ((b"", ids[:2], third), (third, ids[2:], b"")):
+        regs, (got_key, total) = await search(key).call(w3, to=DOCUMENT_ADDRESS)
+        assert ([int(r[0]) for r in regs], got_key, total) == (rows, next_key, 0)
+
+    for key, offset, err in (
+        (third, 1, "either offset or key"),
+        (b"\x01", 0, "invalid key"),
+    ):
+        await assert_call_reverts(
+            w3, sender=ADDRS["community"], data=search(key, offset).data, expect_err=err
+        )
+
+    # The REST route returns the same keys in base64.
+    api = ports.api_port(ibc.ibc2.base_port(0))
+    url = f"http://127.0.0.1:{api}/NVNM-Chain/nvnmchain/anchoring/v1/registries/search"
+    params = {"name": base, "mode": int(MatchMode.PREFIX), "pagination.limit": 2}
+    for rows, next_key in ((ids[:2], third), (ids[2:], b"")):
+        rsp = requests.get(url, params=params)
+        assert rsp.ok, f"{rsp.status_code} {rsp.reason}: {rsp.text}"
+        body = rsp.json()
+        assert [int(r["id"]) for r in body["registries"]] == rows
+        params["pagination.key"] = body["pagination"]["next_key"] or ""
+        assert base64.b64decode(params["pagination.key"]) == next_key
 
 
 async def test_registries_by_name_rejects_transaction(ibc):
