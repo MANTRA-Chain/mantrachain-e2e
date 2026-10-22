@@ -125,10 +125,6 @@ class AsyncGreeter(AsyncContract):
             self.w3, to=self.address, block_identifier=block_identifier
         )
 
-    async def int_value(self):
-        self._check_deployed()
-        return await self.contract.fns.intValue().call(self.w3, to=self.address)
-
     async def set_greeting(self, message: str):
         self._check_deployed()
         return await self.contract.fns.setGreeting(message).transact(
@@ -148,21 +144,6 @@ class AsyncTestRevert(AsyncContract):
             to=self.address,
             gas=100000,  # skip estimateGas error
         )
-
-
-class AsyncTestMessageCall(AsyncContract):
-    def __init__(self, key=KEYS["community"]):
-        super().__init__("TestMessageCall", key)
-
-    async def test(self, iterations):
-        self._check_deployed()
-        return await self.contract.fns.test(iterations).transact(
-            self.w3, self.acct, to=self.address
-        )
-
-    def get_test_data(self, iterations):
-        self._check_deployed()
-        return self.contract.fns.test(iterations).data
 
 
 class Contract:
@@ -213,22 +194,6 @@ class Greeter(Contract):
         )
         receipt = send_transaction(self.w3, transaction, self.private_key)
         assert string == self.contract.functions.greet().call()
-        return receipt
-
-
-class RevertTestContract(Contract):
-    "RevertTestContract contract."
-
-    def transfer(self, value):
-        "Call contract on `w3` and return the receipt."
-        transaction = self.contract.functions.transfer(value).build_transaction(
-            {
-                "chainId": self.chain_id,
-                "from": self.owner,
-                "gas": 100000,  # skip estimateGas error
-            }
-        )
-        receipt = send_transaction(self.w3, transaction, self.private_key)
         return receipt
 
 
@@ -1145,12 +1110,13 @@ async def assert_create_erc20_denom(w3, signer):
 async def assert_weth_flow(w3, weth_addr, owner, account):
     weth = WETH(to=weth_addr)
     before = await balance_of(w3, ZERO_ADDRESS, owner)
+    weth_before = await balance_of(w3, weth_addr, owner)
     receipt = await weth.fns.deposit().transact(w3, account, value=1000)
     fee = receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    await balance_of(w3, weth_addr, owner) == 1000
+    assert await balance_of(w3, weth_addr, owner) == weth_before + 1000
     receipt = await weth.fns.withdraw(1000).transact(w3, account)
     fee += receipt["effectiveGasPrice"] * receipt["gasUsed"]
-    await balance_of(w3, weth_addr, owner) == 0
+    assert await balance_of(w3, weth_addr, owner) == weth_before
     assert await balance_of(w3, ZERO_ADDRESS, owner) == before - fee
     assert await weth.fns.decimals().call(w3) == 18
     assert await weth.fns.symbol().call(w3) == "WETH"
@@ -1296,15 +1262,11 @@ def wait_for_balance_change(cli, addr, denom, init_balance):
     return wait_for_fn("balance change", check_balance)
 
 
-async def deploy_wom(w3: AsyncWeb3, account: BaseAccount) -> str:
-    artifact = build_contract("WOM")
+async def deploy_by_create2(w3: AsyncWeb3, account: BaseAccount, name, salt) -> str:
+    "Address of contract `name` at CREATE2 `salt`, deployed first if missing."
     await ensure_create2_deployed(w3, account)
-    return await ensure_deployed_by_create2(
-        w3,
-        account,
-        get_initcode(artifact),
-        salt=WETH_SALT,
-    )
+    initcode = get_initcode(build_contract(name))
+    return await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
 
 
 async def w3_wait_for_new_blocks_async(w3: AsyncWeb3, n: int, sleep=0.1):

@@ -8,12 +8,10 @@ from eth_account._utils.encode_typed_data.encoding_and_hashing import (
     get_primary_type,
     hash_type,
 )
-from eth_hash.auto import keccak
 from eth_utils import keccak as eth_keccak
 
 from .cosmostx_utils import (
     LEGACY_AMINO,
-    SIGN_DIRECT,
     AuthInfo,
     Coin,
     EPubKey,
@@ -23,149 +21,84 @@ from .cosmostx_utils import (
     ModeInfoSingle,
     MsgSend,
     ProtoAny,
-    PubKey,
-    SignDoc,
     SignerInfo,
     TxBody,
     TxRaw,
 )
 
 
-def create_message_send(
-    chain,
-    sender,
-    fee,
-    memo,
-    params,
-):
-    # EIP712
-    fee_object = generate_fee(
-        fee["amount"],
-        fee["denom"],
-        fee["gas"],
-        sender["accountAddress"],
-    )
-    types = generate_types()
-    msg = create_msg_send(
-        params["amount"],
-        params["denom"],
-        sender["accountAddress"],
-        params["destinationAddress"],
-    )
-    messages = generate_message(
-        str(sender["accountNumber"]),
-        str(sender["sequence"]),
-        chain["cosmosChainId"],
-        memo,
-        fee_object,
-        msg,
-    )
-    eip_to_sign = create_eip712(types, chain["chainId"], messages)
-    msg_send = proto_msg_send(
-        sender["accountAddress"],
-        params["destinationAddress"],
-        params["amount"],
-        params["denom"],
-    )
-    tx = create_transaction(
-        msg_send,
-        memo,
-        fee["amount"],
-        fee["denom"],
-        fee["gas"],
-        "ethsecp256",
-        sender["pubkey"],
-        sender["sequence"],
-        sender["accountNumber"],
-        chain["cosmosChainId"],
-    )
-    return {
-        "signDirect": tx["signDirect"],
-        "legacyAmino": tx["legacyAmino"],
-        "eipToSign": eip_to_sign,
-    }
-
-
-def generate_fee(amount, denom, gas, fee_payer):
-    return {
-        "amount": [
-            {
-                "amount": amount,
-                "denom": denom,
-            },
-        ],
-        "gas": gas,
-        "feePayer": fee_payer,
-    }
-
-
-def generate_types():
-    return json.loads((Path(__file__).parent / "msg_send_types.json").read_text())
-
-
-def create_msg_send(amount, denom, from_address, to_address):
-    return {
+def create_message_send(chain, sender, fee, memo, params):
+    "A MsgSend as EIP-712 typed data, plus its legacy-amino tx body and auth info."
+    amount = [{"amount": params["amount"], "denom": params["denom"]}]
+    msg = {
         "type": "cosmos-sdk/MsgSend",
         "value": {
-            "amount": [
-                {
-                    "amount": amount,
-                    "denom": denom,
-                },
-            ],
-            "from_address": from_address,
-            "to_address": to_address,
+            "amount": amount,
+            "from_address": sender["accountAddress"],
+            "to_address": params["destinationAddress"],
         },
     }
-
-
-def generate_message(account_number, sequence, chain_cosmos_id, memo, fee, msg):
-    return generate_message_with_multiple_transactions(
-        account_number,
-        sequence,
-        chain_cosmos_id,
-        memo,
-        fee,
-        [msg],
-    )
-
-
-def generate_message_with_multiple_transactions(
-    account_number,
-    sequence,
-    chain_cosmos_id,
-    memo,
-    fee,
-    msgs,
-):
-    return {
-        "account_number": account_number,
-        "chain_id": chain_cosmos_id,
-        "fee": fee,
-        "memo": memo,
-        "msgs": msgs,
-        "sequence": sequence,
-    }
-
-
-def create_eip712(
-    types,
-    chain_id,
-    message,
-    name="Cosmos Web3",
-    contract="cosmos",
-):
-    return {
-        "types": types,
+    eip_to_sign = {
+        "types": json.loads(
+            (Path(__file__).parent / "msg_send_types.json").read_text()
+        ),
         "primaryType": "Tx",
         "domain": {
-            "name": name,
+            "name": "Cosmos Web3",
             "version": "1.0.0",
-            "chainId": chain_id,
-            "verifyingContract": contract,
+            "chainId": chain["chainId"],
+            "verifyingContract": "cosmos",
             "salt": "0",
         },
-        "message": message,
+        "message": {
+            "account_number": str(sender["accountNumber"]),
+            "chain_id": chain["cosmosChainId"],
+            "fee": {
+                "amount": [{"amount": fee["amount"], "denom": fee["denom"]}],
+                "gas": fee["gas"],
+                "feePayer": sender["accountAddress"],
+            },
+            "memo": memo,
+            "msgs": [msg],
+            "sequence": str(sender["sequence"]),
+        },
+    }
+
+    msg_send = MsgSend(
+        from_address=sender["accountAddress"],
+        to_address=params["destinationAddress"],
+        amount=[Coin(denom=params["denom"], amount=params["amount"])],
+    )
+    body = TxBody(
+        memo=memo,
+        messages=[
+            ProtoAny(
+                type_url="/cosmos.bank.v1beta1.MsgSend",
+                value=msg_send.SerializeToString(),
+            ).SerializeToString()
+        ],
+    )
+    pubkey = EPubKey(key=base64.b64decode(sender["pubkey"].encode("ascii")))
+    mode_info = ModeInfo(single=ModeInfoSingle(mode=LEGACY_AMINO).SerializeToString())
+    signer_info = SignerInfo(
+        mode_info=mode_info.SerializeToString(),
+        sequence=sender["sequence"],
+        public_key=ProtoAny(
+            type_url="/cosmos.evm.crypto.v1.ethsecp256k1.PubKey",
+            value=pubkey.SerializeToString(),
+        ).SerializeToString(),
+    )
+    fee_message = Fee(
+        gas_limit=int(fee["gas"]),
+        amount=[Coin(denom=fee["denom"], amount=fee["amount"])],
+    )
+    auth_info = AuthInfo(
+        signer_infos=[signer_info.SerializeToString()],
+        fee=fee_message.SerializeToString(),
+    )
+    return {
+        "legacyAmino": {"body": body, "authInfo": auth_info},
+        "eipToSign": eip_to_sign,
     }
 
 
@@ -211,205 +144,22 @@ def encode_eip712_for_signing(eip712_data):
     return eth_keccak(signable)
 
 
-def create_transaction(
-    message,
-    memo,
-    fee,
-    denom,
-    gas_limit,
-    algo,
-    pub_key,
-    sequence,
-    account_number,
-    chain_id,
-):
-    return create_transaction_with_multiple_messages(
-        [message],
-        memo,
-        fee,
-        denom,
-        gas_limit,
-        algo,
-        pub_key,
-        sequence,
-        account_number,
-        chain_id,
-    )
-
-
-def create_transaction_with_multiple_messages(
-    messages,
-    memo,
-    fee,
-    denom,
-    gas_limit,
-    algo,
-    pub_key,
-    sequence,
-    account_number,
-    chain_id,
-):
-    body = create_body_with_multiple_messages(messages, memo)
-    fee_message = create_fee(fee, denom, gas_limit)
-    pub_key_decoded = base64.b64decode(pub_key.encode("ascii"))
-    # AMINO
-    sign_info_amino = create_signer_info(
-        algo,
-        pub_key_decoded,
-        sequence,
-        LEGACY_AMINO,
-    )
-    auth_info_amino = create_auth_info(sign_info_amino, fee_message)
-    sig_doc_amino = create_sig_doc(
-        body.SerializeToString(),
-        auth_info_amino.SerializeToString(),
-        chain_id,
-        account_number,
-    )
-
-    hash_amino = keccak.new(sig_doc_amino.SerializeToString())
-    to_sign_amino = hash_amino.digest()
-
-    # SignDirect
-    sig_info_direct = create_signer_info(
-        algo,
-        pub_key_decoded,
-        sequence,
-        SIGN_DIRECT,
-    )
-    auth_info_direct = create_auth_info(sig_info_direct, fee_message)
-    sign_doc_direct = create_sig_doc(
-        body.SerializeToString(),
-        auth_info_direct.SerializeToString(),
-        chain_id,
-        account_number,
-    )
-    hash_direct = keccak.new(sign_doc_direct.SerializeToString())
-    to_sign_direct = hash_direct.digest()
-    return {
-        "legacyAmino": {
-            "body": body,
-            "authInfo": auth_info_amino,
-            "signBytes": to_sign_amino,
-        },
-        "signDirect": {
-            "body": body,
-            "authInfo": auth_info_direct,
-            "signBytes": to_sign_direct,
-        },
-    }
-
-
-def create_body_with_multiple_messages(messages, memo):
-    content = []
-    for message in messages:
-        any_msg = create_any_message(message)
-        content.append(any_msg.SerializeToString())
-    body = TxBody(memo=memo, messages=content)
-    return body
-
-
-def create_any_message(msg):
-    if isinstance(msg, dict) and "message" in msg and "path" in msg:
-        type_url = msg["path"]
-        msg = msg["message"]
-    elif type_url is None:
-        raise ValueError("type_url must be provided if msg is not a dict")
-
-    value = msg.SerializeToString()
-    return ProtoAny(type_url=type_url, value=value)
-
-
-def create_signer_info(algo, public_key, sequence, mode):
-    message = None
-    path = None
-    if algo == "secp256k1":
-        message = PubKey(key=public_key)
-        path = "/cosmos.crypto.secp256k1.PubKey"
-    else:
-        message = EPubKey(key=public_key)
-        path = "/cosmos.evm.crypto.v1.ethsecp256k1.PubKey"
-
-    pubkey = {
-        "message": message,
-        "path": path,
-    }
-    single = ModeInfoSingle(mode=mode)
-    mode_info = ModeInfo(single=single.SerializeToString())
-    signer_info = SignerInfo(
-        mode_info=mode_info.SerializeToString(),
-        sequence=sequence,
-        public_key=create_any_message(pubkey).SerializeToString(),
-    )
-    return signer_info
-
-
-def create_auth_info(signer_info, fee):
-    auth_info = AuthInfo(
-        signer_infos=[signer_info.SerializeToString()],
-        fee=fee.SerializeToString(),
-    )
-    return auth_info
-
-
-def create_sig_doc(body_bytes, auth_info_bytes, chain_id, account_number):
-    sign_doc = SignDoc(
-        body_bytes=body_bytes,
-        auth_info_bytes=auth_info_bytes,
-        chain_id=chain_id,
-        account_number=account_number,
-    )
-    return sign_doc
-
-
-def create_fee(fee, denom, gas_limit):
-    value = Coin(denom=denom, amount=fee)
-    fee = Fee(gas_limit=int(gas_limit), amount=[value])
-    return fee
-
-
-def proto_msg_send(from_address, to_address, amount, denom):
-    value = Coin(denom=denom, amount=amount)
-    message = MsgSend(
-        from_address=from_address,
-        to_address=to_address,
-        amount=[value],
-    )
-    return {
-        "message": message,
-        "path": "/cosmos.bank.v1beta1.MsgSend",
-    }
-
-
 def signature_to_web3_extension(chain, sender, signature):
     message = ExtensionOptionsWeb3Tx(
         typed_data_chain_id=chain["chainId"],
         fee_payer=sender["accountAddress"],
         fee_payer_sig=signature,
     )
-    return {
-        "message": message,
-        "path": "/cosmos.evm.eip712.v1.ExtensionOptionsWeb3Tx",
-    }
-
-
-def create_tx_raw(body_bytes, auth_info_bytes, signatures):
-    message = TxRaw(
-        body_bytes=body_bytes,
-        auth_info_bytes=auth_info_bytes,
-        signatures=signatures,
+    return ProtoAny(
+        type_url="/cosmos.evm.eip712.v1.ExtensionOptionsWeb3Tx",
+        value=message.SerializeToString(),
     )
-    return {
-        "message": message,
-        "path": "/cosmos.tx.v1beta1.TxRaw",
-    }
 
 
 def create_tx_raw_eip712(body, auth_info, extension):
-    any = create_any_message(extension)
-    body.extension_options.append(any.SerializeToString())
-    return create_tx_raw(
-        body.SerializeToString(),
-        auth_info.SerializeToString(),
-        [bytes()],
+    body.extension_options.append(extension.SerializeToString())
+    return TxRaw(
+        body_bytes=body.SerializeToString(),
+        auth_info_bytes=auth_info.SerializeToString(),
+        signatures=[bytes()],
     )

@@ -1,10 +1,4 @@
-from typing import Optional
-
 from cprotobuf import Field, ProtoEntity
-
-
-class PubKey(ProtoEntity):
-    key = Field("bytes", 1)
 
 
 class EPubKey(ProtoEntity):
@@ -38,13 +32,6 @@ class Fee(ProtoEntity):
 class ModeInfo(ProtoEntity):
     single = Field("bytes", 1)
     multi = Field("bytes", 2)
-
-
-class SignDoc(ProtoEntity):
-    body_bytes = Field("bytes", 1)
-    auth_info_bytes = Field("bytes", 2)
-    chain_id = Field("string", 3)
-    account_number = Field("uint64", 4)
 
 
 class SignerInfo(ProtoEntity):
@@ -101,23 +88,7 @@ class LegacyAminoPubKey(ProtoEntity):
     public_keys = Field("bytes", 2, repeated=True)
 
 
-class MsgEthereumTx(ProtoEntity):
-    MSG_URL = "/cosmos.evm.vm.v1.MsgEthereumTx"
-    data = Field(ProtoAny, 1)
-    deprecated_hash = Field("string", 3)
-    from_ = Field("bytes", 5)
-    raw = Field("bytes", 6)
-
-
 LEGACY_AMINO = 127
-SIGN_DIRECT = 1
-
-
-def build_any(type_url: str, msg: Optional[ProtoEntity] = None) -> ProtoAny:
-    value = b""
-    if msg is not None:
-        value = msg.SerializeToString()
-    return ProtoAny(type_url=type_url, value=value)
 
 
 def create_compact_bit_array(num_bits, bits_set):

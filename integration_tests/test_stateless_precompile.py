@@ -12,7 +12,7 @@ from eth_abi import decode, encode
 from eth_utils import to_hex
 from web3.exceptions import ContractLogicError
 
-from utils import ADDRESS_PREFIX, ADDRS, eth_to_bech32
+from .utils import ADDRESS_PREFIX, ADDRS, eth_to_bech32
 
 pytestmark = pytest.mark.asyncio
 
@@ -20,27 +20,19 @@ PRECOMPILE_P256 = "0x0000000000000000000000000000000000000100"
 PRECOMPILE_BECH32 = "0x0000000000000000000000000000000000000400"
 
 
-def generate_p256_signature_components(message: bytes):
+def p256_input(message: bytes) -> bytes:
+    "hash || r || s || x || y for a fresh P-256 signature over `message`."
     private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
-    public_key = private_key.public_key()
     digest = hashlib.sha256(message).digest()
     signature = private_key.sign(digest, ec.ECDSA(Prehashed(hashes.SHA256())))
     r, s = decode_dss_signature(signature)
-    public_numbers = public_key.public_numbers()
-    return (
-        digest.hex(),
-        format(r, "064x"),
-        format(s, "064x"),
-        format(public_numbers.x, "064x"),
-        format(public_numbers.y, "064x"),
-    )
+    pub = private_key.public_key().public_numbers()
+    return digest + b"".join(n.to_bytes(32, "big") for n in (r, s, pub.x, pub.y))
 
 
 async def test_p256_valid(mantra):
     w3 = mantra.async_w3
-    msg = b"hello world"
-    hash_hex, r_hex, s_hex, x_hex, y_hex = generate_p256_signature_components(msg)
-    input_data = bytes.fromhex(hash_hex + r_hex + s_hex + x_hex + y_hex)
+    input_data = p256_input(b"hello world")
     result = await w3.eth.call({"to": PRECOMPILE_P256, "data": to_hex(input_data)})
     assert int.from_bytes(result, "big") == 1
 

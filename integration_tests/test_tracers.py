@@ -1,6 +1,5 @@
 import itertools
-import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 from pystarport.utils import w3_wait_for_new_blocks
 
@@ -20,135 +19,77 @@ from .utils import (
     send_transaction,
 )
 
+METHOD = "debug_traceTransaction"
+CALL_TRACER = {"tracer": "callTracer"}
+
 
 def test_out_of_gas_error(mantra):
-    method = "debug_traceTransaction"
-    tracer = {"tracer": "callTracer"}
-    iterations = 1
+    w3 = mantra.w3
     acc = derive_random_account()
-
-    def process(w3):
-        # fund new sender to deploy contract with same address
-        fund_acc(w3, acc)
-        msg = Contract("TestMessageCall", acc.key)
-        msg.deploy(mantra.w3)
-        contract = msg.contract
-        tx = contract.functions.test(iterations).build_transaction({"gas": 21510})
-        tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
-        tx_hash = f"0x{tx_hash}"
-        res = []
-        call = w3.provider.make_request
-        resp = call(method, [tx_hash, tracer])
-        assert "out of gas" in resp["result"]["error"], resp
-        res = [json.dumps(resp["result"], sort_keys=True)]
-        return res
-
-    providers = [mantra.w3]
-    with ThreadPoolExecutor(len(providers)) as exec:
-        tasks = [exec.submit(process, w3) for w3 in providers]
-        res = [future.result() for future in as_completed(tasks)]
-        assert len(res) == len(providers)
-        assert res[0] == res[-1], res
+    # fund new sender to deploy contract with same address
+    fund_acc(w3, acc)
+    msg = Contract("TestMessageCall", acc.key)
+    msg.deploy(w3)
+    tx = msg.contract.functions.test(1).build_transaction({"gas": 21510})
+    tx_hash = send_transaction(w3, tx)["transactionHash"].to_0x_hex()
+    resp = w3.provider.make_request(METHOD, [tx_hash, CALL_TRACER])
+    assert "out of gas" in resp["result"]["error"], resp
 
 
 def test_storage_out_of_gas_error(mantra):
-    method = "debug_traceTransaction"
-    tracer = {"tracer": "callTracer"}
+    w3 = mantra.w3
     acc = derive_new_account(8)
-
-    def process(w3):
-        # fund new sender to deploy contract with same address
-        fund_acc(w3, acc)
-        tx = create_contract_transaction(w3, "TestMessageCall", key=acc.key)
-        tx["gas"] = 210000
-        tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].hex()
-        tx_hash = f"0x{tx_hash}"
-        res = []
-        call = w3.provider.make_request
-        resp = call(method, [tx_hash, tracer])
-        msg = "contract creation code storage out of gas"
-        assert msg in resp["result"]["error"], resp
-        res = [json.dumps(resp["result"], sort_keys=True)]
-        return res
-
-    providers = [mantra.w3]
-    with ThreadPoolExecutor(len(providers)) as exec:
-        tasks = [exec.submit(process, w3) for w3 in providers]
-        res = [future.result() for future in as_completed(tasks)]
-        assert len(res) == len(providers)
-        assert res[0] == res[-1], res
+    # fund new sender to deploy contract with same address
+    fund_acc(w3, acc)
+    tx = create_contract_transaction(w3, "TestMessageCall", key=acc.key)
+    tx["gas"] = 210000
+    tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].to_0x_hex()
+    resp = w3.provider.make_request(METHOD, [tx_hash, CALL_TRACER])
+    msg = "contract creation code storage out of gas"
+    assert msg in resp["result"]["error"], resp
 
 
 def test_trace_transactions_tracers(mantra):
-    method = "debug_traceTransaction"
-    tracer = {"tracer": "callTracer"}
-    price = hex(88500000000)
+    w3 = mantra.w3
+    call = w3.provider.make_request
     acc = derive_new_account(7)
+    fund_acc(w3, acc)
+    tx = {"to": ADDRS["signer1"], "value": 100, "gasPrice": hex(88500000000)}
+    tx_hash = send_transaction(w3, tx)["transactionHash"].to_0x_hex()
+    assert call(METHOD, [tx_hash])["result"] == EXPECTED_STRUCT_TRACER
+    assert call(METHOD, [tx_hash, CALL_TRACER])["result"] == EXPECTED_CALLTRACERS
+    top_call = CALL_TRACER | {"tracerConfig": {"onlyTopCall": True}}
+    assert call(METHOD, [tx_hash, top_call])["result"] == EXPECTED_CALLTRACERS
 
-    def process(w3):
-        fund_acc(w3, acc)
-        call = w3.provider.make_request
-        tx = {"to": ADDRS["signer1"], "value": 100, "gasPrice": price}
-        tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
-        tx_hash = f"0x{tx_hash}"
-        tx_res = call(method, [tx_hash])
-        assert tx_res["result"] == EXPECTED_STRUCT_TRACER, ""
-        tx_res = call(method, [tx_hash, tracer])
-        assert tx_res["result"] == EXPECTED_CALLTRACERS, ""
-        tx_res = call(
-            method,
-            [tx_hash, tracer | {"tracerConfig": {"onlyTopCall": True}}],
-        )
-        assert tx_res["result"] == EXPECTED_CALLTRACERS, ""
-        res = build_contract("TestERC20A")
-        contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
-        tx = contract.constructor().build_transaction({"from": acc.address})
-        tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].hex()
-        tx_hash = f"0x{tx_hash}"
-        w3_wait_for_new_blocks(w3, 1)
-        tx_res = call(method, [tx_hash, tracer])
-        assert tx_res["result"] == EXPECTED_CONTRACT_CREATE_TRACER, ""
-
-    providers = [mantra.w3]
-    with ThreadPoolExecutor(len(providers)) as exec:
-        tasks = [exec.submit(process, w3) for w3 in providers]
-        res = [future.result() for future in as_completed(tasks)]
-        assert len(res) == len(providers)
+    res = build_contract("TestERC20A")
+    contract = w3.eth.contract(abi=res["abi"], bytecode=res["bytecode"])
+    tx = contract.constructor().build_transaction({"from": acc.address})
+    tx_hash = send_transaction(w3, tx, key=acc.key)["transactionHash"].to_0x_hex()
+    w3_wait_for_new_blocks(w3, 1)
+    tx_res = call(METHOD, [tx_hash, CALL_TRACER])
+    assert tx_res["result"] == EXPECTED_CONTRACT_CREATE_TRACER
 
 
 def test_trace_tx(mantra):
-    method = "debug_traceTransaction"
-    tracer = {"tracer": "callTracer"}
+    w3 = mantra.w3
     tracers = [
         [],
-        [tracer],
-        [tracer | {"tracerConfig": {"onlyTopCall": True}}],
-        [tracer | {"tracerConfig": {"withLog": True}}],
-        [tracer | {"tracerConfig": {"diffMode": True}}],
+        [CALL_TRACER],
+        [CALL_TRACER | {"tracerConfig": {"onlyTopCall": True}}],
+        [CALL_TRACER | {"tracerConfig": {"withLog": True}}],
+        [CALL_TRACER | {"tracerConfig": {"diffMode": True}}],
     ]
-    iterations = 1
     acc = derive_random_account()
-
-    def process(w3):
-        # fund new sender to deploy contract with same address
-        fund_acc(w3, acc)
-        msg = Contract("TestMessageCall", acc.key)
-        msg.deploy(mantra.w3)
-        contract = msg.contract
-        tx = contract.functions.test(iterations).build_transaction()
-        tx_hash = send_transaction(w3, tx)["transactionHash"].hex()
-        tx_hash = f"0x{tx_hash}"
-        res = []
-        call = w3.provider.make_request
-        with ThreadPoolExecutor(len(tracers)) as exec:
-            params = [([tx_hash] + cfg) for cfg in tracers]
-            exec_map = exec.map(call, itertools.repeat(method), params)
-            res = [json.dumps(resp["result"], sort_keys=True) for resp in exec_map]
-        return res
-
-    providers = [mantra.w3]
-    with ThreadPoolExecutor(len(providers)) as exec:
-        tasks = [exec.submit(process, w3) for w3 in providers]
-        res = [future.result() for future in as_completed(tasks)]
-        assert len(res) == len(providers)
-        assert res[0] == res[-1], res
+    # fund new sender to deploy contract with same address
+    fund_acc(w3, acc)
+    msg = Contract("TestMessageCall", acc.key)
+    msg.deploy(w3)
+    tx = msg.contract.functions.test(1).build_transaction()
+    tx_hash = send_transaction(w3, tx)["transactionHash"].to_0x_hex()
+    # trace the same tx under every tracer at once
+    with ThreadPoolExecutor(len(tracers)) as executor:
+        params = [[tx_hash] + cfg for cfg in tracers]
+        for resp in executor.map(
+            w3.provider.make_request, itertools.repeat(METHOD), params
+        ):
+            assert "result" in resp, resp

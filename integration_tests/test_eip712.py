@@ -23,14 +23,19 @@ from .eip712_utils import (
 from .utils import ADDRS, CHAIN_ID, DEFAULT_DENOM, KEYS
 
 
-def _broadcast_tx(mantra, tx_bytes_b64):
+def _broadcast_tx(mantra, signed_tx, gas):
+    "Broadcast a TxRaw over REST and check it lands with `gas` wanted."
     p = ports.api_port(mantra.base_port(0))
     url = f"http://127.0.0.1:{p}/cosmos/tx/v1beta1/txs"
+    tx_bytes_b64 = base64.b64encode(signed_tx.SerializeToString()).decode("utf-8")
     body = {"tx_bytes": tx_bytes_b64, "mode": "BROADCAST_MODE_SYNC"}
     rsp = requests.post(url, json=body)
     if not rsp.ok:
         raise Exception(f"response code: {rsp.status_code}, {rsp.reason}, {rsp.json()}")
-    return rsp.json()["tx_response"]
+    rsp = rsp.json()["tx_response"]
+    assert rsp["code"] == 0, rsp["raw_log"]
+    events = mantra.cosmos_cli().event_query_tx_for(rsp["txhash"])
+    assert events["gas_wanted"] == str(gas)
 
 
 def _common_setup(mantra):
@@ -79,13 +84,7 @@ def test_without_extension(mantra):
         auth_info_bytes=legacy["authInfo"].SerializeToString(),
         signatures=[sig],
     )
-
-    tx_bytes_b64 = base64.b64encode(signed_tx.SerializeToString()).decode("utf-8")
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    events = cli.event_query_tx_for(rsp["txhash"])
-    assert events["gas_wanted"] == str(gas)
+    _broadcast_tx(mantra, signed_tx, gas)
 
 
 @pytest.mark.skip(reason="wait enable in ante handler")
@@ -96,15 +95,7 @@ def test_native_tx(mantra):
     extension = signature_to_web3_extension(chain, sender, sig)
     legacy = tx["legacyAmino"]
     signed_tx = create_tx_raw_eip712(legacy["body"], legacy["authInfo"], extension)
-
-    tx_bytes_b64 = base64.b64encode(signed_tx["message"].SerializeToString()).decode(
-        "utf-8"
-    )
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    events = cli.event_query_tx_for(rsp["txhash"])
-    assert events["gas_wanted"] == str(gas)
+    _broadcast_tx(mantra, signed_tx, gas)
 
 
 def test_multisig_eip712(mantra):
@@ -166,21 +157,17 @@ def test_multisig_eip712(mantra):
         value=legacy_amino_pubkey.SerializeToString(),
     )
 
-    def sign_for_multisig(signer_name, signer_key):
+    def sign_for_multisig(signer_name):
         sender = {
             "accountAddress": multisig_addr,
             "sequence": multisig_sequence,
             "accountNumber": multisig_account_number,
             "pubkey": json.loads(cli.address(signer_name, "acc", "pubkey"))["key"],
         }
+        return _sign_eip712(chain, sender, fee, params, signer_name)
 
-        tx = create_message_send(chain, sender, fee, "", params)
-        msg_hash = encode_eip712_for_signing(tx["eipToSign"])
-        signed = Account.unsafe_sign_hash(msg_hash, signer_key)
-        return tx, signed.signature
-
-    tx1, sig1 = sign_for_multisig(signer1_name, KEYS[signer1_name])
-    _, sig2 = sign_for_multisig(signer2_name, KEYS[signer2_name])
+    tx1, sig1 = sign_for_multisig(signer1_name)
+    _, sig2 = sign_for_multisig(signer2_name)
 
     legacy = tx1["legacyAmino"]
 
@@ -199,10 +186,4 @@ def test_multisig_eip712(mantra):
         auth_info_bytes=auth_info.SerializeToString(),
         signatures=[multi_sig.SerializeToString()],
     )
-
-    tx_bytes_b64 = base64.b64encode(signed_tx.SerializeToString()).decode("utf-8")
-    rsp = _broadcast_tx(mantra, tx_bytes_b64)
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    events = cli.event_query_tx_for(rsp["txhash"])
-    assert events["gas_wanted"] == str(gas)
+    _broadcast_tx(mantra, signed_tx, gas)

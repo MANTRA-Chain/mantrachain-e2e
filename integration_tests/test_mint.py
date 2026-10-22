@@ -3,9 +3,8 @@ from pathlib import Path
 import pytest
 from pystarport.utils import wait_for_new_blocks
 
-from integration_tests.utils import module_address, submit_gov_proposal
-
 from .network import setup_custom_mantra
+from .utils import module_address, submit_gov_proposal
 
 
 @pytest.fixture(scope="module")

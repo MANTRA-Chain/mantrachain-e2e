@@ -8,7 +8,7 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.mark.connect
-async def test_connect_exception(connect_mantra):
+async def test_connect_gas_price(connect_mantra):
     await test_gas_price(None, connect_mantra)
 
 

@@ -1,7 +1,7 @@
 from .utils import (
-    AsyncTestMessageCall,
+    AsyncContract,
     AsyncTestRevert,
-    create_contract_transaction,
+    build_contract,
 )
 
 METHOD = "eth_estimateGas"
@@ -27,9 +27,9 @@ async def test_out_of_gas_error(mantra):
     iterations = 1
     gas = 21204
     w3 = mantra.async_w3
-    msg = AsyncTestMessageCall()
+    msg = AsyncContract("TestMessageCall")
     await msg.deploy(w3)
-    tx_data = msg.get_test_data(iterations)
+    tx_data = msg.contract.fns.test(iterations).data
     tx_params = {"to": msg.address, "data": tx_data, "gas": hex(gas)}
     rsp = await w3.provider.make_request(METHOD, [tx_params])
     error = rsp["error"]
@@ -40,8 +40,7 @@ async def test_out_of_gas_error(mantra):
 async def test_storage_out_of_gas_error(mantra):
     gas = 210000
     w3 = mantra.async_w3
-    tx = await create_contract_transaction(w3, "TestMessageCall")
-    tx_params = {"data": tx["data"], "gas": hex(gas)}
+    tx_params = {"data": build_contract("TestMessageCall")["bytecode"], "gas": hex(gas)}
     rsp = await w3.provider.make_request(METHOD, [tx_params])
     error = rsp["error"]
     assert error["code"] == -32000

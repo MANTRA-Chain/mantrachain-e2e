@@ -1,7 +1,5 @@
 import pytest
-import requests
 import web3
-from pystarport import ports
 from pystarport.utils import w3_wait_for_block, wait_for_new_blocks
 
 from .utils import (
@@ -43,21 +41,13 @@ def test_traceblock(mantra):
         else:
             txhash = w3.eth.send_raw_transaction(signed.raw_transaction)
             txhashes.append(txhash)
-    for txhash in txhashes[0 : total - 1]:
+    for txhash in txhashes:
         res = w3.eth.wait_for_transaction_receipt(txhash)
         assert res.status == 1
 
     def trace_blk(blk):
-        url = f"http://127.0.0.1:{ports.evmrpc_port(mantra.base_port(0))}"
-        params = {
-            "method": "debug_traceBlockByNumber",
-            "params": [hex(blk + 1)],
-            "id": 1,
-            "jsonrpc": "2.0",
-        }
-        rsp = requests.post(url, json=params)
-        assert rsp.status_code == 200
-        return rsp.json()["result"]
+        rsp = w3.provider.make_request("debug_traceBlockByNumber", [hex(blk + 1)])
+        return rsp["result"]
 
     total = len(trace_blk(blk))
     expected = 2

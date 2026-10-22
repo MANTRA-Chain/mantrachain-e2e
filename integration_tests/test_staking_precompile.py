@@ -11,11 +11,7 @@ import web3
 from dateutil.parser import isoparse
 from eth_account import Account
 from eth_contract.contract import Contract
-from eth_contract.deploy_utils import (
-    ensure_create2_deployed,
-    ensure_deployed_by_create2,
-)
-from eth_contract.utils import get_initcode, sign_transaction
+from eth_contract.utils import sign_transaction
 from pystarport import cluster
 from pystarport.utils import (
     BondStatus,
@@ -38,6 +34,7 @@ from .utils import (
     assert_validator_bonded,
     bech32_to_eth,
     build_contract,
+    deploy_by_create2,
     duration,
     edit_app_cfg,
     eth_to_bech32,
@@ -52,9 +49,7 @@ UNDELEGATE = PRECOMPILE.fns.undelegate
 VALIDATOR = PRECOMPILE.fns.validator
 STAKING = "0x0000000000000000000000000000000000000800"
 TEST_STAKING = Contract(build_contract("TestStaking")["abi"])
-TEST_STAKING_CONTRACT = None
 EXPLOIT = Contract(build_contract("StakingExploit")["abi"])
-EXPLOIT_CONTRACT = None
 gas = 400_000
 
 
@@ -86,34 +81,21 @@ async def test_connect_staking_delegate(connect_mantra, tmp_path):
     await test_staking_delegate(None, connect_mantra, tmp_path)
 
 
-async def get_test_staking_contract(w3):
-    global TEST_STAKING_CONTRACT
-    signer = ACCOUNTS["community"]
-    if TEST_STAKING_CONTRACT is None:
-        artifact = build_contract("TestStaking")
-        await ensure_create2_deployed(w3, signer)
-        TEST_STAKING_CONTRACT = await ensure_deployed_by_create2(
-            w3,
-            signer,
-            get_initcode(artifact),
-            salt=100,
-        )
-    return TEST_STAKING_CONTRACT
-
-
-async def get_exploit_contract(w3):
-    global EXPLOIT_CONTRACT
-    signer = ACCOUNTS["community"]
-    if EXPLOIT_CONTRACT is None:
-        artifact = build_contract("StakingExploit")
-        await ensure_create2_deployed(w3, signer)
-        EXPLOIT_CONTRACT = await ensure_deployed_by_create2(
-            w3,
-            signer,
-            get_initcode(artifact),
-            salt=101,
-        )
-    return EXPLOIT_CONTRACT
+async def delegate_via_both(cli, w3, acct, test_staking):
+    "Delegate 3 and 4 to the first two validators via the precompile, then TestStaking."
+    res = await get_validators(w3)
+    val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
+    for to in [STAKING, test_staking]:
+        for val, amt in zip(val_ops, [3, 4]):
+            balance_bf = await w3.eth.get_balance(acct.address)
+            bonded_bf = cli.staking_pool()
+            res = await delegate(w3, acct, val, amt, to=to)
+            assert res.status == 1
+            fee = res["gasUsed"] * res["effectiveGasPrice"]
+            assert cli.staking_pool() == bonded_bf + amt
+            balance = await w3.eth.get_balance(acct.address)
+            assert balance == balance_bf - amt * WEI_PER_DENOM - fee
+    return val_ops
 
 
 async def delegated_amount(w3, delegator, validator):
@@ -139,7 +121,7 @@ async def test_delegate_transfer_to_bonded_pool_rejected(mantra):
     cli = mantra.cosmos_cli()
     w3 = mantra.async_w3
     acct = ACCOUNTS["community"]
-    exploit = await get_exploit_contract(w3)
+    exploit = await deploy_by_create2(w3, ACCOUNTS["community"], "StakingExploit", 101)
 
     validator = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
     pool_bech32 = module_address("bonded_tokens_pool")
@@ -227,7 +209,9 @@ async def redelegate(w3, acct, val_ops, amt, to):
 async def test_staking_delegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3
-    test_staking = await get_test_staking_contract(w3)
+    test_staking = await deploy_by_create2(
+        w3, ACCOUNTS["community"], "TestStaking", 100
+    )
     amt = 2
     name = "signer1"
     acct = ACCOUNTS[name]
@@ -264,24 +248,11 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
     if unbond_duration > 60:
         pytest.skip(f"unbond_duration is {unbond_duration} too long for test")
     w3 = connect_mantra.async_w3
-    test_staking = await get_test_staking_contract(w3)
-    name = "signer1"
-    acct = ACCOUNTS[name]
-    res = await get_validators(w3)
-    val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
-    amounts = [3, 4]
-    fee = 0
-
-    for to in [STAKING, test_staking]:
-        for i, amt in enumerate(amounts):
-            balance_bf = await w3.eth.get_balance(acct.address)
-            bonded_bf = cli.staking_pool()
-            res = await delegate(w3, acct, val_ops[i], amt, to=to)
-            assert res.status == 1
-            fee = res["gasUsed"] * res["effectiveGasPrice"]
-            assert cli.staking_pool() == bonded_bf + amt
-            balance = await w3.eth.get_balance(acct.address)
-            assert balance == balance_bf - amt * WEI_PER_DENOM - fee
+    test_staking = await deploy_by_create2(
+        w3, ACCOUNTS["community"], "TestStaking", 100
+    )
+    acct = ACCOUNTS["signer1"]
+    val_ops = await delegate_via_both(cli, w3, acct, test_staking)
 
     unbonded_bf = cli.staking_pool(bonded=False)
     unbond_amt = 2
@@ -323,24 +294,11 @@ async def test_staking_unbond(mantra, connect_mantra, tmp_path):
 async def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     cli = connect_mantra.cosmos_cli(tmp_path)
     w3 = connect_mantra.async_w3
-    test_staking = await get_test_staking_contract(w3)
-    name = "signer1"
-    acct = ACCOUNTS[name]
-    res = await get_validators(w3)
-    val_ops = [cli.debug_addr(validator[0], bech="val") for validator in res[:2]]
-    amounts = [3, 4]
-    fee = 0
-
-    for to in [STAKING, test_staking]:
-        for i, amt in enumerate(amounts):
-            balance_bf = await w3.eth.get_balance(acct.address)
-            bonded_bf = cli.staking_pool()
-            res = await delegate(w3, acct, val_ops[i], amt, to=to)
-            assert res.status == 1
-            fee = res["gasUsed"] * res["effectiveGasPrice"]
-            assert cli.staking_pool() == bonded_bf + amt
-            balance = await w3.eth.get_balance(acct.address)
-            assert balance == balance_bf - amt * WEI_PER_DENOM - fee
+    test_staking = await deploy_by_create2(
+        w3, ACCOUNTS["community"], "TestStaking", 100
+    )
+    acct = ACCOUNTS["signer1"]
+    val_ops = await delegate_via_both(cli, w3, acct, test_staking)
 
     DELEGATION = PRECOMPILE.fns.delegation
     redelegate_amt = 2

@@ -82,7 +82,7 @@ async def test_eoa(cluster):
     res = await w3.eth.wait_for_transaction_receipt(clear_tx_hash)
     assert res.status == 1
     reset_code = await w3.eth.get_code(acct.address)
-    assert reset_code.hex().startswith(""), "Code was not clear!"
+    assert not reset_code, "Code was not clear!"
 
     # TODO: https://github.com/cosmos/evm/issues/493
     # data = {"to": sender, "value": 10000, "gasPrice": gas_price, "gas": gas}

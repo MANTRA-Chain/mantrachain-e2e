@@ -73,33 +73,15 @@ async def build_diamond_cut(
             if old_sel not in new_selectors:
                 remove.append(old_sel)
 
-    cuts = []
-    if replace:
-        cuts.append(
-            FacetCut(
-                facet_address=facet.facet_address,
-                action=FacetCutAction.REPLACE,
-                function_selectors=replace,
-            )
+    return [
+        FacetCut(facet_address=addr, action=action, function_selectors=selectors)
+        for action, addr, selectors in (
+            (FacetCutAction.REPLACE, facet.facet_address, replace),
+            (FacetCutAction.REMOVE, ZERO_ADDRESS, remove),
+            (FacetCutAction.ADD, facet.facet_address, add),
         )
-    if remove:
-        cuts.append(
-            FacetCut(
-                facet_address=ZERO_ADDRESS,
-                action=FacetCutAction.REMOVE,
-                function_selectors=remove,
-            )
-        )
-    if add:
-        cuts.append(
-            FacetCut(
-                facet_address=facet.facet_address,
-                action=FacetCutAction.ADD,
-                function_selectors=add,
-            )
-        )
-
-    return cuts
+        if selectors
+    ]
 
 
 async def cut_diamond(

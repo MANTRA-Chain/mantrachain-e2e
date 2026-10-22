@@ -12,15 +12,13 @@ from eth_contract.deploy_utils import (
 from eth_contract.utils import get_initcode
 from web3 import AsyncWeb3
 
-from .diamond import Facet, FacetCut, FacetCutAction, cut_diamond
+from .diamond import Facet, FacetCut, FacetCutAction, IDiamondLoupe, cut_diamond
 from .utils import ACCOUNTS, build_contract_solcx, selectors
 from .utils import send_transaction_async as send_transaction
 
 DIAMOND_ARTIFACT = build_contract_solcx("Diamond")
 GREETER_ARTIFACT = build_contract_solcx("Greeter")
 
-IDiamondCut = Contract(DIAMOND_ARTIFACT["IDiamondCut"]["abi"])
-IDiamondLoupe = Contract(DIAMOND_ARTIFACT["IDiamondLoupe"]["abi"])
 IERC173 = Contract(DIAMOND_ARTIFACT["IERC173"]["abi"])
 IGreeter1 = Contract(GREETER_ARTIFACT["Greeter"]["abi"])
 IGreeter2 = Contract(GREETER_ARTIFACT["GreeterV2"]["abi"])

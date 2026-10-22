@@ -40,7 +40,7 @@ from eth_contract.utils import (
 )
 from eth_contract.weth import WETH, WETH9_ARTIFACT
 from eth_hash.auto import keccak
-from eth_utils import to_bytes, to_checksum_address
+from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
 from web3._utils.contracts import encode_transaction_data
@@ -108,7 +108,7 @@ async def test_flow(mantra, connect_mantra):
     await ensure_history_storage_deployed(w3, account)
     assert await w3.eth.get_code(HISTORY_STORAGE_ADDRESS)
     salt = 100
-    initcode = to_bytes(hexstr=build_contract("TestBlockTxProperties")["bytecode"][2:])
+    initcode = get_initcode(build_contract("TestBlockTxProperties"))
     contract = await ensure_deployed_by_create2(w3, account, initcode, salt=salt)
     assert contract == "0xe48C487A7D3Aaa3665D7c63cCaf29F31d0c74E1A"
     height = await w3.eth.block_number
@@ -148,17 +148,20 @@ async def test_flow(mantra, connect_mantra):
     amount = 1000
     amount_all = amount * len(users)
 
+    # convert amount_all into WETH and distribute to users
+    deposit_and_distribute = [
+        Call3Value(WETH_ADDRESS, False, amount_all, weth.fns.deposit().data)
+    ] + [
+        Call3Value(
+            WETH_ADDRESS, False, 0, ERC20.fns.transfer(user.address, amount).data
+        )
+        for user in users
+    ]
     balances = [(WETH_ADDRESS, ERC20.fns.balanceOf(user.address)) for user in users]
     balances_bf = await multicall(w3, balances)
-    await MULTICALL3.fns.aggregate3Value(
-        [Call3Value(WETH_ADDRESS, False, amount_all, weth.fns.deposit().data)]
-        + [
-            Call3Value(
-                WETH_ADDRESS, False, 0, ERC20.fns.transfer(user.address, amount).data
-            )
-            for user in users
-        ]
-    ).transact(w3, users[0], value=amount_all)
+    await MULTICALL3.fns.aggregate3Value(deposit_and_distribute).transact(
+        w3, users[0], value=amount_all
+    )
     balances_af = await multicall(w3, balances)
     assert all(af - bf == amount for af, bf in zip(balances_af, balances_bf))
 
@@ -167,6 +170,7 @@ async def test_flow(mantra, connect_mantra):
             w3, user, to=WETH_ADDRESS
         )
 
+    multicall3_weth_bf = await balance_of(w3, WETH_ADDRESS, MULTICALL3_ADDRESS)
     await MULTICALL3.fns.aggregate3Value(
         [
             Call3Value(
@@ -186,30 +190,21 @@ async def test_flow(mantra, connect_mantra):
             ),
         ]
     ).transact(w3, users[0])
+    # the users' WETH only passed through MULTICALL3
+    assert await balance_of(w3, WETH_ADDRESS, MULTICALL3_ADDRESS) == multicall3_weth_bf
     await weth.fns.withdraw(amount_all).transact(w3, users[0], to=WETH_ADDRESS)
-    balances_bf = await multicall(w3, balances)
-    await balance_of(w3, WETH_ADDRESS, MULTICALL3_ADDRESS) == 0
 
     # test_multicall3_router
-    amount_all = amount * len(users)
     router = Contract(MULTICALL3ROUTER_ARTIFACT["abi"])
     multicall3 = MULTICALL3ROUTER
 
-    balances = [(WETH_ADDRESS, ERC20.fns.balanceOf(user.address)) for user in users]
     balances_bf = await multicall(w3, balances)
     assert (await multicall(w3, balances)) == balances_bf
     before = await balance_of(w3, ZERO_ADDRESS, users[0].address)
 
-    # convert amount_all into WETH and distribute to users
-    receipt = await MULTICALL3.fns.aggregate3Value(
-        [Call3Value(WETH_ADDRESS, False, amount_all, WETH.fns.deposit().data)]
-        + [
-            Call3Value(
-                WETH_ADDRESS, False, 0, ERC20.fns.transfer(user.address, amount).data
-            )
-            for user in users
-        ]
-    ).transact(w3, users[0], to=multicall3, value=amount_all)
+    receipt = await MULTICALL3.fns.aggregate3Value(deposit_and_distribute).transact(
+        w3, users[0], to=multicall3, value=amount_all
+    )
     before -= receipt["effectiveGasPrice"] * receipt["gasUsed"]
     # check users's weth balances
     balances_af = await multicall(w3, balances)
@@ -313,7 +308,7 @@ async def test_7702(mantra, connect_mantra):
 
 
 @pytest.mark.connect
-async def test_connect_4437(connect_mantra):
+async def test_connect_4337(connect_mantra):
     await test_4337(None, connect_mantra)
 
 
@@ -343,12 +338,8 @@ async def test_deploy_multi(mantra):
     nonce = await w3.eth.get_transaction_count(owner)
     txs = [{**tx, "nonce": nonce + i} for i, tx in enumerate(tx_results)]
     receipts = await asyncio.gather(
-        *(send_transaction(w3, tx["from"], **tx) for tx in txs), return_exceptions=True
+        *(send_transaction(w3, tx["from"], **tx) for tx in txs)
     )
-    for r in receipts:
-        if isinstance(r, Exception):
-            pytest.fail(f"send_transaction failed: {r}")
-    assert len(receipts) == num
     total = 100
     token = receipts[0]["contractAddress"]
     receipt = await ERC20.fns.mint(owner, total).transact(w3, owner, to=token)

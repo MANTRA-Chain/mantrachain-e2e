@@ -1,5 +1,4 @@
 import hashlib
-from typing import Optional
 
 import pytest
 from eth_account import Account
@@ -256,18 +255,12 @@ class Spec:
 
     @classmethod
     def point_to_bytes(cls, point) -> bytes:
-        if point is None:
-            # Represent point at infinity as zeros (128 bytes)
-            return b"\x00" * 128
         x, y = point
         return cls.pad_fq(x) + cls.pad_fq(y)
 
     @classmethod
     def g2_point_to_bytes(cls, point) -> bytes:
         """Convert G2 point to 256 bytes."""
-        if point is None:
-            # Represent point at infinity as zeros (256 bytes)
-            return b"\x00" * 256
         x, y = point
         # G2 points have Fp2 coordinates: x = (x.c0, x.c1), y = (y.c0, y.c1)
         # Each component is an FQ element that needs 64-byte padding
@@ -283,6 +276,7 @@ G1_IDENTITY = b"\x00" * 128
 G2_IDENTITY = b"\x00" * 256
 G1_GENERATOR = Spec.point_to_bytes(G1)
 G2_GENERATOR = Spec.g2_point_to_bytes(G2)
+G2_GENERATOR_DOUBLE = Spec.g2_point_to_bytes(add(G2, G2))
 
 # Double the generator point: 2*G1
 G1_GENERATOR_DOUBLE_POINT = add(G1, G1)
@@ -300,30 +294,16 @@ def kzg_to_versioned_hash(kzg_commitment: bytes) -> bytes:
     return bytes([0x01]) + hash_result[1:]
 
 
-async def format_precompile_input(
-    versioned_hash: Optional[bytes],
-    z: int,
-    y: int,
-    kzg_commitment: bytes,
-    kzg_proof: bytes,
-) -> bytes:
-    """Format the input for the point evaluation precompile (192 bytes total)."""
-    z_bytes = z.to_bytes(32, "big")
-    y_bytes = y.to_bytes(32, "big")
-    if versioned_hash is None:
-        versioned_hash = kzg_to_versioned_hash(kzg_commitment)
-    return versioned_hash + z_bytes + y_bytes + kzg_commitment + kzg_proof
-
-
 async def test_kzg_point_evaluation(mantra):
     w3 = mantra.async_w3
-    # Use a valid input (infinity point)
-    input = await format_precompile_input(
-        versioned_hash=None,
-        z=Spec.BLS_MODULUS - 1,
-        y=0,
-        kzg_commitment=Spec.INF_POINT,
-        kzg_proof=Spec.INF_POINT,
+    # a valid 192-byte input: versioned hash, z, y, commitment and proof, all on
+    # the infinity point
+    input = (
+        kzg_to_versioned_hash(Spec.INF_POINT)
+        + (Spec.BLS_MODULUS - 1).to_bytes(32, "big")
+        + (0).to_bytes(32, "big")
+        + Spec.INF_POINT
+        + Spec.INF_POINT
     )
     res = await w3.eth.call(
         {
@@ -357,9 +337,6 @@ async def test_kzg_point_evaluation(mantra):
     ],
 )
 async def test_bls12381_g1_add(mantra, point_a, point_b: bytes, expected):
-    # Verify input points are correct length
-    if len(point_a) != 128 or len(point_b) != 128:
-        raise ValueError("Each G1 point must be exactly 128 bytes")
     input_data = point_a + point_b
     w3 = mantra.async_w3
     res = await w3.eth.call(
@@ -380,12 +357,6 @@ async def test_bls12381_g1_multiexp(mantra):
     point1 = G1_GENERATOR
     scalar1 = (2).to_bytes(32, "big")  # Multiply by 2
     input_data = point1 + scalar1
-    # Verify input points are correct length
-    assert len(point1) == 128, f"Point should be 128 bytes, got {len(point1)}"
-    assert len(scalar1) == 32, f"Scalar should be 32 bytes, got {len(scalar1)}"
-    assert (
-        len(input_data) == 160
-    ), f"Single multiexp input should be 160 bytes, got {len(input_data)}"
     res = await w3.eth.call(
         {
             "to": PRECOMPILE_BLS12381_G1_MULTIEXP,
@@ -397,52 +368,31 @@ async def test_bls12381_g1_multiexp(mantra):
     assert res == G1_GENERATOR_DOUBLE, "G * 2 should equal 2G"
 
 
-async def test_bls12381_g2_add(mantra):
-    w3 = mantra.async_w3
-    # G2 points are 256 bytes each (128 bytes for X + 128 bytes for Y)
-    # Each coordinate (X, Y) is 128 bytes because G2 is over Fp2 (two Fp elements)
-    # Verify the generator point is exactly 256 bytes
-    assert (
-        len(G2_GENERATOR) == 256
-    ), f"G2 generator should be 256 bytes, got {len(G2_GENERATOR)}"
-
-    async def call(input):
-        return await w3.eth.call(
-            {
-                "to": PRECOMPILE_BLS12381_G2_ADD,
-                "data": f"0x{input.hex()}",
-                "gas": 50000,
-            }
-        )
-
-    # Test case 1: Identity + Identity = Identity
-    input = G2_IDENTITY + G2_IDENTITY
-    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
-    res = await call(input)
-    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
-    assert res == G2_IDENTITY, "Identity + Identity should equal Identity"
-
-    # Test case 2: Generator + Identity = Generator
-    input = G2_GENERATOR + G2_IDENTITY
-    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
-    res = await call(input)
-    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
-    assert res == G2_GENERATOR, "Generator + Identity should equal Generator"
-
-    # Test case 3: Identity + Generator = Generator
-    input = G2_IDENTITY + G2_GENERATOR
-    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
-    res = await call(input)
-    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
-    assert res == G2_GENERATOR, "Identity + Generator should equal Generator"
-
-    # Test case 4: Generator + Generator = 2*Generator (point doubling)
-    input = G2_GENERATOR + G2_GENERATOR
-    assert len(input) == 512, f"G2 Add input should be 512 bytes, got {len(input)}"
-    res = await call(input)
-    assert len(res) == 256, f"G2 result should be 256 bytes, got {len(res)}"
-    assert res != G2_GENERATOR, "Generator + Generator should not equal Generator"
-    assert res != G2_IDENTITY, "Generator + Generator should not equal Identity"
+@pytest.mark.parametrize(
+    "point_a,point_b,expected",
+    [
+        (G2_IDENTITY, G2_IDENTITY, G2_IDENTITY),
+        (G2_GENERATOR, G2_IDENTITY, G2_GENERATOR),
+        (G2_IDENTITY, G2_GENERATOR, G2_GENERATOR),
+        (G2_GENERATOR, G2_GENERATOR, G2_GENERATOR_DOUBLE),
+    ],
+    ids=[
+        "identity_plus_identity",
+        "generator_plus_identity",
+        "identity_plus_generator",
+        "generator_plus_generator",
+    ],
+)
+async def test_bls12381_g2_add(mantra, point_a, point_b, expected):
+    # G2 points are 256 bytes: X and Y are each an Fp2 pair of 64-byte elements
+    res = await mantra.async_w3.eth.call(
+        {
+            "to": PRECOMPILE_BLS12381_G2_ADD,
+            "data": "0x" + (point_a + point_b).hex(),
+            "gas": 50000,
+        }
+    )
+    assert res == expected
 
 
 @pytest.mark.parametrize(
@@ -471,18 +421,8 @@ async def test_bls12381_g2_add(mantra):
 )
 async def test_bls12381_g2_multiexp(mantra, points, scalars, expected):
     w3 = mantra.async_w3
-    assert len(points) == len(scalars), "Number of points must equal number of scalars"
-    # Build input data: point1 + scalar1 + point2 + scalar2 + ...
-    input_data = b""
-    for point, scalar in zip(points, scalars):
-        assert len(point) == 256, f"Each G2 point must be 256 bytes, got {len(point)}"
-        scalar_bytes = scalar.to_bytes(32, "big")
-        input_data += point + scalar_bytes
-
-    expected_input_length = len(points) * 288  # 288 bytes per (point + scalar) pair
-    assert (
-        len(input_data) == expected_input_length
-    ), f"Input should be {expected_input_length} bytes, got {len(input_data)}"
+    # point1 + scalar1 + point2 + scalar2 + ...
+    input_data = b"".join(p + s.to_bytes(32, "big") for p, s in zip(points, scalars))
     res = await w3.eth.call(
         {
             "to": PRECOMPILE_BLS12381_G2_MULTIEXP,
@@ -515,17 +455,8 @@ async def test_bls12381_g2_multiexp(mantra, points, scalars, expected):
 )
 async def test_bls12381_pairing(mantra, pairs):
     w3 = mantra.async_w3
-    # Build input data: g1_point1 + g2_point1 + g1_point2 + g2_point2 + ...
-    input_data = b""
-    for g1_point, g2_point in pairs:
-        assert len(g1_point) == 128, f"G1 point must be 128 bytes, got {len(g1_point)}"
-        assert len(g2_point) == 256, f"G2 point must be 256 bytes, got {len(g2_point)}"
-        input_data += g1_point + g2_point
-
-    expected_input_length = len(pairs) * 384  # 384 bytes per (G1 + G2) pair
-    assert (
-        len(input_data) == expected_input_length
-    ), f"Input should be {expected_input_length} bytes, got {len(input_data)}"
+    # g1_point1 + g2_point1 + g1_point2 + g2_point2 + ...
+    input_data = b"".join(g1 + g2 for g1, g2 in pairs)
     res = await w3.eth.call(
         {
             "to": PRECOMPILE_BLS12381_PAIRING,
@@ -562,7 +493,6 @@ async def test_bls12381_pairing(mantra, pairs):
 async def test_bls12381_map_g1(mantra, field):
     w3 = mantra.async_w3
     input = field.to_bytes(64, "big")
-    assert len(input) == 64, f"input should be 64 bytes, got {len(input)}"
     res = await w3.eth.call(
         {
             "to": PRECOMPILE_BLS12381_MAP_G1,
@@ -604,7 +534,6 @@ async def test_bls12381_map_g2(mantra, field_pair):
     data1 = field1.to_bytes(64, "big")
     data2 = field2.to_bytes(64, "big")
     input = data1 + data2
-    assert len(input) == 128, f"G2 map input should be 128 bytes, got {len(input)}"
     res = await w3.eth.call(
         {
             "to": PRECOMPILE_BLS12381_MAP_G2,

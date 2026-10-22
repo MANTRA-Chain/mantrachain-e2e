@@ -22,7 +22,6 @@ from .utils import (
     AsyncGreeter,
     AsyncTestRevert,
     Contract,
-    RevertTestContract,
     address_to_bytes32,
     assert_transfer,
     bech32_to_eth,
@@ -43,16 +42,16 @@ from .utils import (
 
 @pytest.mark.connect
 def test_connect_simple(connect_mantra, tmp_path):
-    test_simple(None, connect_mantra, tmp_path, check_reserve=False)
+    test_simple(None, connect_mantra, tmp_path)
 
 
-def test_simple(mantra, connect_mantra, tmp_path, check_reserve=True):
+def test_simple(mantra, connect_mantra, tmp_path):
     """
     check number of validators
     """
     cli = connect_mantra.cosmos_cli(tmp_path)
     assert len(cli.validators()) > 0
-    if check_reserve:
+    if mantra is not None:
         # check vesting account
         cli = mantra.cosmos_cli()
         if cli.has_module("evm"):
@@ -100,15 +99,15 @@ def test_transfer(mantra, connect_mantra, tmp_path):
 
 @pytest.mark.connect
 async def test_connect_send_transaction(connect_mantra):
-    await test_send_transaction(None, connect_mantra, check_gas=False)
+    await test_send_transaction(None, connect_mantra)
 
 
-async def test_send_transaction(mantra, connect_mantra, check_gas=True):
+async def test_send_transaction(mantra, connect_mantra):
     tx = {"to": ADDRS["signer1"], "value": 1000}
     receipt = await send_transaction_async(
         connect_mantra.async_w3, ACCOUNTS["community"], **tx
     )
-    if check_gas:
+    if mantra is not None:
         assert receipt.gasUsed == 21000
 
 
@@ -158,15 +157,15 @@ async def test_send_transaction_mempool_mix(mantra, connect_mantra, tmp_path):
 
 @pytest.mark.connect
 def test_connect_events(connect_mantra):
-    test_events(None, connect_mantra, exp_gas_used=None)
+    test_events(None, connect_mantra)
 
 
-def test_events(mantra, connect_mantra, exp_gas_used=778887):
+def test_events(mantra, connect_mantra):
     w3 = connect_mantra.w3
     sender = ADDRS["community"]
     receiver = ADDRS["signer1"]
     contract = Contract("TestERC20A")
-    contract.deploy(w3, exp_gas_used=exp_gas_used)
+    contract.deploy(w3, exp_gas_used=778887 if mantra is not None else None)
     erc20 = contract.contract
     amt = 10
     tx = erc20.functions.transfer(receiver, amt).build_transaction({"from": sender})
@@ -358,7 +357,7 @@ def test_connect_exception(connect_mantra):
 def test_exception(mantra, connect_mantra):
     w3 = connect_mantra.w3
     key = KEYS["community"]
-    revert = RevertTestContract("TestRevert", private_key=key)
+    revert = Contract("TestRevert")
     revert.deploy(w3)
     contract = revert.contract
     with pytest.raises(web3.exceptions.ContractLogicError):
@@ -378,10 +377,10 @@ def test_exception(mantra, connect_mantra):
 
 @pytest.mark.connect
 async def test_connect_message_call(connect_mantra):
-    test_message_call(None, connect_mantra, diff=10)
+    test_message_call(None, connect_mantra)
 
 
-def test_message_call(mantra, connect_mantra, diff=10):
+def test_message_call(mantra, connect_mantra):
     "stress test the evm by doing message calls as much as possible"
     w3 = connect_mantra.w3
     key = KEYS["community"]
@@ -400,7 +399,7 @@ def test_message_call(mantra, connect_mantra, diff=10):
     tx["gas"] = w3.eth.estimate_gas(tx)
     elapsed = time.time() - begin
     print("elapsed:", elapsed)
-    assert elapsed < diff  # should finish in reasonable time
+    assert elapsed < 10  # should finish in reasonable time
 
     receipt = send_transaction(w3, tx, key=key)
     assert 22300228 == receipt.cumulativeGasUsed
@@ -500,7 +499,7 @@ def test_refund_unused_gas_when_contract_tx_reverted(mantra, connect_mantra):
     w3 = connect_mantra.w3
     key = KEYS["community"]
     sender = ADDRS["community"]
-    revert = RevertTestContract("TestRevert", private_key=key)
+    revert = Contract("TestRevert")
     revert.deploy(w3)
     contract = revert.contract
     more_than_enough_gas = 1000000

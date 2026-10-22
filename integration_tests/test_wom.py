@@ -2,7 +2,7 @@ import pytest
 from eth_contract.weth import WETH
 from eth_utils import to_checksum_address
 
-from .utils import ACCOUNTS, deploy_wom
+from .utils import ACCOUNTS, WETH_SALT, deploy_by_create2
 from .utils import send_transaction_async as send_transaction
 
 
@@ -10,7 +10,7 @@ from .utils import send_transaction_async as send_transaction
 async def test_wom(mantra):
     deployer = ACCOUNTS["community"]
     w3 = mantra.async_w3
-    wom = await deploy_wom(w3, deployer)
+    wom = await deploy_by_create2(w3, deployer, "WOM", WETH_SALT)
     code = await w3.eth.get_code(wom)
     assert len(code) > 2, "Contract not deployed"
     deposit_amt = 1000

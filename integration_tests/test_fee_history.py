@@ -57,7 +57,6 @@ def test_basic(custom_mantra):
         expect=min,
     )
     for tc in [latest, earliest]:
-        res = []
         with ThreadPoolExecutor(len(tc["blocks"])) as exec:
             tasks = [
                 exec.submit(call, method, [size, b, percentiles]) for b in tc["blocks"]
@@ -172,7 +171,6 @@ def test_concurrent(custom_mantra, tmp_path):
     total = 10
     size = 2
     params = [size, hex(b1), percentiles]
-    res = []
     with ThreadPoolExecutor(total) as exec:
         t = [exec.submit(call, method, params) for i in range(total)]
         res = [future.result()["result"][field] for future in as_completed(t)]

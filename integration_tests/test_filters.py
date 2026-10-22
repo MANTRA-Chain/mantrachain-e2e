@@ -5,7 +5,6 @@ from web3 import AsyncWeb3
 from .utils import (
     ACCOUNTS,
     ADDRS,
-    KEYS,
     AsyncGreeter,
 )
 from .utils import send_transaction_async as send_transaction
@@ -18,7 +17,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_get_logs_by_topic(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    greeter = AsyncGreeter(key=KEYS["community"])
+    greeter = AsyncGreeter()
     addr = await greeter.deploy(w3)
     contract = greeter.contract
     topic = contract.events.ChangeGreeting.topic
@@ -110,7 +109,7 @@ async def test_block_filter(mantra):
 
 async def test_event_log_filter(mantra):
     w3: AsyncWeb3 = mantra.async_w3
-    greeter = AsyncGreeter(key=KEYS["community"])
+    greeter = AsyncGreeter()
     await greeter.deploy(w3)
     contract = greeter.contract
     assert "Hello" == await greeter.greet()

@@ -7,10 +7,9 @@ import pytest
 import requests
 import web3
 from eth_account import Account
-from web3._utils.transactions import fill_transaction_defaults
 
 from .network import setup_custom_mantra
-from .utils import ADDRS, KEYS, send_transaction
+from .utils import ADDRS, KEYS, send_transaction, sign_transaction
 
 pytestmark = pytest.mark.slow
 
@@ -65,13 +64,9 @@ def raw_receipt(node, tx_hash):
 
 
 def nonce_gap_tx(w3, key):
-    acct = Account.from_key(key)
-    tx = fill_transaction_defaults(
-        w3,
-        {"from": acct.address, "to": ADDRS["community"], "value": 1, "gas": 21000},
-    )
-    tx["nonce"] = w3.eth.get_transaction_count(acct.address) + 1
-    return acct.sign_transaction(tx)
+    nonce = w3.eth.get_transaction_count(Account.from_key(key).address) + 1
+    tx = {"to": ADDRS["community"], "value": 1, "gas": 21000, "nonce": nonce}
+    return sign_transaction(w3, tx, key)
 
 
 def test_unknown_hash(node):

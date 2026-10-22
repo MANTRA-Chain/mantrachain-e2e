@@ -13,10 +13,10 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.mark.connect
 async def test_connect_dynamic_fee_tx(connect_mantra):
-    await test_dynamic_fee_tx(None, connect_mantra, update_params=False)
+    await test_dynamic_fee_tx(None, connect_mantra)
 
 
-async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
+async def test_dynamic_fee_tx(mantra, connect_mantra):
     """
     test basic eip-1559 tx works:
     - tx fee calculation is compliant to go-ethereum
@@ -47,7 +47,7 @@ async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
 
     assert blk.gasUsed == txreceipt.gasUsed  # we are the only tx in the block
 
-    if not update_params:
+    if mantra is None:
         return
 
     # check the next block's base fee is adjusted accordingly
@@ -65,10 +65,10 @@ async def test_dynamic_fee_tx(mantra, connect_mantra, update_params=True):
 
 @pytest.mark.connect
 async def test_connect_base_fee_adjustment(connect_mantra):
-    await test_base_fee_adjustment(None, connect_mantra, update_params=False)
+    await test_base_fee_adjustment(None, connect_mantra)
 
 
-async def test_base_fee_adjustment(mantra, connect_mantra, update_params=True):
+async def test_base_fee_adjustment(mantra, connect_mantra):
     """
     verify base fee adjustment of three continuous empty blocks
     """
@@ -76,7 +76,7 @@ async def test_base_fee_adjustment(mantra, connect_mantra, update_params=True):
     begin = await w3.eth.block_number
     await w3_wait_for_block_async(w3, begin + 3)
 
-    if not update_params:
+    if mantra is None:
         return
 
     blk = await w3.eth.get_block(begin)
