@@ -1,20 +1,17 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
-    flake-utils.url = "github:numtide/flake-utils";
-    flake-compat.url = "github:edolstra/flake-compat";
     hermes-src = {
       url = "github:mmsqe/ibc-rs/ae80ab348952840696e6c9a0c7096d2de11ea579";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, flake-compat, hermes-src, flake-utils, ... }:
+  outputs = { self, nixpkgs, hermes-src, ... }:
     let
       overlays =
         [
           (_: pkgs: {
-            flake-compat = flake-compat;
             go-ethereum = pkgs.callPackage ./nix/go-ethereum.nix { };
             solc_0_8_28 = pkgs.callPackage ./nix/solc.nix { };
           })
@@ -42,11 +39,7 @@
 
       packages = forAllSystems (system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = overlays;
-            config = { };
-          };
+          pkgs = self.legacyPackages.${system};
 
           cprotobuf = pkgs.python312Packages.buildPythonPackage {
             pname = "cprotobuf";
@@ -116,11 +109,7 @@
 
       devShells = forAllSystems (system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = overlays;
-            config = { };
-          };
+          pkgs = self.legacyPackages.${system};
 
           scripts = import ./nix/scripts.nix {
             inherit pkgs;

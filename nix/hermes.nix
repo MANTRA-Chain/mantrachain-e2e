@@ -12,7 +12,7 @@
   llvmPackages,
 }:
 
-rustPlatform.buildRustPackage rec {
+rustPlatform.buildRustPackage {
   name = "hermes";
   inherit src;
   cargoBuildFlags = [ "-p" "ibc-relayer-cli" ];

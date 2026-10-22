@@ -78,8 +78,8 @@ This repository contains end-to-end integration tests for the MANTRA Chain proje
 
 - Build mantrachain for a specific platform:
   ```sh
-  nix build .#legacyPackages.aarch64-darwin.mantrachain
-  nix build .#legacyPackages.aarch64-linux.mantrachain
+  nix build .#packages.aarch64-darwin.mantrachaind
+  nix build .#packages.aarch64-linux.mantrachaind
   ```
 
 ## Key Test Files
