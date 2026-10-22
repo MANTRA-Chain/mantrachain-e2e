@@ -1,6 +1,7 @@
 import datetime
 import json
 import shutil
+import time
 from contextlib import contextmanager
 from dataclasses import astuple
 from pathlib import Path
@@ -8,7 +9,6 @@ from pathlib import Path
 import pytest
 import requests
 import tomlkit
-from eth_abi.abi import decode, encode
 from eth_account import Account
 from eth_contract.contract import Contract
 from eth_contract.create2 import create2_address
@@ -16,8 +16,8 @@ from eth_contract.deploy_utils import (
     ensure_create2_deployed,
     ensure_deployed_by_create2,
 )
+from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
-from eth_hash.auto import keccak
 from pystarport import cluster, ports
 from pystarport.utils import (
     wait_for_fn,
@@ -29,59 +29,48 @@ from web3.logs import DISCARD
 from .doc_utils import (
     DOCUMENT_ADDRESS,
     DOCUMENT_PRECOMPILE,
-    Record,
+    NAME_INDEX_PAGE,
+    MatchMode,
     Role,
-    _tx_params,
     add_record,
-    clear_accounts_override,
+    assert_call_reverts,
     consumer_eip1559_fees,
-    do_test_add_and_query_records,
-    do_test_add_record,
-    do_test_add_record_same_checksum_maintains_record_id,
-    do_test_add_registry,
-    do_test_checksum_only_query_respects_limit,
-    do_test_constructor_bypass_ensure_eoa_caller,
-    do_test_contract_cannot_call_anchoring_sensitive_methods,
-    do_test_contract_cannot_call_registries_by_name,
-    do_test_disallow_last_admin_self_revoke,
-    do_test_grant_and_revoke_role_as_admin,
-    do_test_grant_role_permissions,
-    do_test_module_admin_emergency_admin_recovery,
-    do_test_multiple_roles_management,
-    do_test_multiple_versions_same_checksum_across_registries,
-    do_test_query_all_registries_for_checksum,
-    do_test_query_by_registry_and_checksum,
-    do_test_record_level_overrides_registry_level,
-    do_test_registries_by_name,
-    do_test_registries_by_name_rejects_transaction,
-    do_test_registry_only_query_respects_limit,
-    do_test_revoke_role_permissions,
-    do_test_role_idempotency,
-    do_test_role_scope_existence_validation,
-    do_test_role_with_different_checksums,
-    do_test_same_checksum_different_record_ids_per_registry,
-    do_test_shared_checksum_in_multi_registries,
+    create_registry,
+    deploy_anchoring_caller,
     ensure_registry_exists,
-    get_accounts,
-    get_add_registry_event_registry_id,
+    find_document_event,
+    get_registry_id,
+    grant_role,
     new_record,
-    set_accounts_override,
+    query_records,
+    record_metadata,
+    registries_by_name,
+    revoke_role,
+    send_document_call,
     sha256_hex,
+    update_record_status,
 )
-from .ibc_utils import IBCNetwork, create_channel, create_connection, ibc_denom_hash
+from .ibc_utils import (
+    IBCNetwork,
+    create_channel,
+    create_connection,
+    ibc_denom_hash,
+    ibc_timeout_ns,
+)
 from .network import Hermes, Mantra, setup_custom_mantra
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     CMD,
     CONSUMER_GAS_AMT,
     DEFAULT_DENOM,
     KEYS,
-    MNEMONICS,
     MockERC20_ARTIFACT,
     assert_estimate_covers_receipt,
     assert_gas_estimate_within_floor,
     build_contract,
     create_consumer_chain,
+    eth_call_ignoring_overrides,
     eth_to_bech32,
     find_log_event_attrs,
     ibc_denom_address,
@@ -94,6 +83,7 @@ from .utils import (
 
 pytestmark = pytest.mark.ccv
 
+CONSUMER_CHAIN_ID = "nvnm-canary-net-1"
 TRANSFER_CHANNEL_ID = "channel-1"
 MANTRAUSD_CREATE2_SALT = 1
 WMANTRAUSD_CREATE2_SALT = 2
@@ -108,13 +98,11 @@ PRED_WMANTRAUSD_ADDR = create2_address(
 WMANTRAUSD_DENOM = f"erc20:{PRED_WMANTRAUSD_ADDR}"
 
 
-def wmantrausd_consumer_ibc_denom(transfer_channel_id: str) -> str:
-    return f"ibc/{ibc_denom_hash(f'transfer/{transfer_channel_id}/{WMANTRAUSD_DENOM}')}"
-
-
 # Follow wmantraUSD's bytecode via its CREATE2 address, so a compiler change moves it:
 # ibc/63C02A419B6F71F81AB7350335AB55D8A491D6926DFA91D1C8E226E1CABD419E
-WMANTRAUSD_CONSUMER_IBC_DENOM = wmantrausd_consumer_ibc_denom(TRANSFER_CHANNEL_ID)
+WMANTRAUSD_CONSUMER_IBC_DENOM = (
+    f"ibc/{ibc_denom_hash(f'transfer/{TRANSFER_CHANNEL_ID}/{WMANTRAUSD_DENOM}')}"
+)
 
 # tokenfactory denom used by test_provider_bank_hooks_fire_on_reward_distribution.
 # Pre-computed so it can be added to the consumer's allowlist at fixture setup
@@ -147,84 +135,13 @@ DISTRIBUTION_CLAIM = Contract.from_abi(
 )
 
 
-def ibc_timeout_ns(minutes: int = 10) -> int:
-    return int(
-        (
-            datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=minutes)
-        ).timestamp()
-        * 1_000_000_000
-    )
-
-
-def intrinsic_calldata_gas(tx_data: str | bytes) -> int:
-    if isinstance(tx_data, str):
-        raw = tx_data[2:] if tx_data.startswith("0x") else tx_data
-        data = bytes.fromhex(raw)
-    else:
-        data = bytes(tx_data)
-
-    intrinsic = 21_000
-    for b in data:
-        intrinsic += 4 if b == 0 else 16
-    return intrinsic
-
-
-async def run_method(
-    async_w3,
-    sender_account,
-    *,
-    call,
-    gas: int,
-    method: str,
-    deltas: dict | None = None,
-):
-    txp = await _tx_params(
-        async_w3,
-        gas=gas,
-        sender=sender_account.address,
-        to=DOCUMENT_ADDRESS,
-        data=call.data,
-    )
-    receipt = await call.transact(
-        async_w3,
-        sender_account,
-        to=DOCUMENT_ADDRESS,
-        **txp,
-    )
-    assert receipt.status == 1
-    intrinsic = intrinsic_calldata_gas(call.data)
-    gas_used = int(receipt["gasUsed"])
-    delta = gas_used - intrinsic
-    assert (
-        gas_used > intrinsic
-    ), f"expected gasUsed={gas_used} > intrinsic={intrinsic} for {method}"
-    assert delta > 0, f"expected positive delta for {method}, got {delta}"
-    if deltas is not None:
-        deltas[method] = delta
+async def run_method(async_w3, sender_account, call, gas):
+    "Transact `call`, returning the receipt and its gasUsed above intrinsic gas."
+    receipt = await send_document_call(async_w3, call, sender_account, gas=gas)
+    intrinsic = 21_000 + sum(4 if b == 0 else 16 for b in call.data)
+    delta = int(receipt["gasUsed"]) - intrinsic
+    assert delta > 0, f"gasUsed={receipt['gasUsed']} <= intrinsic={intrinsic}"
     return receipt, delta
-
-
-def find_open_transfer_channel_id(cli) -> str | None:
-    try:
-        for ch in cli.ibc_query_all_channels():
-            if ch.get("port_id") != "transfer":
-                continue
-            channel_id = ch.get("channel_id")
-            if channel_id and check_channel_ready(cli, "transfer", channel_id):
-                return channel_id
-    except Exception:
-        return None
-    return None
-
-
-@pytest.fixture(scope="function")
-def setup_consumer_accounts(ibc):
-    consumer_accounts = {
-        name: Account.from_mnemonic(mnemonic) for name, mnemonic in MNEMONICS.items()
-    }
-    set_accounts_override(consumer_accounts)
-    yield
-    clear_accounts_override()
 
 
 @pytest.fixture(scope="module")
@@ -235,7 +152,7 @@ def ibc(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     name = "configs/ibc_nvnmchaind.jsonnet"
     path = tmp_path_factory.mktemp("ibc_nvnmchaind")
-    b_chain = "nvnm-canary-net-1"
+    b_chain = CONSUMER_CHAIN_ID
     with contextmanager(setup_custom_mantra)(
         path,
         27400,
@@ -260,10 +177,6 @@ def ibc(request, tmp_path_factory):
             assert rsp["code"] == 0, rsp["raw_log"]
 
         authority = module_address("gov")
-        port = "transfer"
-        channel = TRANSFER_CHANNEL_ID
-        denom = WMANTRAUSD_CONSUMER_IBC_DENOM
-        denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
         owner_address = cli.address("validator")
 
         # consumer native denom (as `ibc/<hash>` on the provider)
@@ -272,7 +185,10 @@ def ibc(request, tmp_path_factory):
         # adding it here avoids a second update_consumer_chain call (which would
         # be unauthorized once owner has been transferred to gov below).
         allowlisted_reward_denoms = [
-            f"ibc/{denom_hash}",
+            "ibc/"
+            + ibc_denom_hash(
+                f"transfer/{TRANSFER_CHANNEL_ID}/{WMANTRAUSD_CONSUMER_IBC_DENOM}"
+            ),
             WMANTRAUSD_DENOM,
             FACTORY_REWARD_DENOM,
         ]
@@ -289,6 +205,13 @@ def ibc(request, tmp_path_factory):
         wait_for_new_blocks(cli, 1)
 
         consumer_genesis = cli.provider_consumer_genesis(consumer_id)
+        consumer_genesis["params"] |= {
+            "reward_denoms": [WMANTRAUSD_CONSUMER_IBC_DENOM],
+            # make rewards transmission frequent for faster rewards
+            "blocks_per_distribution_transmission": "1",
+            # keep reward transfer timeout short for timeout refund test
+            "transfer_timeout_period": "10s",
+        }
         now = datetime.datetime.now(datetime.UTC)
 
         for i in range(num_nodes):
@@ -299,32 +222,17 @@ def ibc(request, tmp_path_factory):
 
             # genesis
             genesis_path = cons_cfg / "genesis.json"
-            with open(genesis_path) as f:
-                genesis = json.load(f)
+            genesis = json.loads(genesis_path.read_text())
             genesis["genesis_time"] = now.isoformat().replace("+00:00", "Z")
             genesis["app_state"]["ccvconsumer"] = consumer_genesis
-            genesis["app_state"]["ccvconsumer"]["params"]["reward_denoms"] = [
-                WMANTRAUSD_CONSUMER_IBC_DENOM,
-            ]
-            # make rewards transmission frequent for faster rewards
-            genesis["app_state"]["ccvconsumer"]["params"][
-                "blocks_per_distribution_transmission"
-            ] = "1"
-            # keep reward transfer timeout short for timeout refund test
-            genesis["app_state"]["ccvconsumer"]["params"][
-                "transfer_timeout_period"
-            ] = "10s"
             genesis["app_state"]["feemarket"]["params"]["base_fee"] = "87600000000"
             genesis["app_state"]["feemarket"]["params"]["min_gas_price"] = "87600000000"
-            with open(cons_cfg / "edited_genesis.json", "w") as f:
-                json.dump(genesis, f, indent=2)
-            (cons_cfg / "edited_genesis.json").replace(genesis_path)
+            genesis_path.write_text(json.dumps(genesis, indent=2))
 
             # priv val state
             state_path = cons_node_dir / "data" / "priv_validator_state.json"
             state_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(state_path, "w") as f:
-                json.dump({"height": "0", "round": 0, "step": 0}, f)
+            state_path.write_text(json.dumps({"height": "0", "round": 0, "step": 0}))
 
             # keys
             for name in ["priv_validator_key.json", "node_key.json"]:
@@ -337,19 +245,15 @@ def ibc(request, tmp_path_factory):
                 if j != i
             )
             config_path = cons_cfg / "config.toml"
-            with open(config_path) as f:
-                doc = tomlkit.parse(f.read())
+            doc = tomlkit.parse(config_path.read_text())
             doc["p2p"]["persistent_peers"] = peers
-            with open(config_path, "w") as f:
-                f.write(tomlkit.dumps(doc))
+            config_path.write_text(tomlkit.dumps(doc))
 
             app_config_path = cons_cfg / "app.toml"
-            with open(app_config_path) as f:
-                app_doc = tomlkit.parse(f.read())
+            app_doc = tomlkit.parse(app_config_path.read_text())
             # allow paying fees with bridged wmantraUSD IBC denom
             app_doc["minimum-gas-prices"] = f"0{WMANTRAUSD_CONSUMER_IBC_DENOM}"
-            with open(app_config_path, "w") as f:
-                f.write(tomlkit.dumps(app_doc))
+            app_config_path.write_text(tomlkit.dumps(app_doc))
 
         ibc2.supervisorctl("start", *nodes)
 
@@ -432,7 +336,7 @@ async def test_ccv(ibc):
             "from": sender,
             "to": receiver,
             "value": amt,
-            **consumer_eip1559_fees(w3),
+            **consumer_eip1559_fees(w3.eth.get_block("latest")),
         },
         KEYS[community],
     )
@@ -454,17 +358,14 @@ async def test_ccv(ibc):
 async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     provider_cli, consumer_cli = ibc.ibc1.cosmos_cli(), ibc.ibc2.cosmos_cli()
 
-    def channel_ready() -> bool:
-        return all(
-            find_open_transfer_channel_id(cli) is not None
+    wait_for_fn(
+        "transfer channels open",
+        lambda: all(
+            check_channel_ready(cli, "transfer", TRANSFER_CHANNEL_ID)
             for cli in (consumer_cli, provider_cli)
-        )
-
-    wait_for_fn("transfer channels open", channel_ready, timeout=60)
-
-    consumer_transfer_channel = find_open_transfer_channel_id(consumer_cli)
-    provider_transfer_channel = find_open_transfer_channel_id(provider_cli)
-    assert consumer_transfer_channel == provider_transfer_channel == TRANSFER_CHANNEL_ID
+        ),
+        timeout=60,
+    )
 
     sender_name = "community"
     sender = ADDRS[sender_name]
@@ -511,9 +412,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         gas=6_000_000,
     )
     assert w3.to_checksum_address(wmantrausd_addr) == PRED_WMANTRAUSD_ADDR
+    wmantrausd_addr = PRED_WMANTRAUSD_ADDR
     wmantrausd = w3.eth.contract(address=wmantrausd_addr, abi=w_res["abi"])
-
-    wmantrausd_addr = w3.to_checksum_address(wmantrausd.address)
 
     # 3) Approve + deposit
     approve_receipt = send_transaction(
@@ -546,11 +446,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     pair_rsp = provider_cli.query_erc20_token_pair(wmantrausd_addr)
     assert pair_rsp and wmantrausd_addr.lower() in str(pair_rsp).lower(), pair_rsp
 
-    erc20_denom = f"erc20:{wmantrausd_addr}"
-    ibc_denom = wmantrausd_consumer_ibc_denom(consumer_transfer_channel)
-
-    assert erc20_denom == WMANTRAUSD_DENOM
-    assert ibc_denom == WMANTRAUSD_CONSUMER_IBC_DENOM
+    erc20_denom = WMANTRAUSD_DENOM
+    ibc_denom = WMANTRAUSD_CONSUMER_IBC_DENOM
 
     amt_wmantrausd = amt_mantrausd * SCALAR
     expected = consumer_cli.balance(receiver_bech32, denom=ibc_denom) + amt_wmantrausd
@@ -563,7 +460,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     timeout_ns = ibc_timeout_ns()
     ics20_call = ICS20_PRECOMPILE.fns.transfer(
         "transfer",
-        provider_transfer_channel,
+        TRANSFER_CHANNEL_ID,
         erc20_denom,
         amt_wmantrausd,
         sender,
@@ -596,17 +493,12 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         for ev in transfer_logs
     ), "wmantraUSD Transfer from sender not emitted during convert"
 
-    ics20_contract = w3.eth.contract(
-        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
-    )
-    ibc_logs = ics20_contract.events.IBCTransfer().process_receipt(
-        ics20_receipt, errors=DISCARD
-    )
+    ibc_logs = ICS20_PRECOMPILE.events.IBCTransfer.parse_logs(ics20_receipt["logs"])
     assert len(ibc_logs) == 1, f"expected 1 IBCTransfer event, got {len(ibc_logs)}"
     ev = ibc_logs[0].args
     assert ev.sender.lower() == sender.lower()
     assert ev.sourcePort == "transfer"
-    assert ev.sourceChannel == provider_transfer_channel
+    assert ev.sourceChannel == TRANSFER_CHANNEL_ID
     assert ev.denom == erc20_denom
     assert ev.amount == amt_wmantrausd
 
@@ -635,7 +527,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     timeout_ns = ibc_timeout_ns()
     ics20_return_call = ICS20_PRECOMPILE.fns.transfer(
         "transfer",
-        consumer_transfer_channel,
+        TRANSFER_CHANNEL_ID,
         ibc_denom,
         return_amt_wmantrausd,
         receiver_evm,
@@ -650,23 +542,20 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
             "to": ICS20_ADDRESS,
             "data": ics20_return_call.data,
             "gas": 3_000_000,
-            **consumer_eip1559_fees(ibc.ibc2.w3),
+            **consumer_eip1559_fees(ibc.ibc2.w3.eth.get_block("latest")),
         },
         KEYS[receiver_name],
     )
     assert ics20_return_receipt.status == 1
 
     # Consumer-side precompile emitted the return-leg IBCTransfer event.
-    consumer_ics20 = ibc.ibc2.w3.eth.contract(
-        address=ICS20_ADDRESS, abi=build_contract("ICS20I")["abi"]
-    )
-    return_logs = consumer_ics20.events.IBCTransfer().process_receipt(
-        ics20_return_receipt, errors=DISCARD
+    return_logs = ICS20_PRECOMPILE.events.IBCTransfer.parse_logs(
+        ics20_return_receipt["logs"]
     )
     assert len(return_logs) == 1
     rev = return_logs[0].args
     assert rev.sender.lower() == receiver_evm.lower()
-    assert rev.sourceChannel == consumer_transfer_channel
+    assert rev.sourceChannel == TRANSFER_CHANNEL_ID
     assert rev.denom == ibc_denom
     assert rev.amount == return_amt_wmantrausd
     assert rev.memo == unwrap_memo
@@ -728,15 +617,12 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         provider_cli.distribution_withdraw_address(delegator_address=signer1) == signer2
     )
 
-    bad_claim_convert_receipt = send_transaction(
-        w3,
-        {
-            "to": DISTRIBUTION_CLAIM_ADDRESS,
-            "data": claim_call.data,
-            "gas": gas_limit,
-        },
-        KEYS["signer1"],
-    )
+    claim_tx = {
+        "to": DISTRIBUTION_CLAIM_ADDRESS,
+        "data": claim_call.data,
+        "gas": gas_limit,
+    }
+    bad_claim_convert_receipt = send_transaction(w3, claim_tx, KEYS["signer1"])
     assert bad_claim_convert_receipt.status == 0
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
 
@@ -769,16 +655,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     wait_for_new_blocks(provider_cli, 5)
 
     def expected_converted_now() -> int:
-        return claim_call.decode(
-            w3.eth.call(
-                {
-                    "to": DISTRIBUTION_CLAIM_ADDRESS,
-                    "from": signer1_evm,
-                    "data": claim_call.data,
-                    "gas": gas_limit,
-                }
-            )
-        )
+        return claim_call.decode(w3.eth.call({**claim_tx, "from": signer1_evm}))
 
     wait_for_fn(
         "expected_converted >= SCALAR",
@@ -796,18 +673,8 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     assert expected_converted > 0
 
     # claim + convert for the wmantraUSD token-pair denom
-    claim_convert_receipt = send_transaction(
-        w3,
-        {
-            "to": DISTRIBUTION_CLAIM_ADDRESS,
-            "data": claim_call.data,
-            "gas": gas_limit,
-        },
-        KEYS["signer1"],
-    )
-    assert claim_convert_receipt.status == 1
-
-    receipt = w3.eth.get_transaction_receipt(claim_convert_receipt.transactionHash)
+    receipt = send_transaction(w3, claim_tx, KEYS["signer1"])
+    assert receipt.status == 1
     decoded = DISTRIBUTION_CLAIM.events.ClaimRewardsAndConvertCoin.parse_logs(
         [
             log
@@ -839,15 +706,7 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
     if m_delta > 0:
         # Unwrap happened: only dust (< SCALAR) should remain as wmantraUSD.
         assert w_delta < SCALAR
-    else:
-        # No unwrap: all converted amount remains as wrapper.
-        assert m_delta == 0
-        assert w_delta == ev_amount
     assert provider_cli.balance(signer1, denom=erc20_denom) == 0
-
-    # restore default withdraw address
-    rsp = provider_cli.set_withdraw_addr(signer1, from_=signer1, gas=200_000)
-    assert rsp["code"] == 0, rsp["raw_log"]
 
     # native-denom rewards can be claimed (without conversion)
     distribution = w3.eth.contract(
@@ -900,10 +759,8 @@ def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
 
 def test_nvnmchaind_evm_coin_info_from_bank_metadata(ibc):
     consumer_cli = ibc.ibc2.cosmos_cli()
-    base = consumer_cli.get_base_kwargs()
-
-    params = json.loads(consumer_cli.raw("q", "evm", "params", **base))
-    assert params["params"]["evm_denom"] == WMANTRAUSD_CONSUMER_IBC_DENOM
+    evm_denom = consumer_cli.get_params("evm")["evm_denom"]
+    assert evm_denom == WMANTRAUSD_CONSUMER_IBC_DENOM
 
     match = consumer_cli.query_bank_denom_metadata(WMANTRAUSD_CONSUMER_IBC_DENOM)
     assert (
@@ -966,7 +823,7 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
             "to": DOCUMENT_ADDRESS,
             "value": 1,
             "gas": 100_000,
-            **consumer_eip1559_fees(w3),
+            **consumer_eip1559_fees(w3.eth.get_block("latest")),
         },
         KEYS["community"],
     )
@@ -1046,36 +903,170 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
     assert buffer_af >= buffer_bf
 
 
-async def test_add_registry(ibc, setup_consumer_accounts):
+async def test_add_registry(ibc):
     metadata = json.dumps(
         {
             "test": "ccv",
             "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
     )
-    await do_test_add_registry(
-        ibc.ibc2.async_w3,
-        metadata=metadata,
-    )
+    name = f"metadata-registry-{int(time.time() * 1000)}"
+    await ensure_registry_exists(ibc.ibc2.async_w3, name, metadata=metadata)
 
 
-async def test_registries_by_name(ibc, setup_consumer_accounts):
+async def test_registries_by_name(ibc):
+    w3 = ibc.ibc2.async_w3
     api = ports.api_port(ibc.ibc2.base_port(0))
-    await do_test_registries_by_name(
+    search_url = (
+        f"http://127.0.0.1:{api}/NVNM-Chain/nvnmchain/anchoring/v1/registries/search"
+    )
+
+    def rest(name, mode):
+        # By name; the short-query loop below keeps the numeric spelling.
+        params = {"name": name, "mode": f"REGISTRY_NAME_MATCH_MODE_{mode.name}"}
+        rsp = requests.get(search_url, params=params)
+        assert rsp.ok, f"{rsp.status_code} {rsp.reason}: {rsp.text}"
+        # uint64 comes back as a JSON string under the proto3 mapping
+        return {int(r["id"]) for r in rsp.json().get("registries") or []}
+
+    # Two registries differing only in case: the index lowercases at write time,
+    # so either spelling returns both — and the result is multi-valued, which
+    # names being non-unique demands.
+    base = "ccv-name-index"
+    mixed_id = await create_registry(w3, "CCV-Name-Index", metadata="{}")
+    lower_id = await create_registry(w3, base, metadata="{}")
+    tail_id = await create_registry(w3, f"{base}-tail", metadata="{}")
+    both = {mixed_id, lower_id}
+    all_three = both | {tail_id}
+
+    for name, mode, expected in (
+        # UNSPECIFIED is what a caller gets by leaving the field out; pin that
+        # it behaves as EXACT rather than assuming it.
+        (base, MatchMode.UNSPECIFIED, both),
+        (base, MatchMode.EXACT, both),
+        ("CCV-NAME-INDEX", MatchMode.EXACT, both),
+        (f"{base}-tail", MatchMode.EXACT, {tail_id}),
+        # Exact stays exact: no partial, no trimming.
+        (f"{base}-nope", MatchMode.EXACT, set()),
+        ("ccv-name", MatchMode.EXACT, set()),
+        (f"{base} ", MatchMode.EXACT, set()),
+        # Prefix/suffix/contains stay anchored, and all fold case.
+        ("ccv-name", MatchMode.PREFIX, all_three),
+        ("CCV-NAME", MatchMode.PREFIX, all_three),
+        ("cv-name", MatchMode.PREFIX, set()),
+        ("-tail", MatchMode.SUFFIX, {tail_id}),
+        ("index", MatchMode.SUFFIX, both),
+        ("-tai", MatchMode.SUFFIX, set()),
+        ("name-index", MatchMode.CONTAINS, all_three),
+        ("AME-IND", MatchMode.CONTAINS, all_three),
+    ):
+        assert await registries_by_name(w3, name, mode) == expected, (name, mode)
+        # Both interfaces read the same index, so a divergence here means one
+        # of them normalizes differently.
+        assert rest(name, mode) == expected, (name, mode)
+
+    # LIKE metacharacters are matched literally instead of turning the lookup
+    # into a wildcard over every registry.
+    hits = await registries_by_name(w3, f"{base[:3]}%", MatchMode.CONTAINS)
+    assert not hits & all_three
+
+    # CONTAINS is served from a trigram index, so it needs three characters;
+    # shorter queries are refused on both interfaces rather than scanned.
+    for short in ("%", "cc"):
+        await assert_call_reverts(
+            w3,
+            sender=ADDRS["community"],
+            data=DOCUMENT_PRECOMPILE.fns.registriesByName(
+                short, int(MatchMode.CONTAINS), NAME_INDEX_PAGE
+            ).data,
+            expect_err="at least 3 characters",
+        )
+        rsp = requests.get(
+            search_url, params={"name": short, "mode": int(MatchMode.CONTAINS)}
+        )
+        assert rsp.status_code == 400, f"{short!r}: {rsp.status_code} {rsp.text}"
+
+    # An unknown mode is rejected rather than falling back to exact, which
+    # would read as "no such registry".
+    await assert_call_reverts(
+        w3,
+        sender=ADDRS["community"],
+        data=DOCUMENT_PRECOMPILE.fns.registriesByName(base, 9, NAME_INDEX_PAGE).data,
+        expect_err="invalid matchMode",
+    )
+    rsp = requests.get(search_url, params={"name": base, "mode": 9})
+    assert rsp.status_code == 400, f"{rsp.status_code} {rsp.text}"
+
+    # The plain registries listing is untouched by any of this.
+    listing, _ = await DOCUMENT_PRECOMPILE.fns.registries(0, NAME_INDEX_PAGE).call(
+        w3, to=DOCUMENT_ADDRESS
+    )
+    assert all_three <= {int(r[0]) for r in listing}
+
+
+async def test_registries_by_name_rejects_transaction(ibc):
+    """Served as a call, refused as a transaction.
+
+    The index is opt-in per node and may lag, so validators can disagree about
+    the answer; letting it into block execution would make them disagree about
+    the block. EOA-gating alone would not catch this — the sender here is an
+    EOA calling the precompile directly.
+    """
+    async_w3, w3 = ibc.ibc2.async_w3, ibc.ibc2.w3
+    # Shares no substring with the registries in test_registries_by_name, so
+    # neither test depends on the order the two run in.
+    name = "ccv-txgate-registry"
+    registry_id = await create_registry(async_w3, name, metadata="{}")
+    call = DOCUMENT_PRECOMPILE.fns.registriesByName(
+        name, int(MatchMode.EXACT), NAME_INDEX_PAGE
+    )
+
+    assert await registries_by_name(async_w3, name, MatchMode.EXACT) == {registry_id}
+
+    receipt = send_transaction(
+        w3,
+        {
+            "to": DOCUMENT_ADDRESS,
+            "from": ADDRS["community"],
+            "data": call.data,
+            "gas": 1_000_000,
+            **consumer_eip1559_fees(w3.eth.get_block("latest")),
+        },
+        KEYS["community"],
+    )
+    assert receipt.status == 0, "registriesByName must not succeed in a transaction"
+
+    # The same input as a call at that block is served, so the refusal was the
+    # gate and not a bad request. An eth_call always runs as a query, so the
+    # revert reason is only observable from the transaction path; the unit
+    # tests pin its text.
+    regs, _ = await call.call(
+        async_w3, to=DOCUMENT_ADDRESS, block_identifier=receipt.blockNumber
+    )
+    assert {int(r[0]) for r in regs} == {registry_id}
+
+
+async def test_contract_cannot_call_registries_by_name(ibc):
+    """Refused for a contract even though registriesByName is a view.
+
+    Reads of consensus state stay open to contracts; this one does not, because
+    its answer is node-local.
+    """
+    sender = ADDRS["community"]
+    contract_addr, caller = await deploy_anchoring_caller(ibc.ibc2.w3, sender)
+    # The name is immaterial: the call is refused before the index is read.
+    call = caller.fns.callRegistriesByName("ccv-contract-caller", int(MatchMode.EXACT))
+    await assert_call_reverts(
         ibc.ibc2.async_w3,
-        f"http://127.0.0.1:{api}/NVNM-Chain/nvnmchain/anchoring/v1/registries/search",
+        sender=sender,
+        to=contract_addr,
+        data=call.data,
+        expect_err="sender not an eoa",
+        gas=1_000_000,
     )
 
 
-async def test_registries_by_name_rejects_transaction(ibc, setup_consumer_accounts):
-    await do_test_registries_by_name_rejects_transaction(ibc.ibc2.async_w3, ibc.ibc2.w3)
-
-
-async def test_contract_cannot_call_registries_by_name(ibc, setup_consumer_accounts):
-    await do_test_contract_cannot_call_registries_by_name(ibc.ibc2.w3)
-
-
-async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_accounts):
+async def test_anchoring_static_precompile_state_override(ibc):
     w3 = ibc.ibc2.async_w3
 
     registry_name = "state_override"
@@ -1095,47 +1086,24 @@ async def test_anchoring_static_precompile_state_override(ibc, setup_consumer_ac
         "data": registries_call.data,
     }
 
-    unrelated_address = "0x000000000000000000000000000000000000dEaD"
-    empty_override = {unrelated_address: {}}
-    unrelated_override = {
-        unrelated_address: {
-            "stateDiff": {
-                "0x" + "0" * 64: "0x" + "01".zfill(64),
-            }
-        }
-    }
-
-    base = await w3.eth.call(tx, "latest")
-    with_empty_override = await w3.eth.call(tx, "latest", empty_override)
-    with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
-
+    base = await eth_call_ignoring_overrides(w3, tx)
+    assert len(base) > 0
     decoded_registries, _ = await registries_call.call(w3, to=DOCUMENT_ADDRESS)
     assert any(reg[1] == registry_name for reg in decoded_registries)
-
-    assert len(base) > 0
-    assert with_empty_override == base
-    assert with_unrelated_override == base
 
     identity_tx = {
         "to": "0x0000000000000000000000000000000000000004",
         "from": ADDRS["community"],
         "data": registries_call.data,
     }
-    identity_base = await w3.eth.call(identity_tx, "latest")
-    identity_empty = await w3.eth.call(identity_tx, "latest", empty_override)
-    identity_unrelated = await w3.eth.call(identity_tx, "latest", unrelated_override)
-    expected_identity_output = bytes(registries_call.data)
-
-    assert identity_base == expected_identity_output
-    assert identity_base == identity_empty == identity_unrelated
+    identity_base = await eth_call_ignoring_overrides(w3, identity_tx)
+    assert identity_base == bytes(registries_call.data)
 
 
-async def test_anchoring_eth_estimate_gas_matches_eth_call(
-    ibc, setup_consumer_accounts
-):
+async def test_anchoring_eth_estimate_gas_matches_eth_call(ibc):
     """Check eth_estimateGas matches receipt gas_used for anchoring precompile call."""
     w3 = ibc.ibc2.async_w3
-    sender = get_accounts()["community"]
+    sender = ACCOUNTS["community"]
 
     block_number = await w3.eth.block_number
     registry_name = f"ccv-estimate-gas-regression-{block_number}"
@@ -1156,7 +1124,7 @@ async def test_anchoring_eth_estimate_gas_matches_eth_call(
 
     # Broadcast: consumer chain enforces a min_gas_price floor and transact()
     # doesn't auto-set EIP-1559 fees, so inject them via the sync w3 helper.
-    fees = consumer_eip1559_fees(ibc.ibc2.w3)
+    fees = consumer_eip1559_fees(ibc.ibc2.w3.eth.get_block("latest"))
     receipt = await call.transact(w3, sender, to=DOCUMENT_ADDRESS, gas=700_000, **fees)
     assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
 
@@ -1179,52 +1147,30 @@ async def test_erc20_precompile_state_override(ibc):
     expected = cli.balance(cli.address("community"), denom=denom)
     assert expected > 0, "community need have balance"
 
-    tx = {
-        "to": pair_addr,
-        "from": holder,
-        "data": "0x"
-        + (keccak(b"balanceOf(address)")[:4] + encode(["address"], [holder])).hex(),
-    }
-
-    base = await w3.eth.call(tx, "latest")
-    (decoded,) = decode(["uint256"], bytes(base))
+    # Any non-nil override must not bypass the keeper-backed precompile.
+    call = ERC20.fns.balanceOf(holder)
+    tx = {"to": pair_addr, "from": holder, "data": call.data}
+    decoded = call.decode(await eth_call_ignoring_overrides(w3, tx))
     assert decoded == expected, (decoded, expected)
 
-    # Any non-nil override must not bypass the keeper-backed precompile.
-    dead = "0x000000000000000000000000000000000000dEaD"
-    for override in (
-        {dead: {}},
-        {dead: {"stateDiff": {"0x" + "0" * 64: "0x" + "01".zfill(64)}}},
-    ):
-        assert await w3.eth.call(tx, "latest", override) == base, override
 
-
-async def test_anchoring_state_changing_methods_gas_delta_non_zero(
-    ibc, setup_consumer_accounts
-):
+async def test_anchoring_state_changing_methods_gas_delta_non_zero(ibc):
     async_w3 = ibc.ibc2.async_w3
-    accounts = get_accounts()
-    sender_account = accounts["community"]
-    target = accounts["signer1"].address
+    sender_account = ACCOUNTS["community"]
+    target = ACCOUNTS["signer1"].address
 
-    deltas = {}
-    registry_name = "ccv-gas-methods"
     add_registry_call = DOCUMENT_PRECOMPILE.fns.addRegistry(
-        registry_name,
+        "ccv-gas-methods",
         "ccv gas method matrix",
         json.dumps({"source": "ccv-gas-matrix", "kind": "registry"}),
     )
     add_registry_receipt, _ = await run_method(
-        async_w3,
-        sender_account,
-        call=add_registry_call,
-        gas=220_000,
-        method="addRegistry",
-        deltas=deltas,
+        async_w3, sender_account, add_registry_call, 220_000
     )
-
-    registry_id = get_add_registry_event_registry_id(
-        add_registry_receipt, caller=sender_account.address
+    registry_id = int(
+        find_document_event(
+            add_registry_receipt, event="AddRegistry", caller=sender_account.address
+        )["registryId"]
     )
     assert registry_id > 0
 
@@ -1235,79 +1181,24 @@ async def test_anchoring_state_changing_methods_gas_delta_non_zero(
         metadata=json.dumps({"document": "ccv-gas-matrix", "kind": "record"}),
     )
     add_record_call = DOCUMENT_PRECOMPILE.fns.addRecord(astuple(record))
-    await run_method(
-        async_w3,
-        sender_account,
-        call=add_record_call,
-        gas=700_000,
-        method="addRecord",
-        deltas=deltas,
-    )
+    await run_method(async_w3, sender_account, add_record_call, 700_000)
 
-    records, _ = await DOCUMENT_PRECOMPILE.fns.records(
-        registry_id,
-        checksum,
-        0,
-        0,
-        (b"", 0, 10, False, False),
-    ).call(async_w3, to=DOCUMENT_ADDRESS)
+    records = await query_records(async_w3, registry_id, checksum, limit=10)
     assert records, "expected record after addRecord"
-    added = Record.from_tuple(records[0])
+    added = records[0]
 
-    update_status_call = DOCUMENT_PRECOMPILE.fns.updateRecordStatus(
-        registry_id,
-        added.recordId,
-        added.index,
-        "verified",
-    )
-    await run_method(
-        async_w3,
-        sender_account,
-        call=update_status_call,
-        gas=260_000,
-        method="updateRecordStatus",
-        deltas=deltas,
-    )
-
-    grant_role_call = DOCUMENT_PRECOMPILE.fns.grantRole(
-        registry_id,
-        "",
-        target,
-        "editor",
-    )
-    await run_method(
-        async_w3,
-        sender_account,
-        call=grant_role_call,
-        gas=260_000,
-        method="grantRole",
-        deltas=deltas,
-    )
-
-    revoke_role_call = DOCUMENT_PRECOMPILE.fns.revokeRole(
-        registry_id,
-        "",
-        target,
-        "editor",
-    )
-    await run_method(
-        async_w3,
-        sender_account,
-        call=revoke_role_call,
-        gas=260_000,
-        method="revokeRole",
-        deltas=deltas,
-    )
-
-    assert len(deltas) == 5
-    assert all(delta > 0 for delta in deltas.values()), f"non-positive deltas: {deltas}"
+    fns = DOCUMENT_PRECOMPILE.fns
+    for call in (
+        fns.updateRecordStatus(registry_id, added.recordId, added.index, "verified"),
+        fns.grantRole(registry_id, "", target, "editor"),
+        fns.revokeRole(registry_id, "", target, "editor"),
+    ):
+        await run_method(async_w3, sender_account, call, 260_000)
 
 
-async def test_anchoring_gas_delta_scales_with_metadata_size(
-    ibc, setup_consumer_accounts
-):
+async def test_anchoring_gas_delta_scales_with_metadata_size(ibc):
     async_w3 = ibc.ibc2.async_w3
-    sender_account = get_accounts()["community"]
+    sender_account = ACCOUNTS["community"]
     metadata_sizes = [100, 1000]
     deltas = {}
 
@@ -1318,47 +1209,200 @@ async def test_anchoring_gas_delta_scales_with_metadata_size(
             "m" * size,
         )
 
-        _, delta = await run_method(
-            async_w3,
-            sender_account,
-            call=call,
-            gas=300_000,
-            method=f"addRegistry_metadata_{size}",
-        )
-        deltas[size] = delta
+        _, deltas[size] = await run_method(async_w3, sender_account, call, 300_000)
 
     assert deltas[1000] > deltas[100], "gas delta should scale with metadata size"
 
 
-async def test_contract_cannot_call_anchoring_sensitive_methods(
-    ibc, setup_consumer_accounts
-):
-    await do_test_contract_cannot_call_anchoring_sensitive_methods(ibc.ibc2.w3)
+async def test_contract_cannot_call_anchoring_sensitive_methods(ibc):
+    w3, async_w3 = ibc.ibc2.w3, ibc.ibc2.async_w3
+    sender = ADDRS["community"]
+    contract_addr, caller = await deploy_anchoring_caller(w3, sender)
+
+    async def assert_reverted(call):
+        await assert_call_reverts(
+            async_w3,
+            sender=sender,
+            to=contract_addr,
+            data=call.data,
+            expect_err="sender not an eoa",
+            gas=1_000_000,
+        )
+
+    await assert_reverted(
+        caller.fns.callAddRegistry(
+            "ccv-contract-caller-registry", "repro non-EOA guard", "{}"
+        )
+    )
+
+    eoa_add_registry_call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        "ccv-eoa-registry",
+        "repro EOA guard",
+        "{}",
+    )
+    eoa_add_registry_receipt = send_transaction(
+        w3,
+        {
+            "to": DOCUMENT_ADDRESS,
+            "from": sender,
+            "data": eoa_add_registry_call.data,
+            "gas": 1_000_000,
+            **consumer_eip1559_fees(w3.eth.get_block("latest")),
+        },
+        KEYS["community"],
+    )
+    assert eoa_add_registry_receipt.status == 1
+    registry_id = int(
+        find_document_event(
+            eoa_add_registry_receipt, event="AddRegistry", caller=sender
+        )["registryId"]
+    )
+
+    record = new_record(
+        sha256_hex("ccv-contract-caller-checksum"),
+        registry_id,
+        metadata="{}",
+        uri="ipfs://ccv-contract-caller",
+    )
+    await assert_reverted(caller.fns.callAddRecord(astuple(record)))
+    await assert_reverted(
+        caller.fns.callUpdateRecordStatus(registry_id, 1, 1, "verified")
+    )
+    for fn in (caller.fns.callGrantRole, caller.fns.callRevokeRole):
+        await assert_reverted(fn(registry_id, "", ADDRS["signer1"], Role.EDITOR.value))
 
 
-async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(
-    ibc, setup_consumer_accounts
-):
-    await do_test_constructor_bypass_ensure_eoa_caller(ibc.ibc2.w3)
+async def test_constructor_bypasses_ensure_eoa_caller_precompile_check(ibc):
+    w3 = ibc.ibc2.w3
+    sender = ADDRS["community"]
+    artifact = build_contract("AnchoringConstructorCaller")
+    contract = w3.eth.contract(abi=artifact["abi"], bytecode=artifact["bytecode"])
+
+    registry_name = f"ccv-constructor-bypass-{int(time.time() * 1000)}"
+    deploy_tx = contract.constructor(registry_name).build_transaction(
+        {
+            "from": sender,
+            "gas": 2_000_000,
+            **consumer_eip1559_fees(w3.eth.get_block("latest")),
+        }
+    )
+    deploy_receipt = send_transaction(w3, deploy_tx, KEYS["community"])
+    assert deploy_receipt.status == 1
+
+    deployed = w3.eth.contract(
+        address=deploy_receipt.contractAddress, abi=artifact["abi"]
+    )
+    registry_created = deployed.functions.registryCreated().call()
+    created_registry_id = int(deployed.functions.createdRegistryId().call())
+
+    assert not registry_created, "constructor call should not bypass ensureEOACaller"
+    assert (
+        created_registry_id == 0
+    ), "expected no registry created from constructor call"
 
 
 @pytest.mark.parametrize("checksum", ["", sha256_hex("abc123def456")])
-async def test_grant_and_revoke_role_as_admin(ibc, setup_consumer_accounts, checksum):
-    await do_test_grant_and_revoke_role_as_admin(ibc.ibc2.async_w3, checksum)
-
-
-async def test_disallow_last_admin_self_revoke(ibc, setup_consumer_accounts):
-    await do_test_disallow_last_admin_self_revoke(ibc.ibc2.async_w3)
-
-
-async def test_module_admin_emergency_admin_recovery(ibc, setup_consumer_accounts):
-    await do_test_module_admin_emergency_admin_recovery(ibc.ibc2.async_w3)
-
-
-async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_accounts):
+async def test_grant_and_revoke_role_as_admin(ibc, checksum):
     w3 = ibc.ibc2.async_w3
-    accounts = get_accounts()
-    admin = accounts["community"]
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    editor = ACCOUNTS["signer1"]
+
+    if checksum:
+        await add_record(w3, admin, checksum)
+
+    await grant_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
+    await revoke_role(w3, registry_id, checksum, editor, Role.EDITOR, admin)
+
+
+async def test_disallow_last_admin_self_revoke(ibc):
+    w3 = ibc.ibc2.async_w3
+    registry_name = f"lockout-registry-{int(time.time() * 1000)}"
+    registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
+
+    admin = ACCOUNTS["community"]
+    replacement_admin = ACCOUNTS["validator"]
+    target = ACCOUNTS["signer2"]
+
+    # last-admin revoke must fail
+    call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id,
+        "",
+        admin.address,
+        "admin",
+    )
+    await assert_call_reverts(
+        w3,
+        sender=admin.address,
+        data=call.data,
+    )
+
+    # revocation should succeed after adding a replacement admin
+    await grant_role(w3, registry_id, "", replacement_admin, "admin", admin)
+
+    await revoke_role(w3, registry_id, "", admin, "admin", admin)
+
+    # replacement admin can still perform admin actions
+    await grant_role(w3, registry_id, "", target, Role.EDITOR, replacement_admin)
+
+
+async def test_module_admin_emergency_admin_recovery(ibc):
+    w3 = ibc.ibc2.async_w3
+    registry_name = f"breakglass-registry-{int(time.time() * 1000)}"
+
+    module_admin = ACCOUNTS["reserve"]
+    registry_admin = ACCOUNTS["validator"]
+    replacement_admin = ACCOUNTS["signer2"]
+    target = ACCOUNTS["community"]
+
+    call = DOCUMENT_PRECOMPILE.fns.addRegistry(
+        registry_name,
+        registry_name,
+        "{}",
+    )
+    await send_document_call(
+        w3, call, registry_admin, f"failed to create registry {registry_name}"
+    )
+
+    registry_id = await get_registry_id(w3, registry_name)
+
+    # module admin cannot orphan the registry by revoking the sole admin directly
+    # that would leave zero admins. Recovery must go grant-first, then revoke
+    revoke_sole_call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id, "", registry_admin.address, "admin"
+    )
+    await assert_call_reverts(
+        w3,
+        sender=module_admin.address,
+        data=revoke_sole_call.data,
+        expect_err="cannot revoke the last registry admin",
+    )
+
+    # break-glass: module admin grants a replacement admin 1st (registry never orphaned)
+    await grant_role(w3, registry_id, "", replacement_admin, "admin", module_admin)
+
+    # the replacement admin — which now holds the registry admin role — revokes
+    # the original admin. module_admin was never granted admin on this registry,
+    # so the revoke must come from the replacement.
+    await revoke_role(w3, registry_id, "", registry_admin, "admin", replacement_admin)
+
+    # removed registry admin should no longer be able to perform admin actions
+    grant_editor_call = DOCUMENT_PRECOMPILE.fns.grantRole(
+        registry_id, "", target.address, Role.EDITOR
+    )
+    await assert_call_reverts(
+        w3,
+        sender=registry_admin.address,
+        data=grant_editor_call.data,
+    )
+
+    # recovered admin can perform admin actions
+    await grant_role(w3, registry_id, "", target, Role.EDITOR, replacement_admin)
+
+
+async def test_add_record_rejects_oversized_checksum_algo(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
 
     registry_name = "oversize-algo-registry"
     registry_id = await ensure_registry_exists(w3, name=registry_name, metadata="{}")
@@ -1384,93 +1428,147 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc, setup_consumer_ac
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-async def test_grant_role_permissions(ibc, setup_consumer_accounts, is_admin):
-    await do_test_grant_role_permissions(ibc.ibc2.async_w3, is_admin)
+async def test_grant_role_permissions(ibc, is_admin):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    editor1 = ACCOUNTS["signer1"]
+    editor2 = ACCOUNTS["signer2"]
+    sender = admin if is_admin else editor2
+    target = editor1
+    checksum = ""
+
+    tx = DOCUMENT_PRECOMPILE.fns.grantRole(
+        registry_id, checksum, target.address, Role.EDITOR
+    )
+
+    if is_admin:
+        await grant_role(w3, registry_id, checksum, target, Role.EDITOR, sender)
+    else:
+        await assert_call_reverts(
+            w3,
+            sender=sender.address,
+            data=tx.data,
+        )
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-async def test_revoke_role_permissions(ibc, setup_consumer_accounts, is_admin):
-    await do_test_revoke_role_permissions(ibc.ibc2.async_w3, is_admin)
+async def test_revoke_role_permissions(ibc, is_admin):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    editor1 = ACCOUNTS["signer1"]
+    editor2 = ACCOUNTS["signer2"]
+    sender = admin if is_admin else editor2
+    checksum = ""
+
+    # ensure role granted first
+    await grant_role(w3, registry_id, checksum, editor1, Role.EDITOR, admin)
+
+    tx = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id, checksum, editor1.address, Role.EDITOR
+    )
+
+    if is_admin:
+        await revoke_role(w3, registry_id, checksum, editor1, Role.EDITOR, sender)
+    else:
+        await assert_call_reverts(
+            w3,
+            sender=sender.address,
+            data=tx.data,
+        )
 
 
 @pytest.mark.parametrize(
-    "name,method,build_case",
+    "method,registry_id,checksum,expect_err",
     [
-        (
-            "grant registry not found",
+        pytest.param(
             "grant",
-            lambda _w3, _accounts: {
-                "registry_id": 999,
-                "checksum": "",
-                "account": _accounts["signer1"],
-                "role": "editor",
-                "sender": _accounts["community"],
-                "expect_err": "registry 999 does not exist",
-            },
+            999,
+            "",
+            "registry 999 does not exist",
+            id="grant-registry-not-found",
         ),
-        (
-            "revoke registry zero with checksum",
+        pytest.param(
             "revoke",
-            lambda _w3, _accounts: {
-                "registry_id": 0,
-                "checksum": "any-checksum",
-                "account": _accounts["signer1"],
-                "role": "editor",
-                "sender": _accounts["community"],
-                "expect_err": "registry ID cannot be zero",
-            },
+            0,
+            "any-checksum",
+            "registry ID cannot be zero",
+            id="revoke-registry-zero-with-checksum",
         ),
     ],
 )
 async def test_role_scope_existence_validation(
-    ibc, setup_consumer_accounts, name, method, build_case
+    ibc, method, registry_id, checksum, expect_err
 ):
-    w3 = ibc.ibc2.async_w3
-    accounts = get_accounts()
-    case = build_case(w3, accounts)
-    await do_test_role_scope_existence_validation(
-        w3,
-        method=method,
-        registry_id=case["registry_id"],
-        checksum=case["checksum"],
-        account=case["account"],
-        role=case["role"],
-        sender=case["sender"],
-        expect_err=case["expect_err"],
+    fn = getattr(DOCUMENT_PRECOMPILE.fns, f"{method}Role")
+    await assert_call_reverts(
+        ibc.ibc2.async_w3,
+        sender=ADDRS["community"],
+        data=fn(registry_id, checksum, ADDRS["signer1"], "editor").data,
+        expect_err=expect_err,
     )
 
 
-async def test_revoke_record_checksum_missing_in_registry(ibc, setup_consumer_accounts):
+async def test_revoke_record_checksum_missing_in_registry(ibc):
     w3 = ibc.ibc2.async_w3
-    accounts = get_accounts()
     registry_name = "ccv-role-scope"
     registry_id = await ensure_registry_exists(w3, registry_name, metadata="{}")
     await add_record(
         w3,
-        accounts["community"],
+        ACCOUNTS["community"],
         sha256_hex("present-checksum"),
         registry=registry_name,
     )
-    err = f"record with checksum no-checksum does not exist in registry {registry_id}"
-    await do_test_role_scope_existence_validation(
+    call = DOCUMENT_PRECOMPILE.fns.revokeRole(
+        registry_id, "no-checksum", ADDRS["signer1"], "editor"
+    )
+    await assert_call_reverts(
         w3,
-        method="revoke",
-        registry_id=registry_id,
-        checksum="no-checksum",
-        account=accounts["signer1"],
-        role="editor",
-        sender=accounts["community"],
-        expect_err=err,
+        sender=ADDRS["community"],
+        data=call.data,
+        expect_err="record with checksum no-checksum does not exist "
+        f"in registry {registry_id}",
     )
 
 
-async def test_multiple_roles_management(ibc, setup_consumer_accounts):
-    await do_test_multiple_roles_management(ibc.ibc2.async_w3)
+async def test_multiple_roles_management(ibc):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    editor1 = ACCOUNTS["signer1"]
+    editor2 = ACCOUNTS["signer2"]
+    viewer = ACCOUNTS["validator"]
+    checksum = ""
+
+    users_and_roles = [
+        (editor1.address, Role.EDITOR),
+        (editor2.address, Role.EDITOR),
+        (viewer.address, Role.VIEWER),
+    ]
+
+    # grant different roles
+    for user_address, role in users_and_roles:
+        user = next(a for a in ACCOUNTS.values() if a.address == user_address)
+        await grant_role(w3, registry_id, checksum, user, role, admin)
+
+    # revoke all roles
+    for user_address, role in users_and_roles:
+        user = next(a for a in ACCOUNTS.values() if a.address == user_address)
+        await revoke_role(w3, registry_id, checksum, user, role, admin)
 
 
 @pytest.mark.parametrize("role", [Role.EDITOR, Role.VIEWER])
-async def test_role_idempotency(ibc, setup_consumer_accounts, role):
-    await do_test_role_idempotency(ibc.ibc2.async_w3, role)
+async def test_role_idempotency(ibc, role):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    editor = ACCOUNTS["signer1"]
+    checksum = ""
+
+    await grant_role(w3, registry_id, checksum, editor, role, admin)
+    # second grant should be idempotent
+    await grant_role(w3, registry_id, checksum, editor, role, admin)
 
 
 @pytest.mark.parametrize(
@@ -1480,12 +1578,23 @@ async def test_role_idempotency(ibc, setup_consumer_accounts, role):
         (Role.EDITOR, Role.VIEWER),
     ],
 )
-async def test_record_level_overrides_registry_level(
-    ibc, setup_consumer_accounts, registry_role, record_role
-):
-    await do_test_record_level_overrides_registry_level(
-        ibc.ibc2.async_w3, registry_role, record_role
-    )
+async def test_record_level_overrides_registry_level(ibc, registry_role, record_role):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    user = ACCOUNTS["signer1"]
+    reg_checksum = ""
+    doc_checksum = sha256_hex("doc123")
+
+    await add_record(w3, admin, doc_checksum)
+
+    # registry-level role
+    await grant_role(w3, registry_id, reg_checksum, user, registry_role, admin)
+    # record-level role (should override)
+    await grant_role(w3, registry_id, doc_checksum, user, record_role, admin)
+    # cleanup
+    await revoke_role(w3, registry_id, reg_checksum, user, registry_role, admin)
+    await revoke_role(w3, registry_id, doc_checksum, user, record_role, admin)
 
 
 @pytest.mark.parametrize(
@@ -1496,56 +1605,236 @@ async def test_record_level_overrides_registry_level(
         (Role.EDITOR, Role.EDITOR),
     ],
 )
-async def test_role_with_different_checksums(
-    ibc, setup_consumer_accounts, doc1_role, doc2_role
-):
-    await do_test_role_with_different_checksums(ibc.ibc2.async_w3, doc1_role, doc2_role)
+async def test_role_with_different_checksums(ibc, doc1_role, doc2_role):
+    w3 = ibc.ibc2.async_w3
+    registry_id = await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    user = ACCOUNTS["signer1"]
+    doc1_checksum = sha256_hex("doc1")
+    doc2_checksum = sha256_hex("doc2")
+
+    await add_record(w3, admin, doc1_checksum)
+    await add_record(w3, admin, doc2_checksum)
+
+    await grant_role(w3, registry_id, doc1_checksum, user, doc1_role, admin)
+    await grant_role(w3, registry_id, doc2_checksum, user, doc2_role, admin)
+
+    await revoke_role(w3, registry_id, doc1_checksum, user, doc1_role, admin)
+    await revoke_role(w3, registry_id, doc2_checksum, user, doc2_role, admin)
 
 
-async def test_add_and_query_records(ibc, setup_consumer_accounts):
-    await do_test_add_and_query_records(ibc.ibc2.async_w3)
+async def test_add_and_query_records(ibc):
+    w3 = ibc.ibc2.async_w3
+    registry_name = f"query-registry-{int(time.time() * 1000)}"
+    registry_id = await ensure_registry_exists(w3, name=registry_name)
+    admin = ACCOUNTS["community"]
+
+    for checksum, name in [
+        (sha256_hex("abc123"), "Record 1"),
+        (sha256_hex("abc123"), "Record 1 v2"),
+        (sha256_hex("def456"), "Record 2"),
+    ]:
+        await add_record(w3, admin, checksum, name=name, registry=registry_name)
+
+    docs = await query_records(w3, registry_id, limit=10, count_total=True)
+    assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
+
+    abc_doc = next((d for d in docs if d.checksum == sha256_hex("abc123")), None)
+    assert abc_doc is not None
+    metadata = json.loads(abc_doc.metadata)
+    assert metadata["document"] == "Record 1 v2"
 
 
-async def test_add_record_same_checksum_maintains_record_id(
-    ibc, setup_consumer_accounts
-):
-    await do_test_add_record_same_checksum_maintains_record_id(ibc.ibc2.async_w3)
+async def test_add_record_same_checksum_maintains_record_id(ibc):
+    w3 = ibc.ibc2.async_w3
+    await ensure_registry_exists(w3)
+    admin = ACCOUNTS["community"]
+    checksum = sha256_hex("test_checksum_123")
+    await add_record(w3, admin, checksum, name="Version 1")
+    await add_record(w3, admin, checksum, name="Version 2")
 
 
-async def test_add_record(ibc, setup_consumer_accounts):
-    await do_test_add_record(ibc.ibc2.async_w3)
+async def test_add_record(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registry_id = await ensure_registry_exists(w3)
+    for checksum, name, status in [
+        (sha256_hex("record_123"), "Test Record", "verified"),
+        (sha256_hex("remove_test_123"), "To Remove", "removed"),
+    ]:
+        receipt = await add_record(w3, admin, checksum, name=name)
+        args = find_document_event(receipt, event="AddRecord", caller=admin.address)
+        records = await query_records(w3, registry_id, record_id=args["recordId"])
+        assert len(records) == 1, f"expected 1 record, got {len(records)}"
+        record = records[0]
+        assert record.checksum == checksum
+
+        await update_record_status(w3, admin, record, status)
 
 
-async def test_shared_checksum_in_multi_registries(ibc, setup_consumer_accounts):
-    await do_test_shared_checksum_in_multi_registries(ibc.ibc2.async_w3)
+async def test_shared_checksum_in_multi_registries(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registries = [
+        ("multi1", "doc1", "figi1", "ind001"),
+        ("multi2", "doc2", "figi2", "ind002"),
+    ]
+    checksum = sha256_hex("shared_checksum_abc123")
+    registry_ids = {}
+    for name, document, figi, individual_id in registries:
+        registry_ids[name] = await ensure_registry_exists(w3, name=name)
+        await add_record(
+            w3,
+            admin,
+            checksum,
+            registry=name,
+            metadata=record_metadata(document, figi, individual_id),
+        )
+    records = await query_records(w3, checksum=checksum)
+    assert len(records) == 2
+    registries_found = {r.registryId for r in records}
+    assert registries_found == set(registry_ids.values())
+    metadata_values = {json.loads(r.metadata)["document"] for r in records}
+    assert metadata_values == {"doc1", "doc2"}
 
 
-async def test_query_by_registry_and_checksum(ibc, setup_consumer_accounts):
-    await do_test_query_by_registry_and_checksum(ibc.ibc2.async_w3)
+async def test_query_by_registry_and_checksum(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registry_name = "query-specific-reg"
+    registry_id = await ensure_registry_exists(w3, name=registry_name)
+
+    registries, _ = await DOCUMENT_PRECOMPILE.fns.registries(
+        registry_id, (b"", 0, 10, False, False)
+    ).call(w3, to=DOCUMENT_ADDRESS)
+    assert registries
+
+    checksum = sha256_hex("query_test_checksum")
+    await add_record(
+        w3, admin, checksum, name="Query Test Record", registry=registry_name
+    )
+    records = await query_records(w3, registry_id, checksum)
+
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.checksum == checksum
+    assert rec.registryId == registry_id
 
 
-async def test_same_checksum_different_record_ids_per_registry(
-    ibc, setup_consumer_accounts
-):
-    await do_test_same_checksum_different_record_ids_per_registry(ibc.ibc2.async_w3)
+async def test_same_checksum_different_record_ids_per_registry(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registries = ["recordid-test-1", "recordid-test-2"]
+    checksum = sha256_hex("recordid_checksum_xyz")
+
+    for name in registries:
+        await ensure_registry_exists(w3, name=name)
+        await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
+
+    records = await query_records(w3, checksum=checksum)
+
+    assert len(records) == 2
+    for r in records:
+        assert r.index == 1
+        assert r.isLatest
+        assert r.checksum == checksum
 
 
-async def test_multiple_versions_same_checksum_across_registries(
-    ibc, setup_consumer_accounts
-):
-    await do_test_multiple_versions_same_checksum_across_registries(ibc.ibc2.async_w3)
+async def test_multiple_versions_same_checksum_across_registries(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registries = ["version-test-1", "version-test-2"]
+    checksum = sha256_hex("multi_version_checksum")
+
+    for name in registries:
+        await ensure_registry_exists(w3, name=name)
+
+    for version in ["v1.0", "v2.0"]:
+        for reg in registries:
+            await add_record(w3, admin, checksum, name=version, registry=reg)
+
+    records = await query_records(w3, checksum=checksum)
+
+    assert len(records) == 2
+    for r in records:
+        meta = json.loads(r.metadata)
+        assert meta["document"] == "v2.0"
+        assert r.isLatest
+        assert r.index == 2
 
 
-async def test_query_all_registries_for_checksum(ibc, setup_consumer_accounts):
-    await do_test_query_all_registries_for_checksum(ibc.ibc2.async_w3)
+async def test_query_all_registries_for_checksum(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+    registries = ["query-all-1", "query-all-2", "query-all-3"]
+    checksum = sha256_hex("query_all_checksum")
+
+    registry_ids = {}
+    for name in registries:
+        registry_ids[name] = await ensure_registry_exists(w3, name=name)
+
+    for name in registries[:2]:
+        await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
+
+    records = await query_records(w3, checksum=checksum)
+
+    assert len(records) == 2
+    found = {r.registryId for r in records}
+    assert found == {registry_ids[name] for name in registries[:2]}
 
 
-async def test_checksum_only_query_respects_limit(ibc, setup_consumer_accounts):
-    await do_test_checksum_only_query_respects_limit(ibc.ibc2.async_w3)
+async def test_checksum_only_query_respects_limit(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+
+    checksum = sha256_hex("checksum_limit_test")
+    registries = ["checksum-limit-a", "checksum-limit-b", "checksum-limit-c"]
+
+    for name in registries:
+        await ensure_registry_exists(w3, name=name)
+        await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
+
+    # explicit limit/offset should work.
+    page1 = await query_records(w3, checksum=checksum, limit=1)
+    page2 = await query_records(w3, checksum=checksum, offset=1, limit=1)
+    assert len(page1) == 1
+    assert len(page2) == 1
+    assert {r.registryId for r in page1}.isdisjoint({r.registryId for r in page2})
 
 
-async def test_registry_only_query_respects_limit(ibc, setup_consumer_accounts):
-    await do_test_registry_only_query_respects_limit(ibc.ibc2.async_w3)
+async def test_registry_only_query_respects_limit(ibc):
+    w3 = ibc.ibc2.async_w3
+    admin = ACCOUNTS["community"]
+
+    reg_a = "reg-limit-a"
+    reg_b = "reg-limit-b"
+
+    await ensure_registry_exists(w3, name=reg_a)
+    registry_id_b = await ensure_registry_exists(w3, name=reg_b)
+
+    # add records under A first
+    for i in range(5):
+        await add_record(
+            w3,
+            admin,
+            checksum=sha256_hex(f"checksum-a-{i}"),
+            name=f"record a {i}",
+            registry=reg_a,
+        )
+
+    checksum_b = sha256_hex("checksum-b")
+    await add_record(
+        w3,
+        admin,
+        checksum=checksum_b,
+        name="record b",
+        registry=reg_b,
+    )
+
+    page = await query_records(w3, registry_id_b, limit=1)
+    assert len(page) == 1
+    assert page[0].registryId == registry_id_b
+    assert page[0].checksum == checksum_b
 
 
 def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
@@ -1557,18 +1846,11 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
     rpc = provider_cli.node_rpc_http
 
     # Resolve consumer_id from the provider (the fixture creates exactly one).
-    rsp = json.loads(
-        provider_cli.raw(
-            "q",
-            "provider",
-            "list-consumer-chains",
-            **provider_cli.get_base_kwargs(),
-        )
-    )
+    rsp = provider_cli._query("provider", "list-consumer-chains")
     consumer_id = next(
         c["consumer_id"]
         for c in rsp.get("chains") or []
-        if c.get("chain_id") == "nvnm-canary-net-1"
+        if c.get("chain_id") == CONSUMER_CHAIN_ID
     )
 
     validator = "validator"
@@ -1652,7 +1934,7 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
         {
             "provider": {
                 "consumerId": consumer_id,
-                "chainId": "nvnm-canary-net-1",
+                "chainId": CONSUMER_CHAIN_ID,
                 "memo": "ICS rewards",
             },
         }
@@ -1724,15 +2006,10 @@ def test_consumer_multisig(ibc, tmp_path):
     registry_name = "multisig-whitepaper"
     checksum = sha256_hex("multisig-anchoring-payload")
     fee = f"{fee_amt}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
-    common = {
+    common = consumer_cli.get_kwargs() | {
         "from_": multi_addr,
         "fees": fee,
         "gas": str(gas_limit),
-        "chain_id": consumer_cli.chain_id,
-        "keyring_backend": "test",
-        "home": consumer_cli.data_dir,
-        "node": consumer_cli.node_rpc,
-        "output": "json",
     }
     add_registry_tx = json.loads(
         consumer_cli.raw(
@@ -1750,16 +2027,8 @@ def test_consumer_multisig(ibc, tmp_path):
     # this tx, so the new registry gets the next id: current highest + 1 (ids are
     # sequential and never reused). --page-count-total is rejected, so read the highest
     # id via a reverse page of one.
-    highest = json.loads(
-        consumer_cli.raw(
-            "query",
-            "anchoring",
-            "registries",
-            page_reverse=True,
-            page_limit=1,
-            output="json",
-            node=consumer_cli.node_rpc,
-        )
+    highest = consumer_cli._query(
+        "anchoring", "registries", page_reverse=True, page_limit=1
     )
     existing = highest["registries"]
     next_registry_id = (int(existing[0]["id"]) if existing else 0) + 1
@@ -1796,15 +2065,8 @@ def test_consumer_multisig(ibc, tmp_path):
     )
 
     # Query the just-created registry by id (pagination-proof) and check its name.
-    created = json.loads(
-        consumer_cli.raw(
-            "q",
-            "anchoring",
-            "registries",
-            registry_id=next_registry_id,
-            node=consumer_cli.node_rpc,
-            output="json",
-        )
+    created = consumer_cli._query(
+        "anchoring", "registries", registry_id=next_registry_id
     )
     names = [r["name"] for r in created["registries"]]
     assert registry_name in names, names

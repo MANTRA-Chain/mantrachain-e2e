@@ -1631,6 +1631,22 @@ async def wait_for_unconfirmed_txs(url: str, min_txs: int = 1, timeout_s: float 
     raise AssertionError(f"expected >= {min_txs} unconfirmed txs, last={last}")
 
 
+# overrides on an address nothing reads, so they must not move a precompile's answer
+DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD"
+UNRELATED_OVERRIDES = (
+    {DEAD_ADDRESS: {}},
+    {DEAD_ADDRESS: {"stateDiff": {"0x" + "0" * 64: "0x" + "01".zfill(64)}}},
+)
+
+
+async def eth_call_ignoring_overrides(w3, tx):
+    "eth_call `tx` at latest, asserting unrelated state overrides don't change it."
+    base = await w3.eth.call(tx, "latest")
+    for override in UNRELATED_OVERRIDES:
+        assert await w3.eth.call(tx, "latest", override) == base, override
+    return base
+
+
 async def assert_gas_estimate_within_floor(
     w3,
     tx: dict,

@@ -10,6 +10,7 @@ from .utils import (
     WEI_PER_DENOM,
     bech32_to_eth,
     build_contract,
+    eth_call_ignoring_overrides,
     eth_to_bech32,
     find_fee,
     find_log_event_attrs,
@@ -195,27 +196,12 @@ async def test_distribution_eth_call_state_override(mantra):
         "data": community_pool_call.data,
     }
 
-    unrelated_address = "0x000000000000000000000000000000000000dEaD"
-    empty_override = {unrelated_address: {}}
-    unrelated_override = {
-        unrelated_address: {
-            "stateDiff": {
-                "0x" + "0" * 64: "0x" + "01".zfill(64),
-            }
-        }
-    }
-
     wait_for_block(cli, 2)
 
-    base = await w3.eth.call(tx, "latest")
-    with_empty_override = await w3.eth.call(tx, "latest", empty_override)
-    with_unrelated_override = await w3.eth.call(tx, "latest", unrelated_override)
-
+    base = await eth_call_ignoring_overrides(w3, tx)
     decoded_base = [
         (denom, int(amount), precision)
         for denom, amount, precision in decode(["(string,uint256,uint8)[]"], base)[0]
     ]
     call_result = await community_pool_call.call(w3, to=DISTRIBUTION)
     assert tuple(decoded_base) == call_result
-    assert with_empty_override == base
-    assert with_unrelated_override == base
