@@ -20,7 +20,7 @@ config {
     'account-prefix': evmd_chain['account-prefix'],
     accounts: [account {
       coins: coins + evmd_chain.evm_denom,
-    } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
+    } for account in super.accounts],
     'app-config'+: {
       evm+: {
         'evm-chain-id': evmd_chain.evm_chain_id,
@@ -73,12 +73,12 @@ config {
         },
       },
     },
-    validators: [validator {
+    validators: std.mapWithIndex(function(i, validator) validator {
       base_port: 26800 + i * 10,
       coins: coins + evmd_chain.evm_denom,
       gas_prices: constant.gas_price + evmd_chain.evm_denom,
       staked: staked + evmd_chain.evm_denom,
-    } for i in std.range(0, std.length(super.validators) - 1) for validator in [super.validators[i]]],
+    }, super.validators),
   },
   relayer: rly_common {
     chains: [

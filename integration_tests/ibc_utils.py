@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 import requests
-import tomlkit
 from eth_contract.erc20 import ERC20
 from pystarport import cluster, ports
 from pystarport.utils import (
@@ -30,23 +29,20 @@ from .utils import (
     CHAIN_ID,
     CMD,
     DEFAULT_DENOM,
-    DEFAULT_GAS_PRICE,
     KEYS,
     WETH_ADDRESS,
-    approve_proposal,
     build_and_deploy_contract_async,
     escrow_address,
     find_duplicate,
     find_fee,
     ibc_denom_address,
-    module_address,
     parse_events_rpc,
     wait_for_balance_change,
 )
 
 RATE_LIMIT_CHANNEL = "channel-0"
-# the v8.4 binary bundles the Stride fork; the ibc-go v11 module that replaces
-# it in v8.5.0 serves /ibc/apps/rate-limiting/v1 and ibc.applications.* msgs
+# ibc-apps' rate-limiting v10 is the upstreamed Stride module, so it keeps
+# Stride's REST path and ratelimit.v1 msgs
 RATE_LIMIT_URL = "/Stride-Labs/ibc-rate-limiting/ratelimit"
 
 
@@ -83,7 +79,7 @@ def add_key(hermes, chain, mnemonic_env, key_name):
         os.unlink(path)
 
 
-def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"):
+def call_hermes_cmd(hermes, b_chain):
     hermes_cmd(
         hermes,
         "create",
@@ -98,7 +94,6 @@ def call_hermes_cmd(hermes, incentivized, version, b_chain="mantra-canary-net-2"
         b_chain,
         "--new-client-connection",
         "--yes",
-        *(["--channel-version", json.dumps(version)] if incentivized else []),
     )
     add_key(hermes, CHAIN_ID, "SIGNER1_MNEMONIC", "signer1")
     add_key(hermes, b_chain, "SIGNER2_MNEMONIC", "signer2")
@@ -167,13 +162,10 @@ def prepare_network(
         wait_for_port(ports.grpc_port(ibc1.base_port(0)))
         wait_for_new_blocks(ibc2.cosmos_cli(), 1)
         wait_for_new_blocks(cli, 1)
-        version = {"fee_version": "ics29-1", "app_version": "ics20-1"}
-        path = ibc1.base_dir.parent / "relayer"
-        hermes = Hermes(path.with_suffix(".toml"))
-        call_hermes_cmd(hermes, False, version, b_chain=b_chain)
+        hermes = Hermes(ibc1.base_dir.parent / "relayer.toml")
+        call_hermes_cmd(hermes, b_chain)
         ibc1.supervisorctl("start", "relayer-demo")
         yield IBCNetwork(ibc1, ibc2, hermes)
-        wait_for_port(hermes.port)
 
 
 def run_hermes_transfer(
@@ -185,26 +177,36 @@ def run_hermes_transfer(
     dst_addr: str,
     denom=DEFAULT_DENOM,
     memo=None,
-    port="transfer",
-    channel="channel-0",
 ):
     # wait for hermes
-    output = subprocess.getoutput(
-        f"curl -s -X GET 'http://127.0.0.1:{hermes.port}/state' | jq"
+    state = requests.get(f"http://127.0.0.1:{hermes.port}/state").json()
+    assert state["status"] == "success", state
+    hermes_cmd(
+        hermes,
+        "tx",
+        "ft-transfer",
+        "--dst-chain",
+        dst_cli.chain_id,
+        "--src-chain",
+        src_cli.chain_id,
+        "--src-port",
+        "transfer",
+        "--src-channel",
+        "channel-0",
+        "--amount",
+        str(src_amt),
+        "--timeout-height-offset",
+        "1000",
+        "--number-msgs",
+        "1",
+        "--denom",
+        denom,
+        "--receiver",
+        dst_addr,
+        "--key-name",
+        src_addr,
+        *(["--memo", memo] if memo else []),
     )
-    assert json.loads(output)["status"] == "success"
-    src_chain = src_cli.chain_id
-    dst_chain = dst_cli.chain_id
-    cmd = (
-        f"hermes --config {hermes.configpath} tx ft-transfer "
-        f"--dst-chain {dst_chain} --src-chain {src_chain} --src-port {port} "
-        f"--src-channel {channel} --amount {src_amt} "
-        f"--timeout-height-offset 1000 --number-msgs 1 "
-        f"--denom {denom} --receiver {dst_addr} --key-name {src_addr}"
-    )
-    if memo:
-        cmd += f" --memo '{memo}'"
-    subprocess.run(cmd, check=True, shell=True)
 
 
 def assert_hermes_transfer(
@@ -215,51 +217,38 @@ def assert_hermes_transfer(
     dst_cli: CosmosCLI,
     dst_addr: str,
     denom=DEFAULT_DENOM,
-    memo=None,
     prefix=ADDRESS_PREFIX,
-    port="transfer",
-    channel="channel-0",
-    skip_src_balance_check=False,
 ) -> tuple[str, str]:
-    escrow_addr = escrow_address(port, channel, prefix=prefix)
-    src_balance_bf = src_cli.balance(src_addr, denom)
-    escrow_balance_bf = src_cli.balance(escrow_addr, denom)
-    run_hermes_transfer(
-        hermes,
-        src_cli,
-        src_addr,
-        src_amt,
-        dst_cli,
-        dst_addr,
-        denom,
-        memo,
-        port,
-        channel,
-    )
-    fee = 0
+    escrow_addr = escrow_address("transfer", "channel-0", prefix=prefix)
     send_ibc_token = denom.startswith("ibc/")
     if send_ibc_token:
         dst_denom = src_cli.ibc_denom(denom).get("base")
     else:
-        path = f"{port}/{channel}/{denom}"
+        path = f"transfer/channel-0/{denom}"
         denom_hash = ibc_denom_hash(path)
         dst_denom = f"ibc/{denom_hash}"
-        if should_deduct_fee(hermes, src_cli.chain_id, denom):
-            fee = find_transfer_fee(src_cli)
+    src_balance_bf = src_cli.balance(src_addr, denom)
+    escrow_balance_bf = src_cli.balance(escrow_addr, denom)
+    # baseline first, a fast relay can land before the send returns
     dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
+    run_hermes_transfer(
+        hermes, src_cli, src_addr, src_amt, dst_cli, dst_addr, denom=denom
+    )
+    fee = 0
+    if not send_ibc_token and should_deduct_fee(hermes, src_cli.chain_id, denom):
+        tx_events = latest_tx_events(src_cli, MSG_TRANSFER)
+        fee = int(parse_amount(tx_events["tx"]["fee"]))
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
     assert dst_balance == dst_balance_bf + src_amt
     if not send_ibc_token:
         assert dst_cli.ibc_denom_hash(path) == denom_hash
         assert src_cli.balance(escrow_addr, denom) == escrow_balance_bf + src_amt
-    if not skip_src_balance_check:
-        assert src_cli.balance(src_addr, denom) == src_balance_bf - src_amt - fee
+    assert src_cli.balance(src_addr, denom) == src_balance_bf - src_amt - fee
     return dst_denom, dst_balance
 
 
 def should_deduct_fee(hermes: Hermes, chain_id, denom: str) -> bool:
-    cfg = tomlkit.parse(hermes.configpath.read_text())
-    for chain in cfg["chains"]:
+    for chain in hermes.config["chains"]:
         if chain["id"] == chain_id:
             return chain.get("gas_price", {}).get("denom") == denom
     return False
@@ -274,17 +263,17 @@ def assert_ibc_transfer(
     amt: int,
     dst_denom: str,
     denom=DEFAULT_DENOM,
-    channel="channel-0",
     **kwargs,
 ) -> None:
     src_balance_bf = src_cli.balance(src_addr, denom=denom)
+    # baseline first, a fast relay can land before the send returns
+    dst_addr = dst_cli.debug_addr(dst_eth_addr, bech="acc")
+    dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     rsp = src_cli.ibc_transfer(
-        dst_eth_addr, f"{amt}{denom}", channel, from_=src_addr, **kwargs
+        dst_eth_addr, f"{amt}{denom}", "channel-0", from_=src_addr, **kwargs
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     fee = find_fee(rsp) if should_deduct_fee(hermes, src_cli.chain_id, denom) else 0
-    dst_addr = dst_cli.debug_addr(dst_eth_addr, bech="acc")
-    dst_balance_bf = dst_cli.balance(dst_addr, dst_denom)
     dst_balance = wait_for_balance_change(dst_cli, dst_addr, dst_denom, dst_balance_bf)
     assert dst_balance == dst_balance_bf + amt
     assert src_cli.balance(src_addr, denom=denom) == src_balance_bf - amt - fee
@@ -294,44 +283,10 @@ def ibc_denom_hash(path):
     return hashlib.sha256(path.encode()).hexdigest().upper()
 
 
-def add_rate_limit(chain, tmp_path, max_percent_send, max_percent_recv, **kwargs):
-    """Pass a gov proposal rate limiting DEFAULT_DENOM on RATE_LIMIT_CHANNEL."""
-    proposal = tmp_path / "add_rate_limit.json"
-    proposal.write_text(
-        json.dumps(
-            {
-                "title": "add rate limit",
-                "summary": "add rate limit",
-                "deposit": f"1{DEFAULT_DENOM}",
-                "messages": [
-                    {
-                        "@type": "/ratelimit.v1.MsgAddRateLimit",
-                        "authority": module_address("gov"),
-                        "denom": DEFAULT_DENOM,
-                        "channel_or_client_id": RATE_LIMIT_CHANNEL,
-                        "max_percent_send": str(max_percent_send),
-                        "max_percent_recv": str(max_percent_recv),
-                        "duration_hours": "24",
-                    }
-                ],
-            }
-        )
-    )
-    # the default 200k gas falls just short of the proposal's deposit write
-    rsp = chain.cosmos_cli().submit_gov_proposal(
-        proposal, from_="community", gas=300000, **kwargs
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(chain, rsp["events"], **kwargs)
-
-
-def api_url(chain, path):
-    return f"http://127.0.0.1:{ports.api_port(chain.base_port(0))}{path}"
-
-
 def query_rate_limit(chain, denom=DEFAULT_DENOM, channel=RATE_LIMIT_CHANNEL):
-    path = f"{RATE_LIMIT_URL}/ratelimit/{channel}/by_denom"
-    rsp = requests.get(api_url(chain, path), params={"denom": denom}).json()
+    port = ports.api_port(chain.base_port(0))
+    url = f"http://127.0.0.1:{port}{RATE_LIMIT_URL}/ratelimit/{channel}/by_denom"
+    rsp = requests.get(url, params={"denom": denom}).json()
     assert "rate_limit" in rsp, rsp
     return rsp["rate_limit"]
 
@@ -350,10 +305,6 @@ def latest_tx_events(cli, action):
     "Decoded events of the most recent tx carrying `action`."
     tx = cli.tx_search(f"message.action='{action}'", order_by="desc", limit=1)["txs"][0]
     return parse_events_rpc(tx["events"])
-
-
-def find_transfer_fee(cli):
-    return int(parse_amount(latest_tx_events(cli, MSG_TRANSFER)["tx"]["fee"]))
 
 
 def assert_receiver_events(cli, cli2: CosmosCLI, dst_eth_addr: str):
@@ -398,8 +349,6 @@ async def assert_ibc_transfer_flow(
     amt2 = 2
     amt3 = 3
     amt4 = 4
-    port = "transfer"
-    channel = "channel-0"
     eth_community = ADDRS["community"]
     for c in [cli1, cli2]:
         add_key(ibc.hermes, c.chain_id, "COMMUNITY_MNEMONIC", "community")
@@ -436,8 +385,7 @@ async def assert_ibc_transfer_flow(
     )
 
     print(f"chain1 community -> chain2 eth_community {amt3}{denom}")
-    denom_hash = ibc_denom_hash(f"{port}/{channel}/{denom}")
-    dst_denom3 = f"ibc/{denom_hash}"
+    dst_denom3 = f"ibc/{ibc_denom_hash(f'transfer/channel-0/{denom}')}"
     assert_ibc_transfer(
         ibc.hermes,
         cli1,
@@ -447,13 +395,11 @@ async def assert_ibc_transfer_flow(
         amt3,
         dst_denom3,
         denom=denom,
-        gas_prices=DEFAULT_GAS_PRICE,
     )
     assert_receiver_events(cli1, cli2, eth_community)
 
     print(f"chain2 community -> chain1 eth_community {amt4}{chain2_denom}")
-    denom_hash = ibc_denom_hash(f"{port}/{channel}/{chain2_denom}")
-    dst_denom4 = f"ibc/{denom_hash}"
+    dst_denom4 = f"ibc/{ibc_denom_hash(f'transfer/channel-0/{chain2_denom}')}"
     assert_ibc_transfer(
         ibc.hermes,
         cli2,

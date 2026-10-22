@@ -32,7 +32,7 @@ config {
     'account-prefix': nvnmchaind_chain['account-prefix'],
     accounts: [account {
       coins: '100000000000000000000' + nvnmchaind_chain.evm_denom,
-    } for i in std.range(0, std.length(super.accounts) - 1) for account in [super.accounts[i]]],
+    } for account in super.accounts],
     'app-config'+: {
       evm+: {
         'evm-chain-id': nvnmchaind_chain.evm_chain_id,
@@ -122,13 +122,13 @@ config {
         },
       },
     },
-    validators: [validator {
+    validators: std.mapWithIndex(function(i, validator) validator {
       base_port: 26800 + i * 10,
       coins: '100000000000000000000' + nvnmchaind_chain.evm_denom,
       gas_prices: '0.01' + nvnmchaind_chain.evm_denom,
       staked:: validator.staked,
       autostart: 'false',
-    } for i in std.range(0, std.length(super.validators) - 1) for validator in [super.validators[i]]],
+    }, super.validators),
   },
   relayer: rly_common {
     chains: [

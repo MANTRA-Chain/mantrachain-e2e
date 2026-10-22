@@ -13,9 +13,9 @@ config {
   'mantra-canary-net-2'+: basic + ibc_common {
     key_name: 'signer1',
     'account-prefix': chain['account-prefix'],
-    validators: [validator {
+    validators: std.mapWithIndex(function(i, validator) validator {
       base_port: 26800 + i * 10,
-    } for i in std.range(0, std.length(super.validators) - 1) for validator in [super.validators[i]]],
+    }, super.validators),
   },
   relayer: rly_common {
     chains: [

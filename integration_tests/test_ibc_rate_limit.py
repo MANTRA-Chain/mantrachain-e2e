@@ -2,13 +2,14 @@ import pytest
 
 from .ibc_utils import (
     RATE_LIMIT_CHANNEL,
-    add_rate_limit,
     ibc_denom_hash,
     prepare_network,
     query_rate_limit,
 )
 from .utils import (
     DEFAULT_DENOM,
+    module_address,
+    submit_gov_proposal,
     wait_for_balance_change,
 )
 
@@ -33,9 +34,17 @@ def test_rate_limited_transfer(ibc, tmp_path):
     community = cli.address("community")
     receiver = cli2.address("community")
 
-    add_rate_limit(
-        ibc.ibc1, tmp_path, max_percent_send=MAX_PERCENT_SEND, max_percent_recv=100
-    )
+    msg = {
+        "@type": "/ratelimit.v1.MsgAddRateLimit",
+        "authority": module_address("gov"),
+        "denom": DEFAULT_DENOM,
+        "channel_or_client_id": RATE_LIMIT_CHANNEL,
+        "max_percent_send": str(MAX_PERCENT_SEND),
+        "max_percent_recv": "100",
+        "duration_hours": "24",
+    }
+    # the default 200k gas falls just short of the proposal's deposit write
+    submit_gov_proposal(ibc.ibc1, tmp_path, [msg], gas=300000)
 
     limit = query_rate_limit(ibc.ibc1)
     assert limit["quota"]["max_percent_send"] == str(MAX_PERCENT_SEND), limit

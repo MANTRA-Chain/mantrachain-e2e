@@ -1,16 +1,16 @@
 import json
-import time
 
 import pytest
 from eth_contract.contract import Contract
 from eth_contract.erc20 import ERC20
-from pystarport.utils import wait_for_fn_async
+from pystarport.utils import wait_for_fn, wait_for_fn_async
 
 from .ibc_utils import (
     assert_hermes_transfer,
     assert_ibc_transfer_flow,
     build_ics20_tx,
     ibc_denom_hash,
+    ibc_timeout_ns,
     prepare_network,
     prepare_src_callback,
     run_hermes_transfer,
@@ -45,6 +45,24 @@ pytestmark = pytest.mark.slow
 PRECOMPILE = Contract(build_contract("ICS20I")["abi"])
 ICS20 = "0x0000000000000000000000000000000000000802"
 gas = 400_000
+
+
+async def ics20_send(w3, denom, amt):
+    "ICS20 precompile transfer from signer1 to signer2 over channel-0."
+    res = await PRECOMPILE.fns.transfer(
+        "transfer",
+        "channel-0",
+        denom,
+        amt,
+        ADDRS["signer1"],
+        eth_to_bech32(ADDRS["signer2"]),
+        (0, 0),
+        ibc_timeout_ns(),
+        "",
+    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
+    assert res.status == 1
+    sequence = int.from_bytes(res.logs[0].data, "big")
+    assert sequence > 0
 
 
 @pytest.fixture(scope="module")
@@ -153,25 +171,9 @@ async def test_ibc_transfer(ibc):
     assert cli2.balance(addr_signer2, dst_denom) == 0
 
     print(f"ibc precompile: chain1 signer1 -> chain2 signer2 {transfer_amt}{tf_denom}")
-    timeout_height = (0, 0)
-    # timeout in nanoseconds - current time + 10 minutes
-    timeout_timestamp = int((time.time() + 600) * 10**9)
     balance_bf = await ERC20.fns.balanceOf(signer1).call(w3, to=tf_erc20_addr)
     signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
-    res = await PRECOMPILE.fns.transfer(
-        "transfer",
-        "channel-0",
-        tf_denom,
-        transfer_amt,
-        signer1,
-        addr_signer2,
-        timeout_height,
-        timeout_timestamp,
-        "",
-    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
-    assert res.status == 1
-    sequence = int.from_bytes(res.logs[0].data, "big")
-    assert sequence > 0
+    await ics20_send(w3, tf_denom, transfer_amt)
 
     balance_af = await wait_for_balance_change_async(
         w3, signer1, tf_erc20_addr, balance_bf
@@ -226,25 +228,8 @@ async def test_ibc_cb(ibc):
     isolated = generate_isolated_address(channel, addr_signer2)
     path = f"{port}/{channel}/{erc20_denom}"
     dst_denom = f"ibc/{ibc_denom_hash(path)}"
-
-    timeout_height = (0, 0)
-    timeout_timestamp = int((time.time() + 600) * 10**9)
     signer2_balance_bf = cli2.balance(addr_signer2, dst_denom)
-
-    res = await PRECOMPILE.fns.transfer(
-        "transfer",
-        channel,
-        erc20_denom,
-        transfer_amt,
-        signer1,
-        addr_signer2,
-        timeout_height,
-        timeout_timestamp,
-        "",
-    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
-    assert res.status == 1
-    sequence = int.from_bytes(res.logs[0].data, "big")
-    assert sequence > 0
+    await ics20_send(w3, erc20_denom, transfer_amt)
 
     signer2_balance = wait_for_balance_change(
         cli2,
@@ -285,18 +270,7 @@ async def test_ibc_cb(ibc):
     # malformed dest_callback: dest chain writes error ack, sender voucher refunded
     mal_amt = 10
     print(f"chain1 signer1 -> chain2 signer2 {mal_amt}{erc20_denom} (mint vouchers)")
-    res = await PRECOMPILE.fns.transfer(
-        "transfer",
-        channel,
-        erc20_denom,
-        mal_amt,
-        signer1,
-        addr_signer2,
-        timeout_height,
-        int((time.time() + 600) * 10**9),
-        "",
-    ).transact(w3, ACCOUNTS["signer1"], to=ICS20, gas=gas)
-    assert res.status == 1
+    await ics20_send(w3, erc20_denom, mal_amt)
     voucher_bf = wait_for_balance_change(cli2, addr_signer2, dst_denom, 0)
     assert voucher_bf == mal_amt
 
@@ -322,12 +296,9 @@ async def test_ibc_cb(ibc):
     )
 
     # After error ack is relayed back, chain2 refunds signer2's voucher.
-    async def voucher_refunded():
-        bal = cli2.balance(addr_signer2, dst_denom)
-        return bal if bal == voucher_bf else None
-
-    refunded = await wait_for_fn_async("voucher refund", voucher_refunded)
-    assert refunded == voucher_bf
+    wait_for_fn(
+        "voucher refund", lambda: cli2.balance(addr_signer2, dst_denom) == voucher_bf
+    )
 
     # chain1 escrow must be unchanged: error ack reverts the un-escrow on recv.
     assert (
