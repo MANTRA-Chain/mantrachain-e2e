@@ -1,5 +1,4 @@
 import json
-import tempfile
 
 import pytest
 
@@ -70,15 +69,15 @@ def test_flow(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     def find_grant(auth_type):
-        grants = cli.query_grants(granter, grantee)
+        "The value of the granter->grantee authorization of `auth_type`."
         return next(
-            (g for g in grants if g["authorization"]["type"] == auth_type), None
+            g["authorization"]["value"]
+            for g in cli.query_grants(granter, grantee)
+            if g["authorization"]["type"] == auth_type
         )
 
     stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
-    assert stake_grant and stake_grant["authorization"]["value"]["max_tokens"][
-        "amount"
-    ] == str(max_tokens_limit)
+    assert stake_grant["max_tokens"]["amount"] == str(max_tokens_limit)
 
     spend_limit = 200
     rsp = cli.grant_authorization(
@@ -90,9 +89,7 @@ def test_flow(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
-        "amount"
-    ] == str(spend_limit)
+    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
 
     msg_type = "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward"
     rsp = cli.grant_authorization(
@@ -104,10 +101,10 @@ def test_flow(mantra):
     assert rsp["code"] == 0, rsp["raw_log"]
 
     generic_grant = find_grant("/cosmos.authz.v1beta1.GenericAuthorization")
-    assert generic_grant and generic_grant["authorization"]["value"]["msg"] == msg_type
+    assert generic_grant["msg"] == msg_type
 
 
-def test_authz_spend_limit_atomicity(mantra):
+def test_authz_spend_limit_atomicity(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     granter = cli.address("signer1")
     grantee = cli.address("signer2")
@@ -141,10 +138,8 @@ def test_authz_spend_limit_atomicity(mantra):
         generate_only=True,
     )
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(tx, f)
-        tx_file = f.name
-
+    tx_file = tmp_path / "tx.json"
+    tx_file.write_text(json.dumps(tx))
     rsp = cli.exec_tx_by_grantee(tx_file, from_=grantee)
     assert rsp["code"] != 0
     assert "insufficient funds" in rsp.get("raw_log", "")

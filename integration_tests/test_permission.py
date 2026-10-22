@@ -1,6 +1,5 @@
 import asyncio
 from collections import defaultdict
-from itertools import groupby
 from pathlib import Path
 
 import pytest
@@ -27,25 +26,13 @@ def custom_mantra(request, tmp_path_factory):
     )
 
 
-async def transfer(cli, user, addr_b):
-    nonce_locks = defaultdict(asyncio.Lock)
-    async with nonce_locks[user]:
-        rsp = await asyncio.to_thread(
-            cli.transfer, user, addr_b, f"1{DEFAULT_DENOM}", event_query_tx=False
-        )
-    rsp = await asyncio.to_thread(cli.event_query_tx_for, rsp["txhash"])
+def transfer_not_allowed(cli, user, module):
+    "A send from `user` to `module`'s account is rejected when it executes."
+    addr = module_address(module)
+    rsp = cli.transfer(user, addr, f"1{DEFAULT_DENOM}", event_query_tx=False)
+    rsp = cli.event_query_tx_for(rsp["txhash"])
     assert rsp["code"] == 4, rsp["raw_log"]
-    assert f"{addr_b} is not allowed to receive funds" in rsp["raw_log"]
-    return rsp
-
-
-async def execute_user_transfers(cli, user_modules):
-    results = []
-    for user_name, module in user_modules:
-        addr_b = module_address(module)
-        result = await transfer(cli, user_name, addr_b)
-        results.append(result)
-    return results
+    assert f"{addr} is not allowed to receive funds" in rsp["raw_log"]
 
 
 async def test_transfers_not_allowed(custom_mantra):
@@ -72,20 +59,15 @@ async def test_transfers_not_allowed(custom_mantra):
         "wasm",
     ]
     modules.extend(module for module in modules2 if cli.has_module(module))
-    users = cli.list_accounts()
-    users = [user["name"] for user in users if user["name"] != "reserve"]
-    pairs = []
+    users = [user["name"] for user in cli.list_accounts() if user["name"] != "reserve"]
+    # spread the modules over the users; each user sends in turn, users in parallel
+    groups = defaultdict(list)
     for i, module in enumerate(modules):
-        user = users[i % len(users)]
-        pairs.append((user, module))
+        groups[users[i % len(users)]].append(module)
 
-    user_groups = {}
-    for user, group in groupby(sorted(pairs), key=lambda x: x[0]):
-        user_groups[user] = list(group)
+    async def send_all(user, user_modules):
+        for module in user_modules:
+            await asyncio.to_thread(transfer_not_allowed, cli, user, module)
 
-    user_tasks = [
-        execute_user_transfers(cli, modules) for _, modules in user_groups.items()
-    ]
-
-    await asyncio.gather(*user_tasks)
+    await asyncio.gather(*(send_all(u, mods) for u, mods in groups.items()))
     assert_transfer(cli, cli.address("community"), cli.address("signer1"))

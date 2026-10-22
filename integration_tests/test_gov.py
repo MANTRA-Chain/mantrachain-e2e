@@ -8,7 +8,6 @@ from .utils import (
     ADDRS,
     DEFAULT_DENOM,
     WETH_ADDRESS,
-    approve_proposal,
     assert_burn_tokenfactory_denom,
     assert_create_erc20_denom,
     assert_create_tokenfactory_denom,
@@ -28,28 +27,17 @@ def test_submit_any_proposal(mantra, tmp_path):
     grantee_addr = cli.address("signer1")
 
     # this json can be obtained with `--generate-only` flag for respective cli calls
-    proposal_json = {
-        "messages": [
-            {
-                "@type": "/cosmos.feegrant.v1beta1.MsgGrantAllowance",
-                "granter": granter_addr,
-                "grantee": grantee_addr,
-                "allowance": {
-                    "@type": "/cosmos.feegrant.v1beta1.BasicAllowance",
-                    "spend_limit": [],
-                    "expiration": None,
-                },
-            }
-        ],
-        "deposit": f"1{DEFAULT_DENOM}",
-        "title": "title",
-        "summary": "summary",
+    msg = {
+        "@type": "/cosmos.feegrant.v1beta1.MsgGrantAllowance",
+        "granter": granter_addr,
+        "grantee": grantee_addr,
+        "allowance": {
+            "@type": "/cosmos.feegrant.v1beta1.BasicAllowance",
+            "spend_limit": [],
+            "expiration": None,
+        },
     }
-    proposal_file = tmp_path / "proposal.json"
-    proposal_file.write_text(json.dumps(proposal_json))
-    rsp = cli.submit_gov_proposal(proposal_file, from_="community", gas=210000)
-    assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(mantra, rsp["events"])
+    submit_gov_proposal(mantra, tmp_path, [msg], gas=210000)
     grant_detail = cli.query_grant(granter_addr, grantee_addr)
     assert grant_detail["granter"] == granter_addr
     assert grant_detail["grantee"] == grantee_addr
@@ -110,7 +98,6 @@ def test_gov_proposal(mantra, tmp_path):
     assert voter_deposit.get("depositor") == voter
 
     tally = cli.query_tally(proposal_id)
-    tally = tally.get("tally") or tally
     assert len(tally) >= 4
 
     rsp = cli.gov_cancel_proposal(proposal_id, from_="community")

@@ -94,16 +94,11 @@ def test_staking_redelegate(mantra, connect_mantra, tmp_path):
     signer1 = cli.address(name)
     validators = cli.validators()
     val_ops = [v["operator_address"] for v in validators[:2]]
-    amounts = [3, 4]
-    fee = 0
     gas = 400_000
 
-    for i, amt in enumerate(amounts):
-        rsp = cli.delegate_amount(
-            val_ops[i], f"{amt}{DEFAULT_DENOM}", _from=name, gas=gas
-        )
+    for val, amt in zip(val_ops, [3, 4]):
+        rsp = cli.delegate_amount(val, f"{amt}{DEFAULT_DENOM}", _from=name, gas=gas)
         assert rsp["code"] == 0, rsp["raw_log"]
-        fee += find_fee(rsp)
 
     balance_bf = cli.delegation(signer1, val_ops[0])["balance"]["amount"]
     redelegate_amt = 2
@@ -137,7 +132,6 @@ def test_join_validator(mantra):
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     time.sleep(1)
-    wait_for_block(cli, cli.block_height())
 
     count = len(cli.validators())
     gas = 420_000

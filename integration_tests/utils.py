@@ -18,7 +18,6 @@ from pathlib import Path
 
 import bech32
 import eth_utils
-import jsonmerge
 import requests
 import solcx
 import web3
@@ -674,7 +673,7 @@ async def call_with_retry_async(fn, expect_error=False, max_retries=3, retry_del
     return False
 
 
-def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
+def assert_create_tokenfactory_denom(cli, subdenom, **kwargs):
     # check create tokenfactory denom
     rsp = retry_on_seq_mismatch(cli.create_tokenfactory_denom, subdenom, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -685,48 +684,43 @@ def assert_create_tokenfactory_denom(cli, subdenom, is_legacy=False, **kwargs):
     rsp = cli.query_tokenfactory_denoms(sender)
     denom = f"factory/{sender}/{subdenom}"
     assert denom in rsp.get("denoms"), rsp
-    expected = {"creator": sender, "new_token_denom": denom}
-    erc20_address = None
-    if not is_legacy:
-        erc20_address = denom_to_erc20_address(denom)
-        expected["new_token_eth_addr"] = erc20_address
-        pair = cli.query_erc20_token_pair(denom)
-        assert pair == {
-            "erc20_address": erc20_address,
-            "denom": denom,
-            "enabled": True,
-            "contract_owner": "OWNER_MODULE",
-        }
+    erc20_address = denom_to_erc20_address(denom)
+    expected = {
+        "creator": sender,
+        "new_token_denom": denom,
+        "new_token_eth_addr": erc20_address,
+    }
     assert expected.items() <= event.items()
-    meta = {"denom_units": [{"denom": denom}], "base": denom}
-    if not is_legacy:
-        # all missing metadata fields fixed in rc3
-        meta["name"] = denom
-        meta["display"] = denom
-        meta["symbol"] = denom
+    assert cli.query_erc20_token_pair(denom) == {
+        "erc20_address": erc20_address,
+        "denom": denom,
+        "enabled": True,
+        "contract_owner": "OWNER_MODULE",
+    }
+    meta = {
+        "denom_units": [{"denom": denom}],
+        "base": denom,
+        "name": denom,
+        "display": denom,
+        "symbol": denom,
+    }
     assert meta.items() <= cli.query_bank_denom_metadata(denom).items()
-    _from = None if is_legacy else sender
-    rsp = cli.query_denom_authority_metadata(denom, _from=_from).get("Admin")
+    rsp = cli.query_denom_authority_metadata(denom, _from=sender).get("Admin")
     assert rsp == sender, rsp
     return denom
 
 
-def assert_mint_tokenfactory_denom(cli, denom, amt, is_legacy=False, **kwargs):
+def assert_mint_tokenfactory_denom(cli, denom, amt, **kwargs):
     # check mint tokenfactory denom
     sender = kwargs.get("_from")
     balance = cli.balance(sender, denom)
     coin = f"{amt}{denom}"
     rsp = retry_on_seq_mismatch(cli.mint_tokenfactory_denom, coin, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
-    if not is_legacy:
-        event = find_log_event_attrs(
-            rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
-        )
-        expected = {
-            "mint_to_address": sender,
-            "amount": coin,
-        }
-        assert expected.items() <= event.items()
+    event = find_log_event_attrs(
+        rsp["events"], "tf_mint", lambda attrs: "mint_to_address" in attrs
+    )
+    assert {"mint_to_address": sender, "amount": coin}.items() <= event.items()
     current = cli.balance(sender, denom)
     assert current == balance + amt
     return current
@@ -784,25 +778,11 @@ def assert_set_tokenfactory_denom(cli, tmp_path, denom, **kwargs):
     assert rsp == sender, rsp
 
 
-def recover_community(cli, tmp_path):
-    return cli.create_account(
-        "community",
-        mnemonic=os.getenv("COMMUNITY_MNEMONIC"),
-        home=tmp_path,
-    )["address"]
-
-
 def transfer_via_cosmos(cli, from_addr, to_addr, amount):
     tx = cli.transfer(
-        from_addr,
-        to_addr,
-        f"{amount}{DEFAULT_DENOM}",
-        generate_only=True,
-        chain_id=cli.chain_id,
+        from_addr, to_addr, f"{amount}{DEFAULT_DENOM}", generate_only=True
     )
-    tx_json = cli.sign_tx_json(
-        tx, from_addr, home=cli.data_dir, node=cli.node_rpc, chain_id=cli.chain_id
-    )
+    tx_json = cli.sign_tx_json(tx, from_addr)
     rsp = cli.broadcast_tx_json(tx_json, home=cli.data_dir)
     assert rsp["code"] == 0, rsp["raw_log"]
     return find_fee(rsp)
@@ -877,7 +857,6 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
         assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 1)
     res = cli.query_tally(proposal_id)
-    res = res.get("tally") or res
     assert (
         int(res["yes_count"]) == cli.staking_pool()
     ), "all validators should have voted yes"
@@ -1031,25 +1010,10 @@ def multisig_sign_and_broadcast(
     return rsp
 
 
-def do_multisig(
-    cli,
-    tmp_path,
-    signer1_name,
-    signer2_name,
-    multisig_name,
-    denom=DEFAULT_DENOM,
-    gas_prices=None,
-):
-    multi_addr = setup_multisig(
-        cli, signer1_name, signer2_name, multisig_name, denom, gas_prices
-    )
-    extra = {"gas_prices": gas_prices} if gas_prices else {}
+def do_multisig(cli, tmp_path, signer1_name, signer2_name, multisig_name):
+    multi_addr = setup_multisig(cli, signer1_name, signer2_name, multisig_name)
     unsigned = cli.transfer(
-        multi_addr,
-        cli.address(signer2_name),
-        f"1{denom}",
-        generate_only=True,
-        **extra,
+        multi_addr, cli.address(signer2_name), f"1{DEFAULT_DENOM}", generate_only=True
     )
     multisig_sign_and_broadcast(
         cli,
@@ -1141,7 +1105,6 @@ def assert_approval_log(receipt, owner, spender, expected):
     assert (
         actual == expected
     ), f"Approval allowance mismatch: expected {expected}, got {actual}"
-    return True
 
 
 async def assert_tf_flow(w3, receiver, signer1, signer2, tf_erc20_addr):
@@ -1230,21 +1193,18 @@ def assert_validator_bonded(cli, val_addr, staked, moniker):
     return val
 
 
-def edit_app_cfg(cli, i, app_config=None):
+def edit_app_cfg(cli, i):
     # Modify the json-rpc addresses to avoid conflict
     cluster.edit_app_cfg(
         cli.home(i) / "config/app.toml",
         cli.base_port(i),
-        jsonmerge.merge(
-            {
-                "json-rpc": {
-                    "enable": True,
-                    "address": "127.0.0.1:{EVMRPC_PORT}",
-                    "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
-                },
+        {
+            "json-rpc": {
+                "enable": True,
+                "address": "127.0.0.1:{EVMRPC_PORT}",
+                "ws-address": "127.0.0.1:{EVMRPC_PORT_WS}",
             },
-            app_config or {},
-        ),
+        },
     )
 
 
@@ -1345,46 +1305,30 @@ def grpc_eth_call(
     raise AssertionError(str(rsp))
 
 
-def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
+def verify_tax_distribution(cli, height):
+    "The block's mint is split between the mca address and distribution by mca_tax."
     tax_params = cli.get_params("tax")
     mca_tax = float(tax_params.get("mca_tax", "0")) / 1e18
     if mca_tax == 0:
-        return None
+        return
 
-    mca_addr = tax_params["mca_address"]
-    distribution_addr = module_address("distribution")
-    fee_collector_addr = module_address("fee_collector")
-    precisebank_addr = module_address("precisebank")
-    height_bf = height - 1
-    denom_af = DEFAULT_DENOM if scale_factor > 1 else denom
-
-    def balances_at(d, h):
-        return {
-            "distribution": cli.balance(distribution_addr, denom=d, height=h),
-            "fee_collector": cli.balance(fee_collector_addr, denom=d, height=h),
-            "mca": cli.balance(mca_addr, denom=d, height=h),
-        }
-
-    balances_bf = balances_at(denom, height_bf)
-    balances_af = balances_at(denom_af, height)
-
-    # v8 remove precisebank, keep backward compatibility
-    has_precisebank = True
-    fee_frac = 0
+    addrs = {
+        "distribution": module_address("distribution"),
+        "fee_collector": module_address("fee_collector"),
+        "mca": tax_params["mca_address"],
+    }
+    # v8 removed precisebank; keep checking it on chains that still have it
     try:
-        fee_frac = cli.query_precisebank_fraction(fee_collector_addr, height=height_bf)
-        balances_bf["precisebank"] = cli.balance(
-            precisebank_addr, denom=denom, height=height_bf
+        fee_frac = cli.query_precisebank_fraction(
+            addrs["fee_collector"], height=height - 1
         )
-        balances_af["precisebank"] = cli.balance(
-            precisebank_addr, denom=denom_af, height=height
-        )
+        addrs["precisebank"] = module_address("precisebank")
     except Exception:
-        has_precisebank = False
-
-    assert balances_af["fee_collector"] == 0
-    if has_precisebank:
-        assert balances_af["precisebank"] == 0
+        fee_frac = None
+    balances_bf = {k: cli.balance(a, height=height - 1) for k, a in addrs.items()}
+    balances_af = {k: cli.balance(a, height=height) for k, a in addrs.items()}
+    assert balances_af["fee_collector"] == balances_bf["fee_collector"] == 0
+    assert balances_af.get("precisebank", 0) == 0
 
     rsp = requests.get(f"{cli.node_rpc_http}/block_results?height={height}").json()
     block_mint = int(
@@ -1392,51 +1336,27 @@ def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
             rsp["result"]["finalize_block_events"], "mint", lambda a: "amount" in a
         )["amount"]
     )
-    print(
-        f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac}, "
-        f"precisebank={has_precisebank} in {height}"
-    )
+    print(f"block_mint: {block_mint}, tax: {mca_tax}, fee_frac: {fee_frac} in {height}")
 
-    # verify tax split: mca takes the tax rate, distribution takes the rest
+    # mca takes the tax rate, distribution takes the rest
     precision = 10**18
-    tax_rate_int = int(mca_tax * precision)
-    rates = {"mca": tax_rate_int, "distribution": precision - tax_rate_int}
-    # fee_collector fractional, rounded separately from the mint share
-    frac = (
-        fee_frac * 4 if (has_precisebank and fee_frac > 0 and scale_factor > 1) else 0
-    )
-    expected = {
-        k: (block_mint * rate) // precision + (frac * rate) // precision
-        for k, rate in rates.items()
-    }
-
-    tolerance = 1
-    increases = {
-        k: balances_af[k] - balances_bf[k] * scale_factor
-        for k in ["mca", "distribution"]
-    }
-    fee_inc = balances_af["fee_collector"] - balances_bf["fee_collector"] * scale_factor
-    assert fee_inc == 0
-    for mod, inc in increases.items():
-        diff = abs(inc - expected[mod])
-        assert diff <= tolerance, f"{mod} diff {diff}: exp={expected[mod]}, got={inc}"
-        msg = f"module {mod}: {inc}"
-        if scale_factor > 1:
-            fractional = inc - expected[mod]
-            msg += f" (mint={expected[mod]}+frac~{fractional})"
-        else:
-            msg += f" (exp={expected[mod]}, ±{diff})"
-        print(msg)
+    tax_rate = int(mca_tax * precision)
+    for mod, rate in (("mca", tax_rate), ("distribution", precision - tax_rate)):
+        expected = block_mint * rate // precision
+        inc = balances_af[mod] - balances_bf[mod]
+        assert abs(inc - expected) <= 1, f"{mod}: exp={expected}, got={inc}"
+        print(f"module {mod}: {inc} (exp={expected})")
 
 
-def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
+def assert_withdraw_rewards(mantra, cb, **kwargs):
+    "Withdrawn rewards match the exported distribution state; node0 restarts after."
     cli = mantra.cosmos_cli()
     val = cli.address("validator", "val")
     validator = cli.address("validator")
     signer1 = cli.address("signer1")
     signer2 = cli.address("signer2")
     amt = 20_000_000
-    coin = f"{amt}{denom}"
+    coin = f"{amt}{DEFAULT_DENOM}"
 
     rsp = cli.set_withdraw_addr(signer2, from_=signer1, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -1450,7 +1370,7 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.distribution_rewards(signer1, height=target_height - 1),
         cli.distribution_rewards(signer1, height=target_height),
     ]
-    diff = rewards[1] / (rewards[0] * scale)
+    diff = rewards[1] / rewards[0]
     assert diff > 0.99 and diff < 2, "rewards should increase"
 
     height_bf = cli.block_height()
@@ -1461,8 +1381,6 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.balance(signer2, height=height_af - 1),
         cli.balance(signer2, height=height_af),
     ]
-    mantra.supervisorctl("stop", f"{CHAIN_ID}-node0")
-    time.sleep(1)  # wait for database lock to be released
 
     def get_reward_ratio(height):
         dis = cli.export(
@@ -1478,7 +1396,7 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
             if r["validator_address"] == val and r["delegator_address"] == signer1
         ][0]["starting_info"]
         period = info["previous_period"]
-        stake = float(info["stake"]) / scale
+        stake = float(info["stake"])
         data = dis["validator_historical_rewards"]
         rewards = [
             r for r in data if r["validator_address"] == val and r["period"] == period
@@ -1488,9 +1406,16 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
             rewards[0]["rewards"]["cumulative_reward_ratio"][0]["amount"]
         )
 
-    _, start = get_reward_ratio(height_bf)
-    stake, end = get_reward_ratio(height_af)
-    assert int(stake * (end - start)) == int((balances[1] - balances[0]) / scale)
+    # export needs node0's db, so stop it, and bring it back even on failure
+    mantra.supervisorctl("stop", f"{CHAIN_ID}-node0")
+    try:
+        time.sleep(1)  # wait for database lock to be released
+        _, start = get_reward_ratio(height_bf)
+        stake, end = get_reward_ratio(height_af)
+        assert int(stake * (end - start)) == balances[1] - balances[0]
+    finally:
+        mantra.supervisorctl("start", f"{CHAIN_ID}-node0")
+        wait_for_new_blocks(mantra.cosmos_cli(), 1)
     return target_height
 
 
@@ -1502,12 +1427,12 @@ CONSUMER_METADATA = {
 }
 
 
-def consumer_init_params(dummy_hash=DUMMY_HASH):
+def consumer_init_params():
     spawn_time = datetime.datetime.now(datetime.UTC)
     return {
         "initial_height": {"revision_number": 1, "revision_height": 1},
-        "genesis_hash": dummy_hash,
-        "binary_hash": dummy_hash,
+        "genesis_hash": DUMMY_HASH,
+        "binary_hash": DUMMY_HASH,
         "spawn_time": spawn_time.isoformat().replace("+00:00", "Z"),
         "ccv_timeout_period": 2419200000000000,
         "unbonding_period": 80000000000,
@@ -1519,19 +1444,18 @@ def consumer_init_params(dummy_hash=DUMMY_HASH):
     }
 
 
-def create_consumer_chain(cli, chain_id, dummy_hash=DUMMY_HASH, **kwargs):
+def create_consumer_chain(cli, chain_id, **kwargs):
     consumer_msg = {
         "chain_id": chain_id,
         "metadata": CONSUMER_METADATA,
-        "initialization_parameters": consumer_init_params(dummy_hash),
+        "initialization_parameters": consumer_init_params(),
         "power_shaping_parameters": {"top_N": 0},
     }
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as f:
         json.dump(consumer_msg, f)
-        msg_path = Path(f.name)
-
-    rsp = cli.provider_create_consumer(msg_path, **kwargs)
+        f.flush()
+        rsp = cli.provider_create_consumer(f.name, **kwargs)
     assert rsp["code"] == 0, rsp["raw_log"]
     data = find_log_event_attrs(
         rsp["events"], "create_consumer", lambda attrs: "consumer_id" in attrs

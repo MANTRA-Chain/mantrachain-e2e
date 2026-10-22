@@ -8,7 +8,13 @@ from eth_contract.deploy_utils import (
 from eth_contract.utils import get_initcode
 
 from .test_staking_precompile import get_validators, send_value
-from .utils import ACCOUNTS, build_contract, eth_to_bech32, wait_for_eth_tx_result
+from .utils import (
+    ACCOUNTS,
+    DEFAULT_DENOM,
+    build_contract,
+    eth_to_bech32,
+    wait_for_eth_tx_result,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,7 +60,7 @@ async def _finite_mint(cli, w3):
         "vesting",
         "create-permanent-locked-account",
         eth_to_bech32(weapon),
-        f"{LOCKED}amantra",
+        f"{LOCKED}{DEFAULT_DENOM}",
         **{"from": "community"},
     )
     assert rsp.get("code") == 0, rsp

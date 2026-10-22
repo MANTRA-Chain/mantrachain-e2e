@@ -7,7 +7,7 @@ config {
       'chain-id': chain_id,
     },
     genesis+: {
-      chain_id+: chain_id,
+      chain_id: chain_id,
     },
     'app-config'+: {
       evm+: {

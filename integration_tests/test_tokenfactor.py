@@ -1,4 +1,3 @@
-import os
 import time
 from pathlib import Path
 
@@ -24,8 +23,6 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
     cli = connect_mantra.cosmos_cli(tmp_path)
     community = "community"
     signer2 = "signer2"
-    cli.create_account(community, os.environ["COMMUNITY_MNEMONIC"])
-    cli.create_account(signer2, os.environ["SIGNER2_MNEMONIC"])
     addr_a = cli.address(community)
     addr_b = cli.address(signer2)
     subdenom = f"admin{time.time()}"
@@ -114,10 +111,6 @@ def test_setup_hooks_denom(mantra):
             )
             assert after == (before[0] - TRANSFER_CAP, before[1] + TRANSFER_CAP)
         else:
-            before = (
-                cli.balance(addr_a, denom),
-                cli.balance(contract_address, denom),
-            )
             amt = 10
             res = cli.transfer(addr_a, contract_address, f"{amt}{denom}", gas=gas)
             res = cli.set_tokenfactory_before_send_hook(
@@ -172,4 +165,4 @@ async def test_precompile_transfer_from_approval_event(mantra):
         w3, to=precompile_addr
     )
     assert allowance == new_allowance
-    assert assert_approval_log(receipt, owner.address, spender.address, new_allowance)
+    assert_approval_log(receipt, owner.address, spender.address, new_allowance)

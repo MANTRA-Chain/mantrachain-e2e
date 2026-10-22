@@ -30,7 +30,6 @@ from .utils import (
     create_periodic_vesting_acct,
     do_multisig,
     module_address,
-    recover_community,
     send_transaction,
     send_transaction_async,
     transfer_via_cosmos,
@@ -437,8 +436,6 @@ async def test_connect_contract(connect_mantra, tmp_path):
 
 async def test_contract(mantra, connect_mantra, tmp_path):
     "test Greeter contract"
-    cli = connect_mantra.cosmos_cli(tmp_path)
-    recover_community(cli, tmp_path)
     w3 = connect_mantra.async_w3
     greeter = AsyncGreeter()
     await greeter.deploy(w3)

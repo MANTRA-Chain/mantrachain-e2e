@@ -13,52 +13,23 @@ from .utils import (
 )
 
 
-@pytest.fixture(scope="module")
-def custom_mantra_eq(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("min-gas-price-eq")
-    yield from setup_custom_mantra(
-        path,
-        26500,
-        Path(__file__).parent / "configs/min_gas_price_eq.jsonnet",
-        chain=chain,
-    )
-
-
-@pytest.fixture(scope="module")
-def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("min-gas-price")
-    yield from setup_custom_mantra(
-        path,
-        26530,
-        Path(__file__).parent / "configs/min_gas_price.jsonnet",
-        chain=chain,
-    )
-
-
-@pytest.fixture(scope="module")
-def custom_mantra_lte(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("min-gas-price-lte")
-    yield from setup_custom_mantra(
-        path,
-        26560,
-        Path(__file__).parent / "configs/min_gas_price_lte.jsonnet",
-        chain=chain,
-    )
-
-
 @pytest.fixture(
     scope="module",
-    params=["custom_mantra_eq", "custom_mantra", "custom_mantra_lte"],
+    params=[
+        ("min_gas_price_eq", 26500),
+        ("min_gas_price", 26530),
+        ("min_gas_price_lte", 26560),
+    ],
+    ids=["custom_mantra_eq", "custom_mantra", "custom_mantra_lte"],
 )
-def custom_cluster(request, custom_mantra_eq, custom_mantra_lte, custom_mantra):
-    if request.param == "custom_mantra_eq":
-        return custom_mantra_eq
-    elif request.param == "custom_mantra_lte":
-        return custom_mantra_lte
-    return custom_mantra
+def custom_cluster(request, tmp_path_factory):
+    cfg, base_port = request.param
+    yield from setup_custom_mantra(
+        tmp_path_factory.mktemp(cfg.replace("_", "-")),
+        base_port,
+        Path(__file__).parent / f"configs/{cfg}.jsonnet",
+        chain=request.config.getoption("chain_config"),
+    )
 
 
 def test_dynamic_fee_tx(custom_cluster):

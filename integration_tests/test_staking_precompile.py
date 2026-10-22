@@ -392,7 +392,6 @@ async def test_join_validator(mantra):
     clustercli.supervisor.startProcess(f"{chain_id}-node{node_index}")
     wait_for_block(cli, cli0.block_height() + 1)
     await asyncio.sleep(0.5)
-    wait_for_block(cli, cli.block_height())
 
     count = len(cli.validators())
     pubkey = (

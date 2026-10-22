@@ -3,19 +3,21 @@ import time
 import pytest
 from pystarport.utils import wait_for_new_blocks
 
-from .utils import CHAIN_ID
+from .utils import CHAIN_ID, DEFAULT_DENOM
 
 JAILED_NODE_INDEX = 2
 JAILED_NODE_NAME = f"{CHAIN_ID}-node{JAILED_NODE_INDEX}"
 
 
 def setup_dust_delegation(mantra, cli, signer_name="signer1"):
-    """Delegate 1 amantra (< PowerReduction so consensus power is unchanged
+    """Delegate 1 base unit (< PowerReduction so consensus power is unchanged
     when JAILED_NODE is stopped) from `signer_name` to the JAILED_NODE
     validator. Returns (target_val, signer_addr)."""
     target_val = mantra.cosmos_cli(JAILED_NODE_INDEX).address("validator", "val")
     signer = cli.address(signer_name)
-    rsp = cli.delegate_amount(target_val, "1amantra", _from=signer_name, gas=400_000)
+    rsp = cli.delegate_amount(
+        target_val, f"1{DEFAULT_DENOM}", _from=signer_name, gas=400_000
+    )
     assert rsp["code"] == 0, rsp["raw_log"]
     wait_for_new_blocks(cli, 2, timeout=60)
     cli.distribution_rewards(signer)

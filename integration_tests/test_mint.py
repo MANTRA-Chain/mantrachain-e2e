@@ -21,8 +21,6 @@ def custom_mantra(request, tmp_path_factory):
 
 def test_max_supply(custom_mantra, tmp_path):
     cli = custom_mantra.cosmos_cli(i=2)
-    # params = cli.get_params("mint")
-    # max_supply = int(params["max_supply"])
     supply_bf = int(cli.total_supply_of().get("amount"))
     p = cli.get_params("mint")
     max_supply = int(supply_bf * 1.05)
@@ -46,11 +44,10 @@ def test_max_supply(custom_mantra, tmp_path):
     supplies = [supply_bf]
 
     for _ in range(10):
-        wait_for_new_blocks(cli, 1)
+        height = wait_for_new_blocks(cli, 1)
         supplies.append(int(cli.total_supply_of().get("amount")))
         minted = supplies[-1] - supplies[-2]
         gap = max_supply - supplies[-1]
-        height = cli.block_height()
         print(f"block {height}, supply: {supplies[-1]}, gap: {gap}, minted: {minted}")
         assert supplies[-1] <= max_supply
         if gap == 0:

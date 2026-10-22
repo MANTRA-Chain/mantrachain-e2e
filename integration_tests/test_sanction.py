@@ -1,12 +1,9 @@
-import json
-
 import pytest
 import web3
 
 from .utils import (
     DEFAULT_DENOM,
     WEI_PER_DENOM,
-    approve_proposal,
     assert_transfer,
     bech32_to_eth,
     module_address,
@@ -29,17 +26,7 @@ def test_blacklist(mantra, tmp_path):
         "authority": module_address("gov"),
         "blacklist_accounts": [user],
     }
-    proposal_src = {
-        "title": "title",
-        "summary": "summary",
-        "deposit": f"1{DEFAULT_DENOM}",
-        "messages": [msg],
-    }
-    proposal = tmp_path / "proposal.json"
-    proposal.write_text(json.dumps(proposal_src))
-    gov_rsp = cli.submit_gov_proposal(proposal, from_="community")
-    assert gov_rsp["code"] == 0, gov_rsp["raw_log"]
-    approve_proposal(mantra, gov_rsp["events"])
+    submit_gov_proposal(mantra, tmp_path, [msg])
     assert user in cli.query_blacklist()
 
     err = f"{bech32_to_eth(user)} is blacklisted"

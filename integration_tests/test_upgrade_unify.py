@@ -219,9 +219,6 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     # validator self-delegation needs more than the cli's 200k default
     target_height = assert_withdraw_rewards(c, cb, gas=gas)
     stop_height = target_height - WAIT_HEIGHT
-
-    c.supervisorctl("start", f"{CHAIN_ID}-node0")
-    wait_for_new_blocks(c.cosmos_cli(), 1)
     cli = c.cosmos_cli()
 
     verify_tax_distribution(cli, target_height)

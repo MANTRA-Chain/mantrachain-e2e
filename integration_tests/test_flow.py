@@ -12,7 +12,6 @@ from .utils import (
     derive_new_account,
     eth_to_bech32,
     get_balance,
-    recover_community,
     send_transaction,
     transfer_via_cosmos,
 )
@@ -37,7 +36,7 @@ def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
         key_type="secp256k1",
         home=tmp_path,
     )["address"]
-    addr_community = recover_community(cli, tmp_path)
+    addr_community = cli.address(community)
     balance_recover = get_balance(cli, recover)
     balance_community = get_balance(cli, community)
     if balance_recover < amt and balance_community >= amt:
@@ -55,7 +54,6 @@ def test_flow(mantra, connect_mantra: ConnectMantra, tmp_path):
     fee = transfer_via_cosmos(cli, addr_recover, addr_test1, amt)
     assert assert_balance(cli, w3, recover) == balance_recover - amt - fee
     assert assert_balance(cli, w3, addr_test1) == balance1 + amt
-    balance1 = get_balance(cli, addr_test1)
     balance1_evm = w3.eth.get_balance(acc_test1.address)
 
     # send [1, 10**12] wei from test1 to test2 for tolerance check
