@@ -1,13 +1,12 @@
-from pathlib import Path
-
 import pytest
 
 from .utils import (
     DEFAULT_DENOM,
     FIELD_EXTENSION,
+    WASM_GAS,
     all_contract_infos,
-    find_log_event_attrs,
     ibc2_port_field,
+    instantiate_contract_pair,
     verify_contract_info,
 )
 
@@ -34,36 +33,10 @@ def test_wasm(mantra, connect_mantra, tmp_path):
     name = "signer1"
     wallet = cli.address(name)
     skip_unless_can_upload(cli, wallet)
-    gas = 2500000
+    gas = WASM_GAS
 
-    contract = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
-    res = cli.wasm_store(
-        str(contract),
-        wallet,
-        _from=name,
-        gas=gas,
-    )
-    assert res["code"] == 0
-    attr = "code_id"
-    code_id = find_log_event_attrs(
-        res["events"], "store_code", lambda attrs: attr in attrs
-    ).get(attr)
-
-    print(f"All contracts uploaded. Code IDs: {code_id}")
-
-    contract_addresses = []
-    print(f"Instantiating contract with code_id {code_id} twice")
-    for i in range(2):
-        res = cli.wasm_instantiate(code_id, wallet, _from=name, gas=gas)
-        assert res["code"] == 0
-        attr = "_contract_address"
-        contract_address = find_log_event_attrs(
-            res["events"], "instantiate", lambda attrs: attr in attrs
-        ).get(attr)
-        print(f"Instantiated contract {i} at: {contract_address}")
-        contract_addresses.append(contract_address)
-
-    print(f"All contracts instantiated. Addresses: {contract_addresses}")
+    code_id, contract_addresses = instantiate_contract_pair(cli, name)
+    print(f"code {code_id} instantiated at {contract_addresses}")
     for addr in contract_addresses:
         verify_contract_info(cli, addr)
 
@@ -82,12 +55,8 @@ def test_wasm(mantra, connect_mantra, tmp_path):
     amt = f"10{DEFAULT_DENOM}"
 
     def execute_tx(msg, amount=None, gas_limit=gas, success=True):
-        res = (
-            cli.wasm_execute(contract0, msg, amount, _from=name, gas=gas_limit)
-            if amount
-            else cli.wasm_execute(contract0, msg, _from=name, gas=gas_limit)
-        )
-        assert (res["code"] == 0) if success else (res["code"] != 0)
+        res = cli.wasm_execute(contract0, msg, amount, _from=name, gas=gas_limit)
+        assert (res["code"] == 0) == success, res
 
     execute_tx({"modify_state": {}})
     execute_tx({"send_funds": {"receipient": contract1}}, amt)

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from .ibc_utils import (
@@ -9,9 +7,9 @@ from .ibc_utils import (
 from .network import Mantra
 from .upgrade_utils import (
     build_upgrade_package,
-    cleanup_upgrades_folder,
     do_upgrade,
     post_init,
+    remove_upgrades,
 )
 from .utils import (
     CMD,
@@ -27,10 +25,8 @@ def custom_mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     name = "cosmovisor_with_ibc"
     path = tmp_path_factory.mktemp(name)
-    configdir = Path(__file__).parent
     upgrades = path / "upgrades"
-    nix_name = "upgrade-test-package"
-    build_upgrade_package(upgrades, configdir / f"configs/{nix_name}.nix")
+    build_upgrade_package(upgrades)
     binary = str(upgrades / f"genesis/bin/{CMD}")
     yield from prepare_network(
         path,
@@ -42,21 +38,16 @@ def custom_mantra(request, tmp_path_factory):
         chain_binary=f"evmd,{binary}",
         genesis="genesis",
     )
-
-
-async def exec(c):
-    cli = c.ibc1.cosmos_cli()
-
-    def upgrade():
-        """Upgrade mid-flow, so the transfers back exercise a migrated chain."""
-        nonlocal cli
-        cli = do_upgrade(c.ibc1, "v8.4.0", cli.block_height() + WAIT_HEIGHT)
-
-    await assert_ibc_transfer_flow(c, upgrade_cb=upgrade)
-    cli = do_upgrade(c.ibc1, "v8.5.0-pre.1", cli.block_height() + WAIT_HEIGHT)
-    cli = do_upgrade(c.ibc1, "v8.7.0-pre.1", cli.block_height() + WAIT_HEIGHT)
+    remove_upgrades(upgrades)
 
 
 async def test_cosmovisor_upgrade(custom_mantra: Mantra):
-    await exec(custom_mantra)
-    cleanup_upgrades_folder(custom_mantra.ibc1.cosmos_cli().data_dir)
+    c = custom_mantra
+
+    def upgrade(plan):
+        do_upgrade(c.ibc1, plan, c.ibc1.cosmos_cli().block_height() + WAIT_HEIGHT)
+
+    # upgrade mid-flow, so the transfers back exercise a migrated chain
+    await assert_ibc_transfer_flow(c, upgrade_cb=lambda: upgrade("v8.4.0"))
+    upgrade("v8.5.0-pre.1")
+    upgrade("v8.7.0-pre.1")

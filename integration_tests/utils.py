@@ -1777,6 +1777,27 @@ def verify_contract_info(cli, addr, field=FIELD_IBC2_PORT_ID):
     assert dict(proto_iter(bz))[field].decode() == info["ibc2_port_id"]
 
 
+WASM_CONTRACT = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
+WASM_GAS = 2500000
+
+
+def instantiate_contract_pair(cli, name="signer1"):
+    "Store the test contract as `name` and instantiate a (caller, callee) pair."
+    wallet = cli.address(name)
+    res = cli.wasm_store(str(WASM_CONTRACT), wallet, _from=name, gas=WASM_GAS)
+    assert res["code"] == 0, res["raw_log"]
+    code_id = find_log_event_attrs(res["events"], "store_code").get("code_id")
+    addrs = []
+    for label in ("caller", "callee"):
+        res = cli.wasm_instantiate(
+            code_id, wallet, label=label, _from=name, gas=WASM_GAS
+        )
+        assert res["code"] == 0, res["raw_log"]
+        attrs = find_log_event_attrs(res["events"], "instantiate")
+        addrs.append(attrs.get("_contract_address"))
+    return code_id, addrs
+
+
 def _proto_varint(buf, i):
     val = shift = 0
     while True:

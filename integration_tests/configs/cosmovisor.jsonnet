@@ -28,12 +28,6 @@ config {
       },
     }],
     genesis+: {
-      consensus_params: {
-        block: {
-          max_bytes: '3000000',
-          max_gas: '300000000',
-        },
-      },
       app_state+: {
         gov+: {
           params+: {

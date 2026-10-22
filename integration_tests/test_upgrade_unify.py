@@ -1,7 +1,6 @@
 import json
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
 import requests
@@ -13,7 +12,6 @@ from pystarport.utils import wait_for_new_blocks, wait_for_port
 
 from .network import Mantra
 from .upgrade_utils import (
-    cleanup_upgrades_folder,
     do_upgrade,
     setup_mantra_upgrade,
 )
@@ -21,9 +19,9 @@ from .utils import (
     ADDRS,
     CHAIN_ID,
     DEFAULT_DENOM,
-    DEFAULT_GAS_PRICE,
     FIELD_EXTENSION,
     FIELD_IBC2_PORT_ID,
+    WASM_GAS,
     AsyncGreeter,
     Greeter,
     assert_create_tokenfactory_denom,
@@ -40,7 +38,7 @@ from .utils import (
     denom_to_erc20_address,
     derive_new_account,
     eth_to_bech32,
-    find_log_event_attrs,
+    instantiate_contract_pair,
     module_address,
     update_consumer_chain,
     update_node_cmd,
@@ -52,30 +50,21 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
 STAKING = "0x0000000000000000000000000000000000000800"
 WAIT_HEIGHT = 16
-WASM_CONTRACT = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
-WASM_GAS = 2500000
 
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
-    yield from setup_mantra_upgrade(
-        tmp_path_factory,
-        "upgrade-test-package",
-        "cosmovisor",
-        "genesis",
-        chain=chain,
-        port=27010,
-    )
+    yield from setup_mantra_upgrade(tmp_path_factory, chain, 27010)
 
 
-async def exec(c, tmp_path):
+async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
+    c = custom_mantra
     cli = c.cosmos_cli()
     w3 = c.async_w3
     grpc_cmd = cli.raw.cmd
     community = "community"  # cli key name
     community_addr = ADDRS["community"]  # eth address
-    gas_prices = DEFAULT_GAS_PRICE
 
     # capture an early height + state for the grpc-only archive checks below
     greeter = AsyncGreeter()
@@ -91,12 +80,8 @@ async def exec(c, tmp_path):
     # the genesis binary pairs an erc20 with the denom, so these write through to
     # the contract too; a mint alone measures ~305k, well over the plain 300k
     tf_gas = 620000
-    denom = assert_create_tokenfactory_denom(
-        cli, subdenom, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
-    )
-    assert_set_tokenfactory_denom(
-        cli, tmp_path, denom, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
-    )
+    denom = assert_create_tokenfactory_denom(cli, subdenom, _from=addr_a, gas=tf_gas)
+    assert_set_tokenfactory_denom(cli, tmp_path, denom, _from=addr_a, gas=tf_gas)
 
     # fund a fresh eth account, deploy a contract and delegate later via it
     acc_c = derive_new_account(101)
@@ -107,7 +92,6 @@ async def exec(c, tmp_path):
         addr_a,
         addr_c,
         amt=10**18 + delegate_amt,
-        gas_prices=gas_prices,
     )
     contract = Greeter("Greeter", acc_c.key)
     contract.deploy(c.w3)
@@ -120,10 +104,8 @@ async def exec(c, tmp_path):
     transfer_amt = 1000
 
     # addr_b sends the erc20 tx below, so fund it for gas rather than with tf_amt
-    assert_transfer(cli, addr_a, addr_b, amt=10**18, gas_prices=gas_prices)
-    assert_mint_tokenfactory_denom(
-        cli, denom, tf_amt, _from=addr_a, gas=tf_gas, gas_prices=gas_prices
-    )
+    assert_transfer(cli, addr_a, addr_b, amt=10**18)
+    assert_mint_tokenfactory_denom(cli, denom, tf_amt, _from=addr_a, gas=tf_gas)
     assert_transfer_tokenfactory_denom(
         cli,
         denom,
@@ -131,7 +113,6 @@ async def exec(c, tmp_path):
         transfer_amt,
         _from=addr_a,
         gas=tf_gas,
-        gas_prices=gas_prices,
     )
 
     balance = cli.balance(addr_b, denom)
@@ -160,15 +141,15 @@ async def exec(c, tmp_path):
 
     # wasmd v0.61.1 stores the ibc2 port at the retracted field; v8.7.0-pre.1
     # moves it
-    legacy_contracts = instantiate_contract_pair(cli)
+    _, legacy_contracts = instantiate_contract_pair(cli)
     verify_contract_pair(cli, legacy_contracts, FIELD_EXTENSION)
 
     # fee grant + authorization grants, checked again after the upgrades
     granter = cli.address("signer1")
     grantee = cli.address("signer2")
-    rsp = cli.grant_fee_allowance(granter, grantee, gas_prices=gas_prices)
+    rsp = cli.grant_fee_allowance(granter, grantee)
     assert rsp["code"] == 0, rsp["raw_log"]
-    rsp = cli.revoke_fee_grant(granter, grantee, gas_prices=gas_prices)
+    rsp = cli.revoke_fee_grant(granter, grantee)
     assert rsp["code"] == 0, rsp["raw_log"]
 
     fee_grant_spend_limit = 5
@@ -176,14 +157,15 @@ async def exec(c, tmp_path):
         granter,
         grantee,
         spend_limit=f"{fee_grant_spend_limit}{DEFAULT_DENOM}",
-        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
     def find_grant(auth_type):
-        grants = cli.query_grants(granter, grantee)
+        "The value of the granter->grantee authorization of `auth_type`."
         return next(
-            (g for g in grants if g["authorization"]["type"] == auth_type), None
+            g["authorization"]["value"]
+            for g in cli.query_grants(granter, grantee)
+            if g["authorization"]["type"] == auth_type
         )
 
     max_tokens_limit = 10
@@ -196,13 +178,10 @@ async def exec(c, tmp_path):
         spend_limit=f"{max_tokens_limit}{DEFAULT_DENOM}",
         allow_list=[val_ops[0]],
         deny_validators=val_ops[1],
-        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
-    assert stake_grant and stake_grant["authorization"]["value"]["max_tokens"][
-        "amount"
-    ] == str(max_tokens_limit)
+    assert stake_grant["max_tokens"]["amount"] == str(max_tokens_limit)
 
     spend_limit = 200
     rsp = cli.grant_authorization(
@@ -210,27 +189,21 @@ async def exec(c, tmp_path):
         "send",
         from_=granter,
         spend_limit=f"{spend_limit}{DEFAULT_DENOM}",
-        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
-        "amount"
-    ] == str(spend_limit)
+    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
 
     rsp = cli.delegate_amount(
         val_ops[0],
         f"{delegate_amt}{DEFAULT_DENOM}",
         _from="signer1",
-        gas_prices=gas_prices,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
     periodic_amt = 1
     coin = f"{periodic_amt}{DEFAULT_DENOM}"
-    periodic_addr = create_periodic_vesting_acct(
-        cli, tmp_path, coin, from_=community, gas_prices=gas_prices
-    )
+    periodic_addr = create_periodic_vesting_acct(cli, tmp_path, coin, from_=community)
 
     # first upgrade, triggered inside withdraw-rewards flow, cb freezes node2 at
     # its pre-upgrade state as the grpc-only archive node used later
@@ -244,10 +217,10 @@ async def exec(c, tmp_path):
         return cli, target_height
 
     # validator self-delegation needs more than the cli's 200k default
-    target_height = assert_withdraw_rewards(c, cb, gas=gas, gas_prices=gas_prices)
+    target_height = assert_withdraw_rewards(c, cb, gas=gas)
     stop_height = target_height - WAIT_HEIGHT
 
-    c.supervisorctl("start", "mantra-canary-net-1-node0")
+    c.supervisorctl("start", f"{CHAIN_ID}-node0")
     wait_for_new_blocks(c.cosmos_cli(), 1)
     cli = c.cosmos_cli()
 
@@ -272,9 +245,10 @@ async def exec(c, tmp_path):
 
     # historical contract/erc20 calls against pre-v8 state
     assert contract.contract.caller(block_identifier=hist_height).greet() == "Hello"
-    await ERC20.fns.balanceOf(sender).call(
+    hist_balance = await ERC20.fns.balanceOf(sender).call(
         w3, to=tf_erc20_addr, block_identifier=hist_height
     )
+    assert hist_balance == transfer_amt - transfer_amt2
 
     # periodic vesting, fee grant and send authorization survive the upgrade
     acct = cli.account(periodic_addr)["account"]
@@ -294,9 +268,7 @@ async def exec(c, tmp_path):
     }
 
     send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant and send_grant["authorization"]["value"]["spend_limit"][0][
-        "amount"
-    ] == str(spend_limit)
+    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
 
     # block events survive the upgrade and can be pruned afterwards
     def get_block_events():
@@ -324,7 +296,7 @@ async def exec(c, tmp_path):
     V8_4_EXPLOITER = "mantra13n9sk3p8x7tpq9adgxvzv9q0qev953mld0hwva"
     assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.4.0: {blacklist}"
     verify_v8_4_vesting_disabled(cli)
-    await verify_provider(cli)
+    verify_provider(cli)
 
     # v8.5.0-pre.1 is a code-only hotfix (evm atomic-commit patch, migrations
     # only) -- there is no new on-chain state to assert; do_upgrade itself
@@ -408,7 +380,7 @@ async def exec(c, tmp_path):
                 proc.wait()
 
 
-async def verify_provider(cli):
+def verify_provider(cli):
     params = cli.get_params("provider")
     assert params["blocks_per_epoch"] == "10"
     assert params["number_of_epochs_to_start_receiving_rewards"] == "2"
@@ -434,22 +406,6 @@ async def verify_provider(cli):
     assert cli.provider_consumer_genesis(consumer_id) is not None
 
 
-def instantiate_contract_pair(cli, name="signer1"):
-    "Store the test contract and instantiate a (caller, callee) pair."
-    wallet = cli.address(name)
-    kwargs = {"_from": name, "gas": WASM_GAS, "gas_prices": DEFAULT_GAS_PRICE}
-    res = cli.wasm_store(str(WASM_CONTRACT), wallet, **kwargs)
-    assert res["code"] == 0, res["raw_log"]
-    code_id = find_log_event_attrs(res["events"], "store_code").get("code_id")
-    addrs = []
-    for label in ("caller", "callee"):
-        res = cli.wasm_instantiate(code_id, wallet, label=label, **kwargs)
-        assert res["code"] == 0, res["raw_log"]
-        attrs = find_log_event_attrs(res["events"], "instantiate")
-        addrs.append(attrs.get("_contract_address"))
-    return addrs
-
-
 def verify_contract_pair(cli, addrs, field, name="signer1"):
     "Both ContractInfos sit at `field`, and a cross-contract call decodes them."
     for addr in addrs:
@@ -461,7 +417,6 @@ def verify_contract_pair(cli, addrs, field, name="signer1"):
         f"10{DEFAULT_DENOM}",
         _from=name,
         gas=WASM_GAS,
-        gas_prices=DEFAULT_GAS_PRICE,
     )
     assert res["code"] == 0, res["raw_log"]
 
@@ -496,8 +451,3 @@ def verify_removed_modules(cli):
 
     with pytest.raises(AssertionError):
         cli.get_params("marketmap")
-
-
-async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
-    await exec(custom_mantra, tmp_path)
-    cleanup_upgrades_folder(custom_mantra.cosmos_cli().data_dir)
