@@ -9,7 +9,7 @@ from pystarport.utils import wait_for_new_blocks, wait_for_port
 from web3.exceptions import TransactionNotFound, Web3RPCError
 
 from .network import setup_custom_mantra
-from .utils import CHAIN_ID, derive_new_account, send_transaction, supervisorctl
+from .utils import CHAIN_ID, derive_new_account, send_transaction
 
 pytestmark = pytest.mark.slow
 
@@ -32,12 +32,11 @@ def custom_mantra(request, tmp_path_factory):
 @contextmanager
 def node_stopped(mantra):
     "stop node0 to unlock its dbs, yield its home, then bring it back"
-    ini = mantra.base_dir / "../tasks.ini"
-    supervisorctl(ini, "stop", NODE)
+    mantra.supervisorctl("stop", NODE)
     try:
         yield mantra.node_home()
     finally:
-        supervisorctl(ini, "start", NODE)
+        mantra.supervisorctl("start", NODE)
         base_port = mantra.base_port(0)
         wait_for_port(ports.rpc_port(base_port))
         wait_for_port(ports.evmrpc_port(base_port))

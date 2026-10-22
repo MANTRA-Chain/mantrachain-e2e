@@ -45,6 +45,7 @@ from hexbytes import HexBytes
 from web3 import AsyncWeb3
 from web3._utils.contracts import encode_transaction_data
 from web3.types import TxParams
+from web3.utils.address import get_create_address
 
 from .utils import (
     ACCOUNTS,
@@ -57,7 +58,6 @@ from .utils import (
     assert_weth_flow,
     build_and_deploy_contract_async,
     build_contract,
-    contract_address,
     create_contract_transaction,
     w3_wait_for_new_blocks_async,
 )
@@ -497,7 +497,7 @@ async def test_selfdestruct(geth):
     receipt = await send_transaction(w3, deployer, data=get_initcode(artifact))
     exploiter = receipt["contractAddress"]
 
-    address = contract_address(exploiter, 1)
+    address = get_create_address(exploiter, 1)
     # fund the future contract address
     await send_transaction(w3, deployer, to=address, value=1000)
 

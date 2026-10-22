@@ -1,10 +1,8 @@
+from pathlib import Path
+
 import pytest
 
-from .network import (
-    connect_custom_mantra,
-    setup_geth,
-    setup_mantra,
-)
+from .network import connect_custom_mantra, setup_custom_mantra, setup_geth
 
 
 def pytest_addoption(parser):
@@ -28,15 +26,14 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items, config):
-    keywordexpr = config.option.keyword
-    markexpr = config.option.markexpr
+    markexpr = config.option.markexpr or ""
+    # a mark named in -k or -m opts its tests back in
+    selected = f"{config.option.keyword or ''} {markexpr}"
     skip_connect = pytest.mark.skip(reason="Skipping connect tests by default")
-    skip_rollback = pytest.mark.skip(
-        reason="Skipping tests not supported for inveniemd"
-    )
-    skip_slow_in_asyncio = pytest.mark.skip(reason="slow tests run in the slow group")
     chain_config = config.getoption("chain_config")
-    asyncio_only = markexpr.strip() == "asyncio" if markexpr else False
+    skip_unsupported = pytest.mark.skip(reason=f"not supported for {chain_config}")
+    skip_slow_in_asyncio = pytest.mark.skip(reason="slow tests run in the slow group")
+    asyncio_only = markexpr.strip() == "asyncio"
 
     for item in items:
         # When the asyncio matrix is selected, defer slow async tests to the
@@ -51,26 +48,23 @@ def pytest_collection_modifyitems(items, config):
             item.add_marker("unmarked")
 
         # skip connect-marked tests unless explicitly requested
-        if "connect" in item.keywords:
-            if not (
-                (keywordexpr and "connect" in keywordexpr)
-                or (markexpr and "connect" in markexpr)
-            ):
-                item.add_marker(skip_connect)
+        if "connect" in item.keywords and "connect" not in selected:
+            item.add_marker(skip_connect)
 
-        if "skipped" in item.keywords:
-            if chain_config != "mantrachaind" and not (
-                (keywordexpr and "skipped" in keywordexpr)
-                or (markexpr and "skipped" in markexpr)
-            ):
-                item.add_marker(skip_rollback)
+        if (
+            "skipped" in item.keywords
+            and chain_config != "mantrachaind"
+            and "skipped" not in selected
+        ):
+            item.add_marker(skip_unsupported)
 
 
 @pytest.fixture(scope="session", params=[True])
 def mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra")
-    yield from setup_mantra(path, 26650, chain)
+    cfg = Path(__file__).parent / "configs/enable-indexer.jsonnet"
+    yield from setup_custom_mantra(path, 26650, cfg, chain=chain)
 
 
 @pytest.fixture(scope="session", params=[True])

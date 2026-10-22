@@ -3,8 +3,10 @@ import time
 import pytest
 from pystarport.utils import wait_for_new_blocks
 
+from .utils import CHAIN_ID
+
 JAILED_NODE_INDEX = 2
-JAILED_NODE_NAME = f"mantra-canary-net-1-node{JAILED_NODE_INDEX}"
+JAILED_NODE_NAME = f"{CHAIN_ID}-node{JAILED_NODE_INDEX}"
 
 
 def setup_dust_delegation(mantra, cli, signer_name="signer1"):

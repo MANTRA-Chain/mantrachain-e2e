@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import _jsonnet
@@ -30,7 +31,6 @@ from .cosmoscli import ChainCommand, CosmosCLI
 from .utils import (
     CHAIN_ID,
     CMD,
-    supervisorctl,
 )
 
 RETRIES = 10
@@ -181,7 +181,10 @@ class Mantra(W3Endpoints):
         return self.base_dir / f"node{i}"
 
     def supervisorctl(self, *args):
-        return supervisorctl(self.base_dir / "../tasks.ini", *args)
+        ini = self.base_dir / "../tasks.ini"
+        return subprocess.check_output(
+            (sys.executable, "-msupervisor.supervisorctl", "-c", ini, *args)
+        ).decode()
 
 
 class Hermes:
@@ -208,11 +211,6 @@ class ConnectMantra(W3Endpoints):
 
     def cosmos_cli(self, home) -> CosmosCLI:
         return CosmosCLI(home, self.rpc, self.chain_binary, self.chain_id)
-
-
-def setup_mantra(path, base_port, chain):
-    cfg = Path(__file__).parent / ("configs/enable-indexer.jsonnet")
-    yield from setup_custom_mantra(path, base_port, cfg, chain=chain)
 
 
 def setup_custom_mantra(

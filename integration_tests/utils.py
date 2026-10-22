@@ -9,11 +9,10 @@ import os
 import re
 import secrets
 import subprocess
-import sys
 import tempfile
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from itertools import takewhile
 from pathlib import Path
 
@@ -21,7 +20,6 @@ import bech32
 import eth_utils
 import jsonmerge
 import requests
-import rlp
 import solcx
 import web3
 from dateutil.parser import isoparse
@@ -234,12 +232,6 @@ class RevertTestContract(Contract):
         return receipt
 
 
-def supervisorctl(inipath, *args):
-    return subprocess.check_output(
-        (sys.executable, "-msupervisor.supervisorctl", "-c", inipath, *args),
-    ).decode()
-
-
 def find_log_event_attrs(events, ev_type, cond=None):
     for ev in events:
         if ev["type"] == ev_type:
@@ -274,12 +266,8 @@ def sign_transaction(w3, tx, key=KEYS["community"]):
 
 
 def send_raw_transactions(w3, raw_transactions):
-    with ThreadPoolExecutor(len(raw_transactions)) as exec:
-        tasks = [
-            exec.submit(w3.eth.send_raw_transaction, raw) for raw in raw_transactions
-        ]
-        sended_hash_set = {future.result() for future in as_completed(tasks)}
-    return sended_hash_set
+    with ThreadPoolExecutor(len(raw_transactions)) as executor:
+        return set(executor.map(w3.eth.send_raw_transaction, raw_transactions))
 
 
 # cosmos/evm's go-ethereum txpool can hold a tx at the account's next nonce that
@@ -440,10 +428,7 @@ async def wait_for_promoted_tx(w3, account, txhash, tx=None, rescue_after=30):
 def send_txs(w3, cli, to, keys, params):
     tx = {"to": to, "value": 10000} | params
     # use different sender accounts to be able be send concurrently
-    raw_transactions = []
-    for key_from in keys:
-        signed = sign_transaction(w3, tx, key_from)
-        raw_transactions.append(signed.raw_transaction)
+    raw_transactions = [sign_transaction(w3, tx, k).raw_transaction for k in keys]
 
     # wait block update
     block_num_0 = wait_for_new_blocks(cli, 1, sleep=0.1)
@@ -506,7 +491,6 @@ def build_contract(
     contracts_dir = base_dir / "contracts"
     build_dir = base_dir / "build"
     sol_path = contracts_dir / dir / f"{name}.sol"
-    remappings_path = contracts_dir / "remappings.txt"
     cmd = [
         "solc",
         "--abi",
@@ -531,13 +515,8 @@ def build_contract(
         # The contracts submodule sits outside base-path; remappings.txt points at it.
         "--include-path",
         str(base_dir.parent),
-        # "$(cat contracts/remappings.txt)",
+        *(contracts_dir / "remappings.txt").read_text().split(),
     ]
-
-    with remappings_path.open("r") as f:
-        remappings = f.read().strip().split()
-
-    cmd.extend(remappings)
     print(*cmd)
 
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -686,15 +665,11 @@ def ibc_denom_address(denom):
 
 
 def retry_on_seq_mismatch(fn, *args, max_retries=3, **kwargs):
-    for attempt in range(max_retries):
+    for _ in range(max_retries - 1):
         rsp = fn(*args, **kwargs)
-        if rsp["code"] == 0:
+        if rsp["code"] != 32 or "account sequence mismatch" not in rsp["raw_log"]:
             return rsp
-        if rsp["code"] == 32 and "account sequence mismatch" in rsp["raw_log"]:
-            if attempt < max_retries - 1:
-                continue
-        return rsp
-    return rsp
+    return fn(*args, **kwargs)
 
 
 async def retry_on_nonce_mismatch(fn, *args, max_retries=3, **kwargs):
@@ -702,21 +677,13 @@ async def retry_on_nonce_mismatch(fn, *args, max_retries=3, **kwargs):
         try:
             return await fn(*args, **kwargs)
         except Exception as e:
-            error_msg = str(e).lower()
-            # Handle nonce mismatch errors
-            should_retry = "nonce" in error_msg and (
-                "lower" in error_msg or "invalid" in error_msg
-            )
-            # Handle "already known" errors (transaction already in mempool)
-            should_retry = should_retry or ("already known" in error_msg)
-
-            if should_retry and attempt < max_retries - 1:
-                # Wait a bit longer for "already known" errors
-                wait_time = 2.0 if "already known" in error_msg else 1.0
-                await asyncio.sleep(wait_time)
-                continue
-            raise e
-    return None
+            msg = str(e).lower()
+            # "already known": the tx is already in the mempool, give it longer
+            known = "already known" in msg
+            nonce = "nonce" in msg and ("lower" in msg or "invalid" in msg)
+            if not (known or nonce) or attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(2.0 if known else 1.0)
 
 
 async def call_with_retry_async(fn, expect_error=False, max_retries=3, retry_delay=0.1):
@@ -876,23 +843,6 @@ def transfer_via_cosmos(cli, from_addr, to_addr, amount):
     return find_fee(rsp)
 
 
-class ContractAddress(rlp.Serializable):
-    fields = [
-        ("from", rlp.sedes.Binary()),
-        ("nonce", rlp.sedes.big_endian_int),
-    ]
-
-
-def contract_address(addr, nonce):
-    return eth_utils.to_checksum_address(
-        eth_utils.to_hex(
-            eth_utils.keccak(
-                rlp.encode(ContractAddress(eth_utils.to_bytes(hexstr=addr), nonce))
-            )[12:]
-        )
-    )
-
-
 def build_batch_tx(w3, cli, txs, key=KEYS["community"]):
     "return cosmos batch tx and eth tx hashes"
     signed_txs = [sign_transaction(w3, tx, key) for tx in txs]
@@ -947,8 +897,7 @@ def approve_proposal(n, events, event_query_tx=True, **kwargs):
         events, "submit_proposal", lambda attrs: "proposal_id" in attrs
     )
     proposal_id = ev["proposal_id"]
-    for i in range(len(n.config["validators"])):
-        node = n.config["validators"][i]
+    for i, node in enumerate(n.config["validators"]):
         # skip fullnodes
         if "staked" not in node:
             continue
@@ -1057,9 +1006,9 @@ def assert_duplicate(rpc, height):
     for event in res.get("events", []):
         if event["type"] != "transfer":
             continue
-        str = json.dumps(event)
-        assert str not in values, f"dup event find: {str}"
-        values.add(str)
+        ev = json.dumps(event)
+        assert ev not in values, f"dup event find: {ev}"
+        values.add(ev)
 
 
 def fund_acc(w3, acc, fund=4_000_000_000_000_000_000):
@@ -1105,13 +1054,13 @@ def multisig_sign_and_broadcast(
     p1_txt = tmp_path / "p1.json"
     p2_txt = tmp_path / "p2.json"
     tx_txt = tmp_path / "tx.json"
-    json.dump(unsigned_tx, m_txt.open("w"))
+    m_txt.write_text(json.dumps(unsigned_tx))
     signature1 = cli.sign_multisig_tx(m_txt, multi_addr, signer1_name)
-    json.dump(signature1, p1_txt.open("w"))
+    p1_txt.write_text(json.dumps(signature1))
     signature2 = cli.sign_multisig_tx(m_txt, multi_addr, signer2_name)
-    json.dump(signature2, p2_txt.open("w"))
+    p2_txt.write_text(json.dumps(signature2))
     final_multi_tx = cli.combine_multisig_tx(m_txt, multisig_name, p1_txt, p2_txt)
-    json.dump(final_multi_tx, tx_txt.open("w"))
+    tx_txt.write_text(json.dumps(final_multi_tx))
     rsp = cli.broadcast_tx(tx_txt)
     assert rsp["code"] == 0, rsp["raw_log"]
     return rsp
@@ -1397,22 +1346,17 @@ async def wait_for_eth_tx_result(cli, w3, tx_hash, from_height, timeout=30):
 
 
 def update_node_cmd(path, cmd, i, **kwargs):
+    "Run node `i` as `cmd start` plus a `--flag` per kwarg, with autorestart off."
+    flags = "".join(f" --{k.replace('_', '-')}" for k in kwargs)
     ini_path = path / cluster.SUPERVISOR_CONFIG_FILE
     ini = configparser.RawConfigParser()
     ini.read(ini_path)
-    for section in ini.sections():
-        if section == f"program:{CHAIN_ID}-node{i}":
-            updates = {}
-            base_cmd = f"{cmd} start --home %(here)s/node{i}"
-            if kwargs:
-                extra_flags = " ".join(
-                    f"--{k.replace('_', '-')}" for k in kwargs.keys()
-                )
-                updates["command"] = f"{base_cmd} {extra_flags}"
-            else:
-                updates["command"] = base_cmd
-            updates["autorestart"] = "false"
-            ini[section].update(updates)
+    ini[f"program:{CHAIN_ID}-node{i}"].update(
+        {
+            "command": f"{cmd} start --home %(here)s/node{i}{flags}",
+            "autorestart": "false",
+        }
+    )
     with ini_path.open("w") as fp:
         ini.write(fp)
 
@@ -1424,25 +1368,19 @@ def grpc_eth_call(
     chain_id=None,
     proposer_address=None,
 ):
-    max_retry = 3
-    sleep = 1
-    success = False
-    for i in range(max_retry):
-        params = {
-            "args": base64.b64encode(json.dumps(args).encode()).decode(),
-        }
-        if chain_id is not None:
-            params["chain_id"] = str(chain_id)
-        if proposer_address is not None:
-            params["proposer_address"] = str(proposer_address)
+    params = {"args": base64.b64encode(json.dumps(args).encode()).decode()}
+    if chain_id is not None:
+        params["chain_id"] = str(chain_id)
+    if proposer_address is not None:
+        params["proposer_address"] = str(proposer_address)
+    for _ in range(3):
         rsp = requests.get(
             f"http://localhost:{port}/cosmos/evm/vm/v1/eth_call", params
         ).json()
-        success = expect_cb(rsp)
-        if success:
-            break
-        time.sleep(sleep)
-    assert success, str(rsp)
+        if expect_cb(rsp):
+            return
+        time.sleep(1)
+    raise AssertionError(str(rsp))
 
 
 def verify_tax_distribution(cli, height, denom=DEFAULT_DENOM, scale_factor=1):
@@ -1561,7 +1499,7 @@ def assert_withdraw_rewards(mantra, cb, denom=DEFAULT_DENOM, scale=1, **kwargs):
         cli.balance(signer2, height=height_af - 1),
         cli.balance(signer2, height=height_af),
     ]
-    mantra.supervisorctl("stop", "mantra-canary-net-1-node0")
+    mantra.supervisorctl("stop", f"{CHAIN_ID}-node0")
     time.sleep(1)  # wait for database lock to be released
 
     def get_reward_ratio(height):

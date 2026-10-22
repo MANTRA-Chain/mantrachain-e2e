@@ -11,6 +11,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.utils import sign_transaction
 from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
+from web3.utils.address import get_create_address
 
 from .utils import (
     ACCOUNTS,
@@ -27,7 +28,6 @@ from .utils import (
     bech32_to_eth,
     build_batch_tx,
     build_contract,
-    contract_address,
     create_periodic_vesting_acct,
     do_multisig,
     module_address,
@@ -467,7 +467,9 @@ def test_batch_tx(mantra, connect_mantra, tmp_path):
     deploy_tx = contract.constructor().build_transaction(
         {"from": sender, "nonce": nonce}
     )
-    contract = w3.eth.contract(address=contract_address(sender, nonce), abi=res["abi"])
+    contract = w3.eth.contract(
+        address=get_create_address(sender, nonce), abi=res["abi"]
+    )
     transfer_tx1 = contract.functions.transfer(recipient, 1000).build_transaction(
         {"from": sender, "nonce": nonce + 1, "gas": 200000}
     )

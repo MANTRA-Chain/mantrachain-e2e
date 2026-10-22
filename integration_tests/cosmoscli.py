@@ -266,22 +266,6 @@ class CosmosCLI(PystarportCosmosCLI):
     def query_provider_info(self, **kwargs):
         return self._query("ccvconsumer", "provider-info", **kwargs)
 
-    # --- oracle ---
-
-    def oracle_add_currency_pairs(self, pairs, **kwargs):
-        return self._tx(
-            "oracle",
-            "add-currency-pairs",
-            "--currency-pairs",
-            json.dumps(pairs),
-            **kwargs,
-        )
-
-    def oracle_query_currency_pairs(self, **kwargs):
-        return self._query("oracle", "currency-pairs", **kwargs).get(
-            "currency_pairs", []
-        )
-
     # --- distribution / precisebank ---
 
     def query_delegator_starting_info(self, delegator, validator, **kwargs):
@@ -306,7 +290,7 @@ class CosmosCLI(PystarportCosmosCLI):
         res = self._query("precisebank", "fractional-balance", addr, **kwargs)
         return int(res.get("fractional_balance", {}).get("amount", "0"))
 
-    # --- circuit / sanction / document ---
+    # --- circuit / sanction ---
 
     def query_disabled_list(self, **kwargs):
         return self._query("circuit", "disabled-list", **kwargs).get(
@@ -317,12 +301,3 @@ class CosmosCLI(PystarportCosmosCLI):
         return self._query("sanction", "blacklist", **kwargs).get(
             "blacklisted_accounts", []
         )
-
-    def query_doc_records(self, **kwargs):
-        return self._query("document", "records", **kwargs).get("records", [])
-
-    def query_registry(self, **kwargs):
-        return self._query("document", "registry", **kwargs)
-
-    def query_registries(self, **kwargs):
-        return self._query("document", "registries", **kwargs)

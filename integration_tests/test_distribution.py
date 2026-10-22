@@ -7,6 +7,7 @@ from pystarport.utils import (
 )
 
 from .utils import (
+    CHAIN_ID,
     DEFAULT_DENOM,
     assert_withdraw_rewards,
     find_fee,
@@ -72,7 +73,7 @@ def test_withdraw_rewards(mantra):
         return cli, cli.block_height()
 
     assert_withdraw_rewards(mantra, cb, gas=250_000)
-    mantra.supervisorctl("start", "mantra-canary-net-1-node0")
+    mantra.supervisorctl("start", f"{CHAIN_ID}-node0")
     cli = mantra.cosmos_cli()
     wait_for_new_blocks(cli, 1)
     blk = cli.block_height()

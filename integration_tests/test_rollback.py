@@ -9,7 +9,7 @@ from pystarport.utils import (
 )
 
 from .network import setup_custom_mantra
-from .utils import CHAIN_ID, CMD, supervisorctl, update_node_cmd
+from .utils import CHAIN_ID, CMD, update_node_cmd
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
 
@@ -71,16 +71,14 @@ def test_rollback(custom_mantra):
     assert cli1.block_height() == 10
 
     print("stop node1")
-    supervisorctl(
-        custom_mantra.base_dir / "../tasks.ini", "stop", "mantra-canary-net-1-node1"
-    )
+    custom_mantra.supervisorctl("stop", f"{CHAIN_ID}-node1")
 
     print("do rollback on node1")
     cli1.rollback()
 
     print("switch to normal binary")
     update_node_cmd(custom_mantra.base_dir, CMD, 1)
-    supervisorctl(custom_mantra.base_dir / "../tasks.ini", "update")
+    custom_mantra.supervisorctl("update")
     wait_for_port(target_port)
 
     print("check node1 sync again")

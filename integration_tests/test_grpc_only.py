@@ -14,7 +14,6 @@ from .utils import (
     AsyncContract,
     decode_bech32,
     grpc_eth_call,
-    supervisorctl,
 )
 
 pytest.skip("wait next bump deps", allow_module_level=True)
@@ -61,7 +60,7 @@ async def test_grpc_mode(custom_mantra):
         wait_for_block(custom_mantra.cosmos_cli(i), 1)
 
     base_dir = custom_mantra.base_dir
-    supervisorctl(base_dir / "../tasks.ini", "stop", f"{CHAIN_ID}-node1")
+    custom_mantra.supervisorctl("stop", f"{CHAIN_ID}-node1")
 
     # run grpc-only mode directly with existing chain state
     with (base_dir / "node1.log").open("a") as logfile:

@@ -8,6 +8,7 @@ from pystarport.utils import wait_for_new_blocks
 
 from .utils import (
     ACCOUNTS,
+    CHAIN_ID,
     assert_approval_log,
     assert_create_tokenfactory_denom,
     assert_mint_tokenfactory_denom,
@@ -41,9 +42,9 @@ def test_tokenfactory_admin(mantra, connect_mantra, tmp_path, need_prune=True):
 
     if need_prune:
         wait_for_new_blocks(cli, 5)
-        mantra.supervisorctl("stop", "mantra-canary-net-1-node2")
+        mantra.supervisorctl("stop", f"{CHAIN_ID}-node2")
         print(mantra.cosmos_cli(2).prune())
-        mantra.supervisorctl("start", "mantra-canary-net-1-node2")
+        mantra.supervisorctl("start", f"{CHAIN_ID}-node2")
 
     amt = 10000
     if get_balance(cli, addr_b) < amt:
