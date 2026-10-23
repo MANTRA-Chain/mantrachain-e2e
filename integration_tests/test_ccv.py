@@ -47,6 +47,7 @@ from .doc_utils import (
     record_metadata,
     registries_by_name,
     revoke_role,
+    send_consumer_tx,
     send_document_call,
     sha256_hex,
     update_record_status,
@@ -104,6 +105,8 @@ WMANTRAUSD_DENOM = f"erc20:{PRED_WMANTRAUSD_ADDR}"
 WMANTRAUSD_CONSUMER_IBC_DENOM = (
     f"ibc/{ibc_denom_hash(f'transfer/{TRANSFER_CHANNEL_ID}/{WMANTRAUSD_DENOM}')}"
 )
+# The consumer's fee floor, in its gas token, for CLI transactions.
+CONSUMER_GAS_PRICES = f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
 
 # tokenfactory denom used by test_provider_bank_hooks_fire_on_reward_distribution.
 # Pre-computed so it can be added to the consumer's allowlist at fixture setup
@@ -327,20 +330,10 @@ async def test_ccv(ibc):
     w3 = ibc.ibc2.w3
     community = "community"
     signer = "signer2"
-    sender = ADDRS[community]
     receiver = ADDRS[signer]
     balance_bf = w3.eth.get_balance(receiver)
     amt = 1000
-    receipt = send_transaction(
-        w3,
-        {
-            "from": sender,
-            "to": receiver,
-            "value": amt,
-            **consumer_eip1559_fees(w3.eth.get_block("latest")),
-        },
-        KEYS[community],
-    )
+    receipt = send_consumer_tx(w3, {"to": receiver, "value": amt}, community)
     balance = w3.eth.get_balance(receiver)
     assert receipt.status == 1
     assert balance - balance_bf == amt
@@ -350,7 +343,7 @@ async def test_ccv(ibc):
         cli2.address(community),
         cli2.address(signer),
         f"{amt}{denom}",
-        gas_prices=f"{CONSUMER_GAS_AMT}{denom}",
+        gas_prices=CONSUMER_GAS_PRICES,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
     assert w3.eth.get_balance(receiver) - balance == amt
@@ -537,15 +530,10 @@ async def test_wmantrausd_bridge_deposit_to_consumer(ibc):
         timeout_ns,
         unwrap_memo,
     )
-    ics20_return_receipt = send_transaction(
+    ics20_return_receipt = send_consumer_tx(
         ibc.ibc2.w3,
-        {
-            "to": ICS20_ADDRESS,
-            "data": ics20_return_call.data,
-            "gas": 3_000_000,
-            **consumer_eip1559_fees(ibc.ibc2.w3.eth.get_block("latest")),
-        },
-        KEYS[receiver_name],
+        {"to": ICS20_ADDRESS, "data": ics20_return_call.data, "gas": 3_000_000},
+        receiver_name,
     )
     assert ics20_return_receipt.status == 1
 
@@ -752,7 +740,7 @@ def test_gov_arbitrary_message_proposal_rejected_in_ccv(ibc, tmp_path):
         proposal_file,
         from_="community",
         gas=400000,
-        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=CONSUMER_GAS_PRICES,
     )
     assert rsp["code"] != 0, rsp
     assert "MsgSend" in rsp.get("raw_log", "")
@@ -785,7 +773,7 @@ async def test_ccv_rewards_buffer_rejects_user_bank_send(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=CONSUMER_GAS_PRICES,
     )
     assert rsp["code"] != 0, rsp
     assert "restricted" in rsp["raw_log"], rsp
@@ -811,23 +799,13 @@ async def test_precompile_rejects_cli_and_eth_value_transfer(ibc):
         sender_bech32,
         precompile_bech32,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=CONSUMER_GAS_PRICES,
     )
     assert rsp["code"] != 0, rsp
     assert "unauthorized" in rsp["raw_log"].lower(), rsp
 
     precompile_balance_bf = w3.eth.get_balance(DOCUMENT_ADDRESS)
-    receipt = send_transaction(
-        w3,
-        {
-            "from": ADDRS["community"],
-            "to": DOCUMENT_ADDRESS,
-            "value": 1,
-            "gas": 100_000,
-            **consumer_eip1559_fees(w3.eth.get_block("latest")),
-        },
-        KEYS["community"],
-    )
+    receipt = send_consumer_tx(w3, {"to": DOCUMENT_ADDRESS, "value": 1, "gas": 100_000})
     assert receipt.status == 0
     assert w3.eth.get_balance(DOCUMENT_ADDRESS) == precompile_balance_bf
 
@@ -854,7 +832,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
             sender,
             sender,
             f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-            gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+            gas_prices=CONSUMER_GAS_PRICES,
         )
         assert rsp["code"] == 0, rsp["raw_log"]
 
@@ -893,7 +871,7 @@ async def test_ccv_rewards_buffer_timeout_refund_path(ibc):
         consumer_cli.address("community"),
         buffer_addr,
         f"1{WMANTRAUSD_CONSUMER_IBC_DENOM}",
-        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=CONSUMER_GAS_PRICES,
     )
     assert rsp["code"] != 0, rsp
 
@@ -1064,16 +1042,8 @@ async def test_registries_by_name_rejects_transaction(ibc):
 
     assert await registries_by_name(async_w3, name, MatchMode.EXACT) == {registry_id}
 
-    receipt = send_transaction(
-        w3,
-        {
-            "to": DOCUMENT_ADDRESS,
-            "from": ADDRS["community"],
-            "data": call.data,
-            "gas": 1_000_000,
-            **consumer_eip1559_fees(w3.eth.get_block("latest")),
-        },
-        KEYS["community"],
+    receipt = send_consumer_tx(
+        w3, {"to": DOCUMENT_ADDRESS, "data": call.data, "gas": 1_000_000}
     )
     assert receipt.status == 0, "registriesByName must not succeed in a transaction"
 
@@ -1281,16 +1251,9 @@ async def test_contract_cannot_call_anchoring_sensitive_methods(ibc):
         "repro EOA guard",
         "{}",
     )
-    eoa_add_registry_receipt = send_transaction(
+    eoa_add_registry_receipt = send_consumer_tx(
         w3,
-        {
-            "to": DOCUMENT_ADDRESS,
-            "from": sender,
-            "data": eoa_add_registry_call.data,
-            "gas": 1_000_000,
-            **consumer_eip1559_fees(w3.eth.get_block("latest")),
-        },
-        KEYS["community"],
+        {"to": DOCUMENT_ADDRESS, "data": eoa_add_registry_call.data, "gas": 1_000_000},
     )
     assert eoa_add_registry_receipt.status == 1
     registry_id = int(
@@ -1468,56 +1431,24 @@ async def test_add_record_rejects_oversized_checksum_algo(ibc):
         )
 
 
+@pytest.mark.parametrize("method", ["grant", "revoke"])
 @pytest.mark.parametrize("is_admin", [True, False])
-async def test_grant_role_permissions(ibc, is_admin):
+async def test_role_changes_need_registry_admin(ibc, method, is_admin):
     w3 = ibc.ibc2.async_w3
     registry_id = await ensure_registry_exists(w3)
-    admin = ACCOUNTS["community"]
-    editor1 = ACCOUNTS["signer1"]
-    editor2 = ACCOUNTS["signer2"]
-    sender = admin if is_admin else editor2
-    target = editor1
-    checksum = ""
-
-    tx = DOCUMENT_PRECOMPILE.fns.grantRole(
-        registry_id, checksum, target.address, Role.EDITOR
-    )
+    admin, editor = ACCOUNTS["community"], ACCOUNTS["signer1"]
+    sender = admin if is_admin else ACCOUNTS["signer2"]
+    if method == "revoke":
+        await grant_role(w3, registry_id, "", editor, Role.EDITOR, admin)
 
     if is_admin:
-        await grant_role(w3, registry_id, checksum, target, Role.EDITOR, sender)
+        change = grant_role if method == "grant" else revoke_role
+        await change(w3, registry_id, "", editor, Role.EDITOR, sender)
     else:
-        await assert_call_reverts(
-            w3,
-            sender=sender.address,
-            data=tx.data,
+        call = getattr(DOCUMENT_PRECOMPILE.fns, f"{method}Role")(
+            registry_id, "", editor.address, Role.EDITOR
         )
-
-
-@pytest.mark.parametrize("is_admin", [True, False])
-async def test_revoke_role_permissions(ibc, is_admin):
-    w3 = ibc.ibc2.async_w3
-    registry_id = await ensure_registry_exists(w3)
-    admin = ACCOUNTS["community"]
-    editor1 = ACCOUNTS["signer1"]
-    editor2 = ACCOUNTS["signer2"]
-    sender = admin if is_admin else editor2
-    checksum = ""
-
-    # ensure role granted first
-    await grant_role(w3, registry_id, checksum, editor1, Role.EDITOR, admin)
-
-    tx = DOCUMENT_PRECOMPILE.fns.revokeRole(
-        registry_id, checksum, editor1.address, Role.EDITOR
-    )
-
-    if is_admin:
-        await revoke_role(w3, registry_id, checksum, editor1, Role.EDITOR, sender)
-    else:
-        await assert_call_reverts(
-            w3,
-            sender=sender.address,
-            data=tx.data,
-        )
+        await assert_call_reverts(w3, sender=sender.address, data=call.data)
 
 
 @pytest.mark.parametrize(
@@ -1577,26 +1508,15 @@ async def test_multiple_roles_management(ibc):
     w3 = ibc.ibc2.async_w3
     registry_id = await ensure_registry_exists(w3)
     admin = ACCOUNTS["community"]
-    editor1 = ACCOUNTS["signer1"]
-    editor2 = ACCOUNTS["signer2"]
-    viewer = ACCOUNTS["validator"]
-    checksum = ""
-
     users_and_roles = [
-        (editor1.address, Role.EDITOR),
-        (editor2.address, Role.EDITOR),
-        (viewer.address, Role.VIEWER),
+        (ACCOUNTS["signer1"], Role.EDITOR),
+        (ACCOUNTS["signer2"], Role.EDITOR),
+        (ACCOUNTS["validator"], Role.VIEWER),
     ]
-
-    # grant different roles
-    for user_address, role in users_and_roles:
-        user = next(a for a in ACCOUNTS.values() if a.address == user_address)
-        await grant_role(w3, registry_id, checksum, user, role, admin)
-
-    # revoke all roles
-    for user_address, role in users_and_roles:
-        user = next(a for a in ACCOUNTS.values() if a.address == user_address)
-        await revoke_role(w3, registry_id, checksum, user, role, admin)
+    for user, role in users_and_roles:
+        await grant_role(w3, registry_id, "", user, role, admin)
+    for user, role in users_and_roles:
+        await revoke_role(w3, registry_id, "", user, role, admin)
 
 
 @pytest.mark.parametrize("role", [Role.EDITOR, Role.VIEWER])
@@ -1677,22 +1597,14 @@ async def test_add_and_query_records(ibc):
     ]:
         await add_record(w3, admin, checksum, name=name, registry=registry_name)
 
+    # The second abc123 is a new version of the same record, not a new record.
     docs = await query_records(w3, registry_id, limit=10, count_total=True)
     assert len(docs) == 2, f"Expected 2 unique records, got {len(docs)}"
 
     abc_doc = next((d for d in docs if d.checksum == sha256_hex("abc123")), None)
     assert abc_doc is not None
-    metadata = json.loads(abc_doc.metadata)
-    assert metadata["document"] == "Record 1 v2"
-
-
-async def test_add_record_same_checksum_maintains_record_id(ibc):
-    w3 = ibc.ibc2.async_w3
-    await ensure_registry_exists(w3)
-    admin = ACCOUNTS["community"]
-    checksum = sha256_hex("test_checksum_123")
-    await add_record(w3, admin, checksum, name="Version 1")
-    await add_record(w3, admin, checksum, name="Version 2")
+    assert abc_doc.index == 2
+    assert json.loads(abc_doc.metadata)["document"] == "Record 1 v2"
 
 
 async def test_add_record(ibc):
@@ -1716,27 +1628,19 @@ async def test_add_record(ibc):
 async def test_shared_checksum_in_multi_registries(ibc):
     w3 = ibc.ibc2.async_w3
     admin = ACCOUNTS["community"]
-    registries = [
-        ("multi1", "doc1", "figi1", "ind001"),
-        ("multi2", "doc2", "figi2", "ind002"),
-    ]
     checksum = sha256_hex("shared_checksum_abc123")
-    registry_ids = {}
-    for name, document, figi, individual_id in registries:
-        registry_ids[name] = await ensure_registry_exists(w3, name=name)
-        await add_record(
-            w3,
-            admin,
-            checksum,
-            registry=name,
-            metadata=record_metadata(document, figi, individual_id),
-        )
+    expected = []
+    # multi3 holds no record of the checksum, so a query by it must leave it out.
+    for name, document in (("multi1", "doc1"), ("multi2", "doc2"), ("multi3", None)):
+        registry_id = await ensure_registry_exists(w3, name=name)
+        if document:
+            await add_record(
+                w3, admin, checksum, registry=name, metadata=record_metadata(document)
+            )
+            expected.append((registry_id, document))
     records = await query_records(w3, checksum=checksum)
-    assert len(records) == 2
-    registries_found = {r.registryId for r in records}
-    assert registries_found == set(registry_ids.values())
-    metadata_values = {json.loads(r.metadata)["document"] for r in records}
-    assert metadata_values == {"doc1", "doc2"}
+    got = [(r.registryId, json.loads(r.metadata)["document"]) for r in records]
+    assert sorted(got) == sorted(expected)
 
 
 async def test_query_by_registry_and_checksum(ibc):
@@ -1762,66 +1666,23 @@ async def test_query_by_registry_and_checksum(ibc):
     assert rec.registryId == registry_id
 
 
-async def test_same_checksum_different_record_ids_per_registry(ibc):
-    w3 = ibc.ibc2.async_w3
-    admin = ACCOUNTS["community"]
-    registries = ["recordid-test-1", "recordid-test-2"]
-    checksum = sha256_hex("recordid_checksum_xyz")
-
-    for name in registries:
-        await ensure_registry_exists(w3, name=name)
-        await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
-
-    records = await query_records(w3, checksum=checksum)
-
-    assert len(records) == 2
-    for r in records:
-        assert r.index == 1
-        assert r.isLatest
-        assert r.checksum == checksum
-
-
-async def test_multiple_versions_same_checksum_across_registries(ibc):
+async def test_same_checksum_keeps_one_record_per_registry(ibc):
     w3 = ibc.ibc2.async_w3
     admin = ACCOUNTS["community"]
     registries = ["version-test-1", "version-test-2"]
     checksum = sha256_hex("multi_version_checksum")
-
     for name in registries:
         await ensure_registry_exists(w3, name=name)
 
-    for version in ["v1.0", "v2.0"]:
-        for reg in registries:
-            await add_record(w3, admin, checksum, name=version, registry=reg)
-
-    records = await query_records(w3, checksum=checksum)
-
-    assert len(records) == 2
-    for r in records:
-        meta = json.loads(r.metadata)
-        assert meta["document"] == "v2.0"
-        assert r.isLatest
-        assert r.index == 2
-
-
-async def test_query_all_registries_for_checksum(ibc):
-    w3 = ibc.ibc2.async_w3
-    admin = ACCOUNTS["community"]
-    registries = ["query-all-1", "query-all-2", "query-all-3"]
-    checksum = sha256_hex("query_all_checksum")
-
-    registry_ids = {}
-    for name in registries:
-        registry_ids[name] = await ensure_registry_exists(w3, name=name)
-
-    for name in registries[:2]:
-        await add_record(w3, admin, checksum, name=f"record in {name}", registry=name)
-
-    records = await query_records(w3, checksum=checksum)
-
-    assert len(records) == 2
-    found = {r.registryId for r in records}
-    assert found == {registry_ids[name] for name in registries[:2]}
+    # Each registry keeps its own record; each new version raises its index.
+    for index, version in enumerate(["v1.0", "v2.0"], start=1):
+        for name in registries:
+            await add_record(w3, admin, checksum, name=version, registry=name)
+        records = await query_records(w3, checksum=checksum)
+        got = [
+            (r.index, r.isLatest, json.loads(r.metadata)["document"]) for r in records
+        ]
+        assert got == [(index, True, version)] * len(registries)
 
 
 async def test_checksum_only_query_respects_limit(ibc):
@@ -1986,7 +1847,7 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
         TRANSFER_CHANNEL_ID,
         _from="community",
         gas=500_000,
-        gas_prices=f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}",
+        gas_prices=CONSUMER_GAS_PRICES,
         note=reward_memo,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
@@ -2030,7 +1891,6 @@ def test_provider_bank_hooks_fire_on_reward_distribution(ibc):
 
 def test_consumer_multisig(ibc, tmp_path):
     consumer_cli = ibc.ibc2.cosmos_cli()
-    gas_prices = f"{CONSUMER_GAS_AMT}{WMANTRAUSD_CONSUMER_IBC_DENOM}"
     multisig_name = "multitest_anchor"
     gas_limit = 3_000_000
     fee_amt = int(CONSUMER_GAS_AMT) * gas_limit
@@ -2040,7 +1900,7 @@ def test_consumer_multisig(ibc, tmp_path):
         "signer2",
         multisig_name,
         denom=WMANTRAUSD_CONSUMER_IBC_DENOM,
-        gas_prices=gas_prices,
+        gas_prices=CONSUMER_GAS_PRICES,
         fund_amt=fee_amt * 2,
     )
 

@@ -30,6 +30,12 @@ def consumer_eip1559_fees(block) -> dict:
     }
 
 
+def send_consumer_tx(w3, tx: dict, name: str = "community"):
+    "Send `tx` from account `name`, paying the consumer's fee floor."
+    fees = consumer_eip1559_fees(w3.eth.get_block("latest"))
+    return send_transaction(w3, {"from": ADDRS[name], **tx, **fees}, KEYS[name])
+
+
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
