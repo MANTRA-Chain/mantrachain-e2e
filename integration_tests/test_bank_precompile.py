@@ -1,7 +1,10 @@
 import pytest
 from eth_contract.contract import Contract
+from eth_contract.deploy_utils import ensure_multicall3_deployed
+from eth_contract.multicall3 import multicall
 
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     DEFAULT_DENOM,
     build_contract,
@@ -48,3 +51,10 @@ async def test_bank(mantra):
 
     fake_token = "0x1234567890123456789012345678901234567890"
     assert await PRECOMPILE.fns.supplyOf(fake_token).call(w3, to=BANK) == 0
+
+    # x/vm allows 20 precompile calls per tx; pre-fix (GHSA-wm4f-qpxp-rch4)
+    # rejected calls still bumped a uint8 counter, so 300 calls let 41 through
+    await ensure_multicall3_deployed(w3, ACCOUNTS["community"])
+    calls = [(BANK, PRECOMPILE.fns.balances(community))] * 300
+    results = await multicall(w3, calls, allow_failure=True)
+    assert sum(r is not None for r in results) == 20
