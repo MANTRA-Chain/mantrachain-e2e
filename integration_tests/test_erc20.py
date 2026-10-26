@@ -2,7 +2,7 @@ import pytest
 from eth_contract.erc20 import ERC20
 from eth_contract.weth import WETH
 
-from .utils import ACCOUNTS, WOM
+from .utils import ACCOUNTS, WOM, deploy_by_create2, send_transaction_async
 
 
 @pytest.mark.asyncio
@@ -37,3 +37,25 @@ async def test_static_erc20(mantra):
     )
     assert await ERC20.fns.symbol().call(w3, to=WOM) == meta["symbol"]
     assert await ERC20.fns.name().call(w3, to=WOM) == meta["name"]
+
+
+@pytest.mark.asyncio
+async def test_internal_evm_call_gas_charged_and_capped(mantra):
+    """x/erc20's internal EVM call pays its gas, within the tx's (GHSA-p8x8-4gg6-prcc).
+
+    Pre-fix it ran on DefaultGasCap, and a failed statedb commit dropped its gas
+    from the tx.
+    """
+    w3 = mantra.async_w3
+    cli = mantra.cosmos_cli()
+    acct = ACCOUNTS["community"]
+    token = await deploy_by_create2(w3, acct, "GreedyToken", 130)
+    # the wei its transfer pays to the module account
+    await send_transaction_async(w3, acct, to=token, value=1)
+    rsp = cli.register_erc20(token, _from="community", gas=400_000)
+    assert rsp["code"] == 0, rsp["raw_log"]
+
+    rsp = cli.convert_erc20(token, 1, _from="community", gas=1_000_000)
+    assert "not allowed to receive funds" in rsp["raw_log"], rsp
+    gas_used, gas_wanted = int(rsp["gas_used"]), int(rsp["gas_wanted"])
+    assert gas_wanted // 2 < gas_used <= gas_wanted, rsp
