@@ -44,8 +44,8 @@ profile = "black"
 [project.scripts]
 stateless-testcase = "benchmark.stateless:cli"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "attrs>=24.2.0",
     "referencing>=0.35.1",
     "rpds-py>=0.22.3",
