@@ -1,9 +1,7 @@
-from pathlib import Path
-
 import pytest
 from pystarport.ledger import Ledger
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import DEFAULT_DENOM, WEI_PER_DENOM, find_fee
 
 pytestmark = pytest.mark.slow
@@ -11,19 +9,12 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("hw")
     ledger = Ledger()
     try:
         ledger.start()
         assert ledger.is_running(), "failed to start Ledger simulator"
 
-        yield from setup_custom_mantra(
-            path,
-            27300,
-            Path(__file__).parent / "configs/hw.jsonnet",
-            chain=chain,
-        )
+        yield from setup_mantra(request, tmp_path_factory, "hw", 27300)
     finally:
         try:
             ledger.stop()

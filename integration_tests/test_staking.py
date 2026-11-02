@@ -12,7 +12,7 @@ from pystarport.utils import (
     wait_for_new_blocks,
 )
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     CMD,
     DEFAULT_DENOM,
@@ -30,14 +30,7 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("staking")
-    yield from setup_custom_mantra(
-        path,
-        26800,
-        Path(__file__).parent / "configs/staking.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "staking", 26800)
 
 
 @pytest.mark.connect

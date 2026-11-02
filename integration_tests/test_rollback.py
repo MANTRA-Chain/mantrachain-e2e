@@ -8,7 +8,7 @@ from pystarport.utils import (
     wait_for_port,
 )
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import CHAIN_ID, CMD, update_node_cmd
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipped]
@@ -23,9 +23,6 @@ def post_init(broken_binary):
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("rollback")
-
     cmd = [
         "nix-build",
         "--no-out-link",
@@ -38,13 +35,13 @@ def custom_mantra(request, tmp_path_factory):
     print(broken_binary)
 
     # init with genesis binary
-    yield from setup_custom_mantra(
-        path,
+    yield from setup_mantra(
+        request,
+        tmp_path_factory,
+        "rollback",
         26300,
-        Path(__file__).parent / "configs/rollback.jsonnet",
         post_init=post_init(broken_binary),
         wait_port=False,
-        chain=chain,
     )
 
 

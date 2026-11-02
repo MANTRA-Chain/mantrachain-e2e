@@ -1,11 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
 import pytest
 from pystarport.utils import w3_wait_for_block, w3_wait_for_new_blocks
 from web3 import Web3
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ADDRS,
     WEI_PER_DENOM,
@@ -22,14 +21,7 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("fee-history")
-    yield from setup_custom_mantra(
-        path,
-        26500,
-        Path(__file__).parent / "configs/fee-history.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "fee-history", 26500)
 
 
 def test_basic(custom_mantra):

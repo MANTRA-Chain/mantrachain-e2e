@@ -1,10 +1,8 @@
-from pathlib import Path
-
 import pytest
 from pystarport.utils import wait_for_new_blocks
 from web3 import Web3
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ADDRS,
     KEYS,
@@ -18,14 +16,7 @@ from .utils import (
 
 @pytest.fixture(scope="module")
 def mantra_mempool(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("mantra-mempool")
-    yield from setup_custom_mantra(
-        path,
-        26300,
-        Path(__file__).parent / "configs/long_timeout_commit.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "long_timeout_commit", 26300)
 
 
 @pytest.mark.flaky(max_runs=5)

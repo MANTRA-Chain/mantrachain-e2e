@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
@@ -8,7 +6,7 @@ from hexbytes import HexBytes
 from pystarport.utils import wait_for_new_blocks
 from web3.datastructures import AttributeDict
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ADDRS,
     EVM_CHAIN_ID,
@@ -20,16 +18,7 @@ from .utils import (
 
 @pytest.fixture(scope="module")
 def mantra(request, tmp_path_factory):
-    """start-mantra
-    params: enable_auto_deployment
-    """
-    chain = request.config.getoption("chain_config")
-    yield from setup_custom_mantra(
-        tmp_path_factory.mktemp("pruned"),
-        26900,
-        Path(__file__).parent / "configs/pruned-node.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "pruned-node", 26900)
 
 
 def test_pruned_node(mantra):

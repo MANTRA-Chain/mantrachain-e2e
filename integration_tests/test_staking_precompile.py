@@ -21,7 +21,7 @@ from pystarport.utils import (
 )
 from web3.exceptions import TransactionNotFound
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ACCOUNTS,
     CMD,
@@ -58,14 +58,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("staking")
-    yield from setup_custom_mantra(
-        path,
-        27200,
-        Path(__file__).parent / "configs/staking.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "staking", 27200)
 
 
 async def get_validators(w3):

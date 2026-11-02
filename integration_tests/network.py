@@ -260,6 +260,17 @@ def setup_custom_mantra(
         proc.wait()
 
 
+def setup_mantra(request, tmp_path_factory, config, base_port, **kwargs):
+    "Start configs/<config>.jsonnet on --chain-config, in a tmp dir named after it."
+    return setup_custom_mantra(
+        tmp_path_factory.mktemp(config),
+        base_port,
+        Path(__file__).parent / f"configs/{config}.jsonnet",
+        chain=request.config.getoption("chain_config"),
+        **kwargs,
+    )
+
+
 def connect_custom_mantra():
     rpc = os.getenv("RPC", "http://127.0.0.1:26657")
     evm_rpc = os.getenv("EVM_RPC", "http://127.0.0.1:26651")

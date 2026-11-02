@@ -1,9 +1,7 @@
-from pathlib import Path
-
 import pytest
 from pystarport.utils import w3_wait_for_block, wait_for_new_blocks
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ADDRS,
     KEYS,
@@ -24,12 +22,7 @@ from .utils import (
 )
 def custom_cluster(request, tmp_path_factory):
     cfg, base_port = request.param
-    yield from setup_custom_mantra(
-        tmp_path_factory.mktemp(cfg.replace("_", "-")),
-        base_port,
-        Path(__file__).parent / f"configs/{cfg}.jsonnet",
-        chain=request.config.getoption("chain_config"),
-    )
+    yield from setup_mantra(request, tmp_path_factory, cfg, base_port)
 
 
 def test_dynamic_fee_tx(custom_cluster):

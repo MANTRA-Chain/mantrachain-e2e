@@ -1,25 +1,16 @@
-from pathlib import Path
-
 import pytest
 from eth_contract.create2 import CREATE2_FACTORY
 from eth_utils import to_checksum_address
 from hexbytes import HexBytes
 from web3.exceptions import Web3RPCError
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import send_transaction
 
 
 @pytest.fixture(scope="module")
 def mantra_replay(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("mantra-replay")
-    yield from setup_custom_mantra(
-        path,
-        26400,
-        Path(__file__).parent / "configs/default.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "default", 26400)
 
 
 def test_replay_tx(mantra_replay):

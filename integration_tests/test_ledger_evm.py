@@ -1,5 +1,4 @@
 import struct
-from pathlib import Path
 
 import pytest
 import rlp
@@ -14,7 +13,7 @@ from pystarport.ledger_utils import (
 )
 from rlp.sedes import big_endian_int, binary
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import bech32_to_eth
 
 pytestmark = pytest.mark.slow
@@ -37,18 +36,11 @@ class EthereumTransaction(HashableRLP):
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("hw_evm")
     ledger = Ledger(elf_file="app_evm.elf", model="nanosp")
     ledger.start()
     assert ledger.is_running(), "Failed to start Ledger simulator"
     try:
-        yield from setup_custom_mantra(
-            path,
-            27300,
-            Path(__file__).parent / "configs/hw_evm.jsonnet",
-            chain=chain,
-        )
+        yield from setup_mantra(request, tmp_path_factory, "hw_evm", 27300)
     finally:
         try:
             ledger.stop()

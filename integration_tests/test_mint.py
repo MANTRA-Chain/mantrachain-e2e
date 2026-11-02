@@ -1,22 +1,13 @@
-from pathlib import Path
-
 import pytest
 from pystarport.utils import wait_for_new_blocks
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import module_address, submit_gov_proposal
 
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("mint")
-    yield from setup_custom_mantra(
-        path,
-        27110,
-        Path(__file__).parent / "configs/mint.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "mint", 27110)
 
 
 def test_max_supply(custom_mantra, tmp_path):

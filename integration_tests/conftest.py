@@ -1,8 +1,6 @@
-from pathlib import Path
-
 import pytest
 
-from .network import connect_custom_mantra, setup_custom_mantra, setup_geth
+from .network import connect_custom_mantra, setup_geth, setup_mantra
 
 
 def pytest_addoption(parser):
@@ -61,10 +59,7 @@ def pytest_collection_modifyitems(items, config):
 
 @pytest.fixture(scope="session")
 def mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("mantra")
-    cfg = Path(__file__).parent / "configs/enable-indexer.jsonnet"
-    yield from setup_custom_mantra(path, 26650, cfg, chain=chain)
+    yield from setup_mantra(request, tmp_path_factory, "enable-indexer", 26650)
 
 
 @pytest.fixture(scope="session")

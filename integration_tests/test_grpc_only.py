@@ -1,12 +1,11 @@
 import base64
 import subprocess
-from pathlib import Path
 
 import pytest
 from pystarport import ports
 from pystarport.utils import wait_for_block, wait_for_port
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     CHAIN_ID,
     CMD,
@@ -22,14 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("grpc-only")
-    yield from setup_custom_mantra(
-        path,
-        26920,
-        Path(__file__).parent / "configs/fullnode.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "fullnode", 26920)
 
 
 async def test_grpc_mode(custom_mantra):

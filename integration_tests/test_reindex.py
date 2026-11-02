@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from pathlib import Path
 from shutil import rmtree
 
 import pytest
@@ -8,7 +7,7 @@ from pystarport import ports
 from pystarport.utils import wait_for_new_blocks, wait_for_port
 from web3.exceptions import TransactionNotFound, Web3RPCError
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import CHAIN_ID, derive_new_account, send_transaction
 
 pytestmark = pytest.mark.slow
@@ -19,14 +18,7 @@ INDEXER_DB = "data/evmindexer.db"
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("reindex")
-    yield from setup_custom_mantra(
-        path,
-        27400,
-        Path(__file__).parent / "configs/reindex.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "reindex", 27400)
 
 
 @contextmanager

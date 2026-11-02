@@ -1,8 +1,6 @@
-from pathlib import Path
-
 import pytest
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import ACCOUNTS, ADDRS
 from .utils import send_transaction_async as send_transaction
 
@@ -11,14 +9,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("chain-id")
-    yield from setup_custom_mantra(
-        path,
-        26600,
-        Path(__file__).parent / "configs/chain-id.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "chain-id", 26600)
 
 
 async def test_chain_id(custom_mantra):

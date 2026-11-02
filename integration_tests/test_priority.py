@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 
 import pytest
 import web3
@@ -7,7 +6,7 @@ from eth_account import Account
 from eth_contract.utils import sign_transaction as sign_transaction_async
 from pystarport.utils import wait_for_new_blocks
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     ADDRS,
     DEFAULT_DENOM,
@@ -129,14 +128,7 @@ def conver_gas_prices(base_fee, value):
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("default")
-    yield from setup_custom_mantra(
-        path,
-        27100,
-        Path(__file__).parent / "configs/default.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "default", 27100)
 
 
 def test_native_tx_priority(custom_mantra):

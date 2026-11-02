@@ -1,10 +1,9 @@
 import asyncio
 from collections import defaultdict
-from pathlib import Path
 
 import pytest
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import (
     DEFAULT_DENOM,
     assert_transfer,
@@ -16,14 +15,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(scope="module")
 def custom_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("permission")
-    yield from setup_custom_mantra(
-        path,
-        26700,
-        Path(__file__).parent / "configs/accounts.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "accounts", 26700)
 
 
 def transfer_not_allowed(cli, user, module):

@@ -1,9 +1,7 @@
-from pathlib import Path
-
 import pytest
 from pystarport.utils import BondStatus, wait_for_block
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .slashing_utils import jail_target_and_assert_slashed, setup_dust_delegation
 
 pytestmark = pytest.mark.slow
@@ -11,14 +9,7 @@ pytestmark = pytest.mark.slow
 
 @pytest.fixture(scope="module")
 def slashing_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("slashing")
-    yield from setup_custom_mantra(
-        path,
-        26900,
-        Path(__file__).parent / "configs/slashing.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "slashing", 26900)
 
 
 def test_distribution_slash_event_recorded(slashing_mantra):

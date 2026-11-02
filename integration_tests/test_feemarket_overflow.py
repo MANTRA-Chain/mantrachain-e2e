@@ -1,10 +1,9 @@
 import asyncio
-from pathlib import Path
 
 import pytest
 from eth_contract.utils import sign_transaction
 
-from .network import setup_custom_mantra
+from .network import setup_mantra
 from .utils import ACCOUNTS, w3_wait_for_new_blocks_async
 
 pytestmark = pytest.mark.asyncio
@@ -15,14 +14,7 @@ MAX_INT64 = (1 << 63) - 1
 
 @pytest.fixture(scope="module")
 def overflow_mantra(request, tmp_path_factory):
-    chain = request.config.getoption("chain_config")
-    path = tmp_path_factory.mktemp("feemarket_overflow")
-    yield from setup_custom_mantra(
-        path,
-        27500,
-        Path(__file__).parent / "configs/feemarket_overflow.jsonnet",
-        chain=chain,
-    )
+    yield from setup_mantra(request, tmp_path_factory, "feemarket_overflow", 27500)
 
 
 async def send_max_gas_tx(w3, acct, base_fee, nonce):
