@@ -27,6 +27,14 @@ from .cosmostx_utils import (
 )
 
 
+def eth_pubkey_any(pubkey):
+    "An Any of the ethsecp256k1 pubkey, given in base64."
+    return ProtoAny(
+        type_url="/cosmos.evm.crypto.v1.ethsecp256k1.PubKey",
+        value=EPubKey(key=base64.b64decode(pubkey)).SerializeToString(),
+    )
+
+
 def create_message_send(chain, sender, fee, memo, params):
     "A MsgSend as EIP-712 typed data, plus its legacy-amino tx body and auth info."
     amount = [{"amount": params["amount"], "denom": params["denom"]}]
@@ -78,15 +86,11 @@ def create_message_send(chain, sender, fee, memo, params):
             ).SerializeToString()
         ],
     )
-    pubkey = EPubKey(key=base64.b64decode(sender["pubkey"].encode("ascii")))
     mode_info = ModeInfo(single=ModeInfoSingle(mode=LEGACY_AMINO).SerializeToString())
     signer_info = SignerInfo(
         mode_info=mode_info.SerializeToString(),
         sequence=sender["sequence"],
-        public_key=ProtoAny(
-            type_url="/cosmos.evm.crypto.v1.ethsecp256k1.PubKey",
-            value=pubkey.SerializeToString(),
-        ).SerializeToString(),
+        public_key=eth_pubkey_any(sender["pubkey"]).SerializeToString(),
     )
     fee_message = Fee(
         gas_limit=int(fee["gas"]),
@@ -96,10 +100,7 @@ def create_message_send(chain, sender, fee, memo, params):
         signer_infos=[signer_info.SerializeToString()],
         fee=fee_message.SerializeToString(),
     )
-    return {
-        "legacyAmino": {"body": body, "authInfo": auth_info},
-        "eipToSign": eip_to_sign,
-    }
+    return {"body": body, "authInfo": auth_info, "eipToSign": eip_to_sign}
 
 
 def encode_eip712_for_signing(eip712_data):
