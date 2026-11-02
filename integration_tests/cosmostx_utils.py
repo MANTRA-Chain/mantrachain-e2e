@@ -40,10 +40,16 @@ class SignerInfo(ProtoEntity):
     sequence = Field("uint64", 3)
 
 
+class Timestamp(ProtoEntity):
+    seconds = Field("int64", 1)
+
+
 class TxBody(ProtoEntity):
     messages = Field("bytes", 1, repeated=True)
     memo = Field("string", 2)
     timeout_height = Field("uint64", 3)
+    unordered = Field("bool", 4)
+    timeout_timestamp = Field(Timestamp, 5)
     extension_options = Field("bytes", 1023, repeated=True)
     non_critical_extension_options = Field("bytes", 2047, repeated=True)
 
@@ -88,6 +94,7 @@ class LegacyAminoPubKey(ProtoEntity):
     public_keys = Field("bytes", 2, repeated=True)
 
 
+DIRECT = 1
 LEGACY_AMINO = 127
 
 

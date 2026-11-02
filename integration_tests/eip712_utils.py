@@ -35,8 +35,8 @@ def eth_pubkey_any(pubkey):
     )
 
 
-def create_message_send(chain, sender, fee, memo, params):
-    "A MsgSend as EIP-712 typed data, plus its legacy-amino tx body and auth info."
+def create_message_send(chain, sender, fee, memo, params, sign_mode=LEGACY_AMINO):
+    "A MsgSend as EIP-712 typed data, plus its tx body and auth info in `sign_mode`."
     amount = [{"amount": params["amount"], "denom": params["denom"]}]
     msg = {
         "type": "cosmos-sdk/MsgSend",
@@ -86,7 +86,7 @@ def create_message_send(chain, sender, fee, memo, params):
             ).SerializeToString()
         ],
     )
-    mode_info = ModeInfo(single=ModeInfoSingle(mode=LEGACY_AMINO).SerializeToString())
+    mode_info = ModeInfo(single=ModeInfoSingle(mode=sign_mode).SerializeToString())
     signer_info = SignerInfo(
         mode_info=mode_info.SerializeToString(),
         sequence=sender["sequence"],
