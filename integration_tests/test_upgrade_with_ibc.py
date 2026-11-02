@@ -17,7 +17,7 @@ from .utils import (
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipped]
 
-WAIT_HEIGHT = 12
+WAIT_HEIGHT = 16
 
 
 @pytest.fixture(scope="module")
@@ -51,3 +51,4 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     await assert_ibc_transfer_flow(c, upgrade_cb=lambda: upgrade("v8.4.0"))
     upgrade("v8.5.0-pre.1")
     upgrade("v8.7.0-pre.1")
+    upgrade("v8.8.0")

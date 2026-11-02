@@ -36,7 +36,10 @@ def do_upgrade(c, plan_name, target):
         gas_prices=DEFAULT_GAS_PRICE,
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-    approve_proposal(c, rsp["events"])
+    _, end_height = approve_proposal(c, rsp["events"])
+    # a vote closing in the target block runs the upgrade one block late, so the
+    # halted node already reports target + 1 and the wait below passes early
+    assert end_height < target, f"vote closed at {end_height}, upgrade at {target}"
 
     # update cli chain binary
     c.chain_binary = (

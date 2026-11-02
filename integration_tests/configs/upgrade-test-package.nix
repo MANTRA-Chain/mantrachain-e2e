@@ -42,7 +42,8 @@ let
       hash = "sha256-diXDuC+k0UnVyKPA4TZoj4srQHz1w6+ufNFcPxt9Xjw=";
       vendorHash = "sha256-v1g7ppxQB0MOIb+nU3HyTtIfZ7EYCVlAIHB2cpIM6Kc=";
     };
-    "v8.7.0-pre.1" = if useLiteMode then localMantrachaindWrapper else pkgs.mantrachaind;
+    "v8.7.0-pre.1" = pkgs.callPackage ../../nix/v8.7.0/default.nix { };
+    "v8.8.0" = if useLiteMode then localMantrachaindWrapper else pkgs.mantrachaind;
   };
   packageName = "upgrade-test-package" + (if useLiteMode then "-lite" else "-full");
 in

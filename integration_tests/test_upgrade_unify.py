@@ -274,6 +274,10 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     cli = do_upgrade(c, "v8.7.0-pre.1", cli.block_height() + WAIT_HEIGHT)
     verify_contract_pair(cli, legacy_contracts, FIELD_IBC2_PORT_ID)
 
+    # v8.8.0 reruns the ContractInfo migration over already repaired records
+    cli = do_upgrade(c, "v8.8.0", cli.block_height() + WAIT_HEIGHT)
+    verify_contract_pair(cli, legacy_contracts, FIELD_IBC2_PORT_ID)
+
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
     api_port = ports.api_port(c.base_port(grpc_node))
