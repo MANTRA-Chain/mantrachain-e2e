@@ -708,3 +708,31 @@ async def test_patch_txindex(mantra):
 
     with pytest.raises(web3.exceptions.TransactionNotFound):
         await w3.eth.get_transaction(failed_tx_hash)
+
+
+def test_evm_send_recipient(mantra):
+    "`tx evm send` keeps a valid recipient and rejects a bad one (evm#1277)."
+    cli = mantra.cosmos_cli()
+    receiver = cli.address("signer2")
+
+    def send(to):
+        return cli.raw(
+            "tx",
+            "evm",
+            "send",
+            "community",
+            to,
+            f"1{DEFAULT_DENOM}",
+            generate_only=True,
+            home=cli.data_dir,
+            keyring_backend="test",
+            chain_id=cli.chain_id,
+        )
+
+    # pre-fix a bech32 recipient was read as hex, sending to a mangled address
+    for to in [receiver, ADDRS["signer2"]]:
+        msg = json.loads(send(to))["body"]["messages"][0]
+        assert msg["to_address"] == receiver, msg
+
+    with pytest.raises(Exception, match="invalid to-address"):
+        send("0xdead")
