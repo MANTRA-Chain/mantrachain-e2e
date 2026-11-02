@@ -13,8 +13,6 @@ from .utils import (
     wait_for_balance_change,
 )
 
-pytestmark = pytest.mark.slow
-
 MAX_PERCENT_SEND = 1
 
 

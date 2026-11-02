@@ -4,8 +4,6 @@ from pystarport.utils import BondStatus, wait_for_block
 from .network import setup_mantra
 from .slashing_utils import jail_target_and_assert_slashed, setup_dust_delegation
 
-pytestmark = pytest.mark.slow
-
 
 @pytest.fixture(scope="module")
 def slashing_mantra(request, tmp_path_factory):

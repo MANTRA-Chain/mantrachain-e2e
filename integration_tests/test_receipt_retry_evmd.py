@@ -11,8 +11,6 @@ from eth_account import Account
 from .network import setup_custom_mantra
 from .utils import ADDRS, KEYS, send_transaction, sign_transaction
 
-pytestmark = pytest.mark.slow
-
 MATRIX = {
     "indexer-on-mempool-on": 27700,
     "indexer-on-mempool-off": 27800,
