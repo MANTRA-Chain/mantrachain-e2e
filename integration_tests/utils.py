@@ -25,6 +25,7 @@ from dateutil.parser import isoparse
 from dotenv import load_dotenv
 from eth_account import Account
 from eth_account.signers.base import BaseAccount
+from eth_bloom import BloomFilter
 from eth_contract.contract import Contract as ContractAsync
 from eth_contract.create2 import create2_address
 from eth_contract.deploy_utils import (
@@ -35,7 +36,7 @@ from eth_contract.erc20 import ERC20
 from eth_contract.utils import ZERO_ADDRESS, balance_of, get_initcode
 from eth_contract.utils import send_transaction as _send_transaction_async
 from eth_contract.weth import WETH, WETH9_ARTIFACT
-from eth_utils import to_checksum_address
+from eth_utils import big_endian_to_int, to_checksum_address
 from hexbytes import HexBytes
 from pystarport import cluster
 from pystarport.utils import (
@@ -533,8 +534,9 @@ def eth_to_bech32(addr, prefix=ADDRESS_PREFIX):
 
 
 def decode_bech32(addr):
+    "Unpadded, so a 32-byte (contract) address decodes to 32 bytes."
     _, bz = bech32.bech32_decode(addr)
-    return HexBytes(bytes(bech32.convertbits(bz, 5, 8)))
+    return HexBytes(bytes(bech32.convertbits(bz, 5, 8, False)))
 
 
 def bech32_to_eth(addr):
@@ -556,7 +558,7 @@ def module_address(name, *derivation_keys, prefix=ADDRESS_PREFIX):
         for k in derivation_keys[1:]:
             addr = hash_func(addr, k)
         address_bytes = addr[:20]
-    return eth_to_bech32("0x" + address_bytes.hex(), prefix=prefix)
+    return eth_to_bech32(address_bytes, prefix=prefix)
 
 
 def generate_isolated_address(channel_id, sender):
@@ -614,7 +616,7 @@ def escrow_address(port, channel, prefix=ADDRESS_PREFIX):
     escrow_addr_version = "ics20-1"
     pre_image = f"{escrow_addr_version}\x00{port}/{channel}"
     return eth_to_bech32(
-        hashlib.sha256(pre_image.encode()).digest()[:20].hex(), prefix=prefix
+        hashlib.sha256(pre_image.encode()).digest()[:20], prefix=prefix
     )
 
 
@@ -902,6 +904,47 @@ def create_periodic_vesting_acct(cli, tmp_path, coin, **kwargs):
     return addr
 
 
+def find_grant(cli, granter, grantee, auth_type):
+    "The value of the granter->grantee authorization of `auth_type`."
+    return next(
+        g["authorization"]["value"]
+        for g in cli.query_grants(granter, grantee)
+        if g["authorization"]["type"] == auth_type
+    )
+
+
+def send_grant_spend_limit(cli, granter, grantee):
+    "Remaining spend limit of the granter->grantee send authorization."
+    grant = find_grant(cli, granter, grantee, "/cosmos.bank.v1beta1.SendAuthorization")
+    return int(grant["spend_limit"][0]["amount"])
+
+
+def assert_grant_authorizations(cli, granter, grantee, spend_limit):
+    "Grant delegate (first validator only) and send authorizations, returning val_ops."
+    max_tokens = 10
+    val_ops = [v["operator_address"] for v in cli.validators()[:2]]
+    rsp = cli.grant_authorization(
+        grantee,
+        "delegate",
+        from_=granter,
+        spend_limit=f"{max_tokens}{DEFAULT_DENOM}",
+        allow_list=[val_ops[0]],
+        deny_validators=val_ops[1],
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    stake_grant = find_grant(
+        cli, granter, grantee, "/cosmos.staking.v1beta1.StakeAuthorization"
+    )
+    assert stake_grant["max_tokens"]["amount"] == str(max_tokens)
+
+    rsp = cli.grant_authorization(
+        grantee, "send", from_=granter, spend_limit=f"{spend_limit}{DEFAULT_DENOM}"
+    )
+    assert rsp["code"] == 0, rsp["raw_log"]
+    assert send_grant_spend_limit(cli, granter, grantee) == spend_limit
+    return val_ops
+
+
 def derive_new_account(n=1, mnemonic="SIGNER1_MNEMONIC"):
     # derive a new address
     account_path = f"m/44'/60'/0'/0/{n}"
@@ -1089,6 +1132,30 @@ async def assert_weth_flow(w3, weth_addr, owner, account):
 
 def address_to_bytes32(addr) -> HexBytes:
     return HexBytes(addr).rjust(32, b"\x00")
+
+
+def assert_erc20_transfer_log(w3, receipt, erc20_address, sender, receiver, amt):
+    "Single Transfer log in the receipt and block bloom; returns the log."
+    assert len(receipt.logs) == 1
+    expect_log = {
+        "address": erc20_address,
+        "topics": [
+            ERC20.events.Transfer.topic,
+            address_to_bytes32(sender),
+            address_to_bytes32(receiver),
+        ],
+        "data": HexBytes(amt.to_bytes(32, "big")),
+        "transactionIndex": 0,
+        "logIndex": 0,
+        "removed": False,
+    }
+    assert expect_log.items() <= receipt.logs[0].items()
+    block = w3.eth.get_block(receipt.blockNumber)
+    bloom = BloomFilter(big_endian_to_int(block.logsBloom))
+    assert HexBytes(erc20_address) in bloom
+    for topic in expect_log["topics"]:
+        assert topic in bloom
+    return expect_log
 
 
 # verify Approval event with expected owner, spender, and allowance
@@ -1627,8 +1694,7 @@ def store_query(cli, path, data):
 
 def raw_contract_info(cli, addr):
     "ContractInfo bytes as stored, before any proto decoding."
-    _, data = bech32.bech32_decode(addr)
-    key = CONTRACT_KEY_PREFIX + bytes(bech32.convertbits(data, 5, 8, False))
+    key = CONTRACT_KEY_PREFIX + decode_bech32(addr)
     bz = store_query(cli, "/store/wasm/key", key)
     assert bz, f"no ContractInfo stored for {addr}"
     return bz
@@ -1640,8 +1706,7 @@ def all_contract_infos(cli):
     infos = {}
     for _, pair in proto_iter(buf):
         kv = dict(proto_iter(pair))  # Pair{bytes key = 1; bytes value = 2}
-        addr = bech32.convertbits(kv[1][len(CONTRACT_KEY_PREFIX) :], 8, 5)
-        infos[bech32.bech32_encode(ADDRESS_PREFIX, addr)] = kv[2]
+        infos[eth_to_bech32(kv[1][len(CONTRACT_KEY_PREFIX) :])] = kv[2]
     return infos
 
 

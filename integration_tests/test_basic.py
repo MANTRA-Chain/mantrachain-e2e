@@ -6,10 +6,7 @@ import pytest
 import requests
 import web3
 from eth_account import Account
-from eth_bloom import BloomFilter
-from eth_contract.erc20 import ERC20
 from eth_contract.utils import sign_transaction
-from eth_utils import big_endian_to_int
 from hexbytes import HexBytes
 from web3.utils.address import get_create_address
 
@@ -22,7 +19,7 @@ from .utils import (
     AsyncGreeter,
     AsyncTestRevert,
     Contract,
-    address_to_bytes32,
+    assert_erc20_transfer_log,
     assert_transfer,
     bech32_to_eth,
     build_batch_tx,
@@ -169,28 +166,9 @@ def test_events(mantra, connect_mantra):
     amt = 10
     tx = erc20.functions.transfer(receiver, amt).build_transaction({"from": sender})
     txreceipt = send_transaction(w3, tx)
-    assert len(txreceipt.logs) == 1
-    expect_log = {
-        "address": erc20.address,
-        "topics": [
-            ERC20.events.Transfer.topic,
-            address_to_bytes32(sender),
-            address_to_bytes32(receiver),
-        ],
-        "data": HexBytes(amt.to_bytes(32, "big")),
-        "transactionIndex": 0,
-        "logIndex": 0,
-        "removed": False,
-    }
-    assert expect_log.items() <= txreceipt.logs[0].items()
-
-    # check block bloom
-    bloom = BloomFilter(
-        big_endian_to_int(w3.eth.get_block(txreceipt.blockNumber).logsBloom)
+    expect_log = assert_erc20_transfer_log(
+        w3, txreceipt, erc20.address, sender, receiver, amt
     )
-    assert HexBytes(erc20.address) in bloom
-    for topic in expect_log["topics"]:
-        assert topic in bloom
 
     block_logs = w3.eth.get_block_receipts(txreceipt.blockNumber)[0].logs[0]
     call = w3.provider.make_request

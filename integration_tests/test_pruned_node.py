@@ -1,8 +1,5 @@
 import pytest
-from eth_bloom import BloomFilter
 from eth_contract.erc20 import ERC20
-from eth_utils import big_endian_to_int
-from hexbytes import HexBytes
 from pystarport.utils import wait_for_new_blocks
 from web3.datastructures import AttributeDict
 
@@ -11,7 +8,7 @@ from .utils import (
     ADDRS,
     EVM_CHAIN_ID,
     Contract,
-    address_to_bytes32,
+    assert_erc20_transfer_log,
     sign_transaction,
 )
 
@@ -44,20 +41,7 @@ def test_pruned_node(mantra):
     print("wait for transaction receipt", txhash.hex())
     txreceipt = w3.eth.wait_for_transaction_receipt(txhash)
     assert txreceipt.gasUsed == exp_gas_used
-    assert len(txreceipt.logs) == 1
-    expect_log = {
-        "address": erc20.address,
-        "topics": [
-            ERC20.events.Transfer.topic,
-            address_to_bytes32(sender),
-            address_to_bytes32(receiver),
-        ],
-        "data": HexBytes((amt).to_bytes(32, "big")),
-        "transactionIndex": 0,
-        "logIndex": 0,
-        "removed": False,
-    }
-    assert expect_log.items() <= txreceipt.logs[0].items()
+    assert_erc20_transfer_log(w3, txreceipt, erc20.address, sender, receiver, amt)
 
     # check get_balance and eth_call don't work on pruned state
     with pytest.raises(Exception):
@@ -65,14 +49,9 @@ def test_pruned_node(mantra):
     with pytest.raises(Exception):
         erc20.caller(block_identifier=txreceipt.blockNumber).balanceOf(sender)
 
-    # check block bloom
     block = w3.eth.get_block(txreceipt.blockNumber)
     assert "baseFeePerGas" in block
     assert block.miner == "0x0000000000000000000000000000000000000000"
-    bloom = BloomFilter(big_endian_to_int(block.logsBloom))
-    assert HexBytes(erc20.address) in bloom
-    for topic in expect_log["topics"]:
-        assert topic in bloom
 
     tx1 = w3.eth.get_transaction(txhash)
     tx2 = w3.eth.get_transaction_by_block(

@@ -25,6 +25,7 @@ from .utils import (
     AsyncGreeter,
     Greeter,
     assert_create_tokenfactory_denom,
+    assert_grant_authorizations,
     assert_mint_tokenfactory_denom,
     assert_set_tokenfactory_denom,
     assert_transfer,
@@ -40,6 +41,7 @@ from .utils import (
     eth_to_bech32,
     instantiate_contract_pair,
     module_address,
+    send_grant_spend_limit,
     update_consumer_chain,
     update_node_cmd,
     verify_contract_info,
@@ -160,39 +162,8 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    def find_grant(auth_type):
-        "The value of the granter->grantee authorization of `auth_type`."
-        return next(
-            g["authorization"]["value"]
-            for g in cli.query_grants(granter, grantee)
-            if g["authorization"]["type"] == auth_type
-        )
-
-    max_tokens_limit = 10
-    validators = cli.validators()
-    val_ops = [v["operator_address"] for v in validators[:2]]
-    rsp = cli.grant_authorization(
-        grantee,
-        "delegate",
-        from_=granter,
-        spend_limit=f"{max_tokens_limit}{DEFAULT_DENOM}",
-        allow_list=[val_ops[0]],
-        deny_validators=val_ops[1],
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
-    assert stake_grant["max_tokens"]["amount"] == str(max_tokens_limit)
-
     spend_limit = 200
-    rsp = cli.grant_authorization(
-        grantee,
-        "send",
-        from_=granter,
-        spend_limit=f"{spend_limit}{DEFAULT_DENOM}",
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
+    val_ops = assert_grant_authorizations(cli, granter, grantee, spend_limit)
 
     rsp = cli.delegate_amount(
         val_ops[0],
@@ -264,8 +235,7 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
         ]
     }
 
-    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
+    assert send_grant_spend_limit(cli, granter, grantee) == spend_limit
 
     # block events survive the upgrade and can be pruned afterwards
     def get_block_events():

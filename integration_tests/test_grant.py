@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from .utils import DEFAULT_DENOM, find_fee
+from .utils import (
+    DEFAULT_DENOM,
+    assert_grant_authorizations,
+    find_fee,
+    find_grant,
+    send_grant_spend_limit,
+)
 
 pytestmark = pytest.mark.skipped
 
@@ -54,42 +60,7 @@ def test_flow(mantra):
     assert cli.balance(receiver) == receiver_balance
 
     # grant_authorization
-    max_tokens_limit = 10
-    validators = cli.validators()
-    val_ops = [v["operator_address"] for v in validators[:2]]
-
-    rsp = cli.grant_authorization(
-        grantee,
-        "delegate",
-        from_=granter,
-        spend_limit=f"{max_tokens_limit}{DEFAULT_DENOM}",
-        allow_list=[val_ops[0]],
-        deny_validators=val_ops[1],
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    def find_grant(auth_type):
-        "The value of the granter->grantee authorization of `auth_type`."
-        return next(
-            g["authorization"]["value"]
-            for g in cli.query_grants(granter, grantee)
-            if g["authorization"]["type"] == auth_type
-        )
-
-    stake_grant = find_grant("/cosmos.staking.v1beta1.StakeAuthorization")
-    assert stake_grant["max_tokens"]["amount"] == str(max_tokens_limit)
-
-    spend_limit = 200
-    rsp = cli.grant_authorization(
-        grantee,
-        "send",
-        from_=granter,
-        spend_limit=f"{spend_limit}{DEFAULT_DENOM}",
-    )
-    assert rsp["code"] == 0, rsp["raw_log"]
-
-    send_grant = find_grant("/cosmos.bank.v1beta1.SendAuthorization")
-    assert send_grant["spend_limit"][0]["amount"] == str(spend_limit)
+    assert_grant_authorizations(cli, granter, grantee, spend_limit=200)
 
     msg_type = "/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward"
     rsp = cli.grant_authorization(
@@ -100,7 +71,9 @@ def test_flow(mantra):
     )
     assert rsp["code"] == 0, rsp["raw_log"]
 
-    generic_grant = find_grant("/cosmos.authz.v1beta1.GenericAuthorization")
+    generic_grant = find_grant(
+        cli, granter, grantee, "/cosmos.authz.v1beta1.GenericAuthorization"
+    )
     assert generic_grant["msg"] == msg_type
 
 
@@ -121,15 +94,7 @@ def test_authz_spend_limit_atomicity(mantra, tmp_path):
         spend_limit=f"{grant_limit}{DEFAULT_DENOM}",
     )
     assert rsp["code"] == 0, rsp["raw_log"]
-
-    def get_send_grant_spend_limit():
-        grants = cli.query_grants(granter, grantee)
-        for g in grants:
-            if g["authorization"]["type"] == "/cosmos.bank.v1beta1.SendAuthorization":
-                return int(g["authorization"]["value"]["spend_limit"][0]["amount"])
-        return None
-
-    assert get_send_grant_spend_limit() == grant_limit
+    assert send_grant_spend_limit(cli, granter, grantee) == grant_limit
 
     tx = cli.transfer(
         granter,
@@ -144,7 +109,7 @@ def test_authz_spend_limit_atomicity(mantra, tmp_path):
     assert rsp["code"] != 0
     assert "insufficient funds" in rsp.get("raw_log", "")
 
-    spend_limit = get_send_grant_spend_limit()
+    spend_limit = send_grant_spend_limit(cli, granter, grantee)
     assert (
         spend_limit == grant_limit
     ), f"spendLimit changed from {grant_limit} to {spend_limit} despite exec failure."
