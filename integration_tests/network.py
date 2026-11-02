@@ -8,7 +8,7 @@ from pathlib import Path
 import _jsonnet
 import tomlkit
 import web3
-from pystarport import cluster, ports
+from pystarport import ports
 from pystarport.expansion import expand
 from pystarport.utils import (
     wait_for_block,
@@ -21,7 +21,7 @@ from requests.exceptions import (
     Timeout,
     TooManyRedirects,
 )
-from web3 import AsyncHTTPProvider, AsyncWeb3, HTTPProvider, WebSocketProvider
+from web3 import AsyncHTTPProvider, AsyncWeb3, HTTPProvider
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.middleware.base import Web3Middleware
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
@@ -104,15 +104,11 @@ def with_receipt_guard(w3):
 
 
 class W3Endpoints:
-    """Lazily built, cached web3 clients; subclasses supply the endpoints.
-
-    `use_websocket` drops the cache so the next access rebuilds it.
-    """
+    """Lazily built, cached web3 clients; subclasses supply the endpoints."""
 
     def __init__(self):
         self._w3 = None
         self._async_w3 = None
-        self._use_websockets = False
 
     def w3_http_endpoint(self, i=0):
         raise NotImplementedError
@@ -133,24 +129,15 @@ class W3Endpoints:
         return self._async_w3
 
     def node_w3(self, i=0):
-        if self._use_websockets:
-            w3 = web3.Web3(WebSocketProvider(self.w3_ws_endpoint(i)))
-        else:
-            w3 = web3.Web3(
-                HTTPProvider(
-                    self.w3_http_endpoint(i), exception_retry_configuration=RETRY_CONFIG
-                )
-            )
-        return with_receipt_guard(w3)
+        provider = HTTPProvider(
+            self.w3_http_endpoint(i), exception_retry_configuration=RETRY_CONFIG
+        )
+        return with_receipt_guard(web3.Web3(provider))
 
     def async_node_w3(self, i=0):
         return with_receipt_guard(
             AsyncWeb3(async_http_provider(self.w3_http_endpoint(i)))
         )
-
-    def use_websocket(self, use=True):
-        self._w3 = None
-        self._use_websockets = use
 
 
 class Mantra(W3Endpoints):
@@ -220,7 +207,6 @@ def setup_custom_mantra(
     post_init=None,
     chain_binary=None,
     wait_port=True,
-    relayer=cluster.Relayer.HERMES.value,
     genesis=None,
     chain=None,
 ):
@@ -245,8 +231,6 @@ def setup_custom_mantra(
         str(base_port),
         "--no_remove",
     ]
-    if relayer == cluster.Relayer.RLY.value:
-        cmd = cmd + ["--relayer", str(relayer)]
     if chain_binary is not None:
         cmd = cmd[:1] + ["--cmd", f'"{chain_binary}"'] + cmd[1:]
     print(*cmd)

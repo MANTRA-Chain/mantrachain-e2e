@@ -11,7 +11,7 @@ from typing import NamedTuple
 
 import requests
 from eth_contract.erc20 import ERC20
-from pystarport import cluster, ports
+from pystarport import ports
 from pystarport.utils import (
     parse_amount,
     wait_for_fn_async,
@@ -149,7 +149,6 @@ def prepare_network(
         tmp_path,
         27000,
         Path(__file__).parent / name,
-        relayer=cluster.Relayer.HERMES.value,
         chain=chain,
         post_init=post_init,
         chain_binary=chain_binary,

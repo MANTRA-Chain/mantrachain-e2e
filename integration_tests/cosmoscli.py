@@ -92,17 +92,6 @@ class CosmosCLI(PystarportCosmosCLI):
             url = "http" + url
         return url
 
-    @classmethod
-    def init(cls, moniker, data_dir, node_rpc, cmd, chain_id):
-        "the node's config is already added"
-        ChainCommand(cmd)(
-            "init",
-            moniker,
-            chain_id=chain_id,
-            home=data_dir,
-        )
-        return cls(data_dir, node_rpc, cmd)
-
     def balance(self, addr, denom=DEFAULT_DENOM, height=0):
         return super().balance(addr, denom=denom, height=height)
 

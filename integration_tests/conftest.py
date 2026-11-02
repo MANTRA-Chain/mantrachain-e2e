@@ -59,7 +59,7 @@ def pytest_collection_modifyitems(items, config):
             item.add_marker(skip_unsupported)
 
 
-@pytest.fixture(scope="session", params=[True])
+@pytest.fixture(scope="session")
 def mantra(request, tmp_path_factory):
     chain = request.config.getoption("chain_config")
     path = tmp_path_factory.mktemp("mantra")
@@ -67,7 +67,7 @@ def mantra(request, tmp_path_factory):
     yield from setup_custom_mantra(path, 26650, cfg, chain=chain)
 
 
-@pytest.fixture(scope="session", params=[True])
+@pytest.fixture(scope="session")
 def connect_mantra():
     yield from connect_custom_mantra()
 

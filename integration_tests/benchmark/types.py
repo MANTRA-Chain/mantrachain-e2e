@@ -2,8 +2,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from .utils import bech32_to_eth
-
 
 class Balance(BaseModel):
     amount: str
@@ -16,10 +14,6 @@ class Balance(BaseModel):
 class GenesisAccount(BaseModel):
     address: str
     coins: List[Balance]
-
-    @property
-    def eth_address(self) -> str:
-        return bech32_to_eth(self.address)
 
 
 class PeerPacket(BaseModel):

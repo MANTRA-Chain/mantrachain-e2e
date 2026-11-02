@@ -19,7 +19,7 @@ from eth_contract.deploy_utils import (
 )
 from eth_contract.erc20 import ERC20
 from eth_contract.utils import get_initcode
-from pystarport import cluster, ports
+from pystarport import ports
 from pystarport.utils import (
     wait_for_fn,
     wait_for_new_blocks,
@@ -161,7 +161,6 @@ def ibc(request, tmp_path_factory):
         path,
         27400,
         Path(__file__).parent / name,
-        relayer=cluster.Relayer.HERMES.value,
         chain=chain,
         chain_binary=f"{CMD},{b_chain_cmd}",
     ) as ibc1:
