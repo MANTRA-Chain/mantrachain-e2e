@@ -19,8 +19,25 @@ from .utils import (
 )
 
 
+def upgrade_handlers(binary, home):
+    "Plan names `binary` has upgrade handlers for; None if it predates the command."
+    rsp = subprocess.run(
+        [binary, "upgrade-handlers", "--home", home],
+        capture_output=True,
+        text=True,
+    )
+    if rsp.returncode != 0:
+        assert "unknown command" in rsp.stderr, rsp.stderr
+        return None
+    return rsp.stdout.split()
+
+
 def do_upgrade(c, plan_name, target):
     print(f"upgrade {plan_name} height: {target}")
+    binary = Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
+    # fail here with the registered names, not at the halted upgrade height
+    handlers = upgrade_handlers(binary, c.node_home(0))
+    assert handlers is None or plan_name in handlers, f"{binary} registers {handlers}"
     cli = c.cosmos_cli()
     rsp = cli.software_upgrade(
         "community",
@@ -42,9 +59,7 @@ def do_upgrade(c, plan_name, target):
     assert end_height < target, f"vote closed at {end_height}, upgrade at {target}"
 
     # update cli chain binary
-    c.chain_binary = (
-        Path(c.chain_binary).parent.parent.parent / f"{plan_name}/bin/mantrachaind"
-    )
+    c.chain_binary = binary
     # block should pass the target height
     wait_for_block(c.cosmos_cli(), target + 1)
     return c.cosmos_cli()
