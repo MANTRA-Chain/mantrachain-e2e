@@ -2,13 +2,14 @@
   lib,
   stdenv,
   buildGo125Module,
+  buildGo126Module,
   fetchFromGitHub,
   fetchurl,
   pkgsStatic,
 }:
 let
   builder = import ../mantrachain-builder.nix {
-    inherit lib stdenv buildGo125Module fetchFromGitHub fetchurl pkgsStatic;
+    inherit lib stdenv buildGo125Module buildGo126Module fetchFromGitHub fetchurl pkgsStatic;
   };
 in
 builder {
@@ -18,4 +19,5 @@ builder {
   hash = "sha256-NPtTO8uTA723v2rS1hNjPHIvtPB1sDt/2F/kWko7SjY=";
   vendorHash = "sha256-WxIMmApR+PdFvwqkEFIKEYYp6O5FpXWdKPkqyIoIDIM=";
   wasmvmVersion = "v3.0.8";
+  goVersion = "1.26";
 }

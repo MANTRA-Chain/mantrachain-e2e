@@ -2,12 +2,15 @@
   lib,
   stdenv,
   buildGo125Module,
+  buildGo126Module,
   fetchFromGitHub,
   fetchurl,
   pkgsStatic,
 }:
 {
   version ? "v7.0.0",
+  # must satisfy the go directive in the release's go.mod
+  goVersion ? "1.25",
   pname ? "mantrachain",
   owner ? "MANTRA-Chain",
   repo ? "mantrachain",
@@ -19,9 +22,9 @@
 }:
 let
   # Use static packages for Linux to ensure musl compatibility
-  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module; };
+  buildPackages = if stdenv.isLinux then pkgsStatic else { inherit stdenv buildGo125Module buildGo126Module; };
   buildStdenv = buildPackages.stdenv;
-  buildGo125Module' = if stdenv.isLinux then buildPackages.buildGo125Module else buildGo125Module;
+  buildGoModule' = buildPackages."buildGo${lib.replaceStrings [ "." ] [ "" ] goVersion}Module";
 
   # Release asset hashes per wasmvm version, from its checksums.txt
   wasmvmHashes = {
@@ -93,7 +96,7 @@ let
     ];
 
 in
-buildGo125Module' rec {
+buildGoModule' rec {
   inherit
     pname
     version

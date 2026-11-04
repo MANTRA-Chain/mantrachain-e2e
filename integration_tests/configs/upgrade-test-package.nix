@@ -4,7 +4,7 @@
 }:
 let
   builder = import ../../nix/mantrachain-builder.nix {
-    inherit (pkgs) lib stdenv buildGo125Module fetchFromGitHub fetchurl pkgsStatic;
+    inherit (pkgs) lib stdenv buildGo125Module buildGo126Module fetchFromGitHub fetchurl pkgsStatic;
   };
   # lite mode upgrades into whichever mantrachaind is on PATH, skipping this wrapper
   localMantrachaindWrapper = pkgs.writeShellScriptBin "mantrachaind" ''
