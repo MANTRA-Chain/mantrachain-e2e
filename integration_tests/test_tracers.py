@@ -1,6 +1,16 @@
 import itertools
+import os
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+from eth_contract.create2 import CREATE2_FACTORY, create2_address
+from eth_contract.deploy_utils import (
+    ensure_create2_deployed,
+    ensure_multicall3_deployed,
+)
+from eth_contract.erc20 import ERC20
+from eth_contract.multicall3 import MULTICALL3, Call3
+from eth_contract.utils import get_initcode
 from pystarport.utils import w3_wait_for_new_blocks
 
 from .expected_constants import (
@@ -9,8 +19,10 @@ from .expected_constants import (
     EXPECTED_STRUCT_TRACER,
 )
 from .utils import (
+    ACCOUNTS,
     ADDRS,
     Contract,
+    MockERC20_ARTIFACT,
     build_contract,
     create_contract_transaction,
     derive_new_account,
@@ -93,3 +105,33 @@ def test_trace_tx(mantra):
             w3.provider.make_request, itertools.repeat(METHOD), params
         ):
             assert "result" in resp, resp
+
+
+def _frames(trace: dict) -> list[tuple[str, str | None]]:
+    """A callTracer trace's frames as ``(type, to)``, root first."""
+    frames = [(trace["type"], trace.get("to") and trace["to"].lower())]
+    for call in trace.get("calls", []):
+        frames += _frames(call)
+    return frames
+
+
+@pytest.mark.asyncio
+async def test_call_tracer_shows_every_call_of_a_batch(mantra):
+    """Each call a Multicall3 batch makes is a frame, the CREATE2 one included."""
+    w3 = mantra.async_w3
+    account = ACCOUNTS["community"]
+    await ensure_create2_deployed(w3, account)
+    await ensure_multicall3_deployed(w3, account)
+    initcode = get_initcode(MockERC20_ARTIFACT, "TEST", "TEST", 18)
+    salt = os.urandom(32)  # a fresh address each run, or the CREATE2 call reverts
+    token = create2_address(initcode, salt)
+    calls = [
+        Call3(CREATE2_FACTORY, data=salt + initcode),
+        Call3(token, data=ERC20.fns.balanceOf(account.address).data),
+    ]
+    receipt = await MULTICALL3.fns.aggregate3(calls).transact(w3, account)
+    tx_hash = receipt["transactionHash"].to_0x_hex()
+    trace = (await w3.provider.make_request(METHOD, [tx_hash, CALL_TRACER]))["result"]
+    frames = _frames(trace)
+    assert ("CREATE2", token.lower()) in frames, frames
+    assert ("CALL", token.lower()) in frames, frames
