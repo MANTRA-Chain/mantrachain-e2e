@@ -3,6 +3,7 @@ import base64
 import binascii
 import configparser
 import datetime
+import gzip
 import hashlib
 import json
 import os
@@ -1732,10 +1733,18 @@ WASM_CONTRACT = Path(__file__).parent / "contracts/contracts/contract_1.wasm"
 WASM_GAS = 2500000
 
 
+def wasm_store_gas(cli, path=WASM_CONTRACT):
+    "WASM_GAS plus the chain's txSize charge for `path`, which the CLI gzips."
+    params = cli._query("auth", "params")["params"]
+    size = len(gzip.compress(path.read_bytes(), compresslevel=6))
+    return WASM_GAS + int(params["tx_size_cost_per_byte"]) * size
+
+
 def instantiate_contract_pair(cli, name="signer1"):
     "Store the test contract as `name` and instantiate a (caller, callee) pair."
     wallet = cli.address(name)
-    res = cli.wasm_store(str(WASM_CONTRACT), wallet, _from=name, gas=WASM_GAS)
+    gas = wasm_store_gas(cli)
+    res = cli.wasm_store(str(WASM_CONTRACT), wallet, _from=name, gas=gas)
     assert res["code"] == 0, res["raw_log"]
     code_id = find_log_event_attrs(res["events"], "store_code").get("code_id")
     addrs = []
