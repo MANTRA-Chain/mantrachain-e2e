@@ -9,7 +9,7 @@ from eth_contract.deploy_utils import (
     ensure_multicall3_deployed,
 )
 from eth_contract.erc20 import ERC20
-from eth_contract.multicall3 import MULTICALL3, Call3
+from eth_contract.multicall3 import MULTICALL3, MULTICALL3_ADDRESS, Call3
 from eth_contract.utils import get_initcode
 
 from .expected_constants import (
@@ -145,6 +145,17 @@ class TestBatch:
         assert ("CREATE2", token.lower()) in frames, frames
         assert ("CALL", token.lower()) in frames, frames
 
+    async def test_only_top_call_keeps_the_batch(self, w3):
+        """The batch is one call into Multicall3: `onlyTopCall` keeps it alone."""
+        target = await _deploy(w3, RETURN_42_RUNTIME)
+        batch = MULTICALL3.fns.aggregate3([Call3(target)] * 2)
+        receipt = await batch.transact(w3, COMMUNITY)
+        trace = await _trace_async(w3, receipt, TOP_CALL_TRACER)
+        assert (
+            trace["to"].lower() == MULTICALL3_ADDRESS.lower() and "calls" not in trace
+        )
+        assert len((await _trace_async(w3, receipt, CALL_TRACER))["calls"]) == 2
+
     async def test_struct_logs(self, w3):
         """A call logs the opcodes it logs when sent alone, one level deeper."""
         target = await _deploy(w3, RETURN_42_RUNTIME)
@@ -158,6 +169,22 @@ class TestBatch:
         assert call, "a single call's struct logs"
         nested = [(log["op"], log["depth"]) for log in batch if log["depth"] > 1]
         assert nested == call * 2
+
+    async def test_the_root_reports_its_tx(self, w3):
+        """Alone or in a batch, the root carries the tx's sender, gas and outcome."""
+        target = await _deploy(w3, RETURN_42_RUNTIME)
+        batch = MULTICALL3.fns.aggregate3([Call3(target)] * 2)
+        receipts = [
+            await send_transaction_async(w3, COMMUNITY, to=target),
+            await batch.transact(w3, COMMUNITY),
+        ]
+        for receipt in receipts:
+            gas_used = receipt["gasUsed"]
+            root = await _trace_async(w3, receipt, CALL_TRACER)
+            assert root["from"].lower() == COMMUNITY.address.lower()
+            assert int(root["gasUsed"], 16) == gas_used and "error" not in root
+            default = await _trace_async(w3, receipt)
+            assert default["gas"] == gas_used and not default["failed"]
 
     async def test_a_self_destruct_is_traced_once(self, w3):
         """A batch whose last call self-destructs shows that self-destruct alone."""
