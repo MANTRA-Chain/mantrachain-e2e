@@ -253,7 +253,8 @@ def setup_custom_mantra(
             )
         )
         c = Mantra(path / CHAIN_ID, chain_binary=chain_binary)
-        wait_for_block(c.cosmos_cli(), 1)
+        # A block is stored before the app commits it, so wait past the first one.
+        wait_for_block(c.cosmos_cli(), 2)
         yield c
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
