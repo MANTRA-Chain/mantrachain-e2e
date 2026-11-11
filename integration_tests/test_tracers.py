@@ -60,6 +60,30 @@ NO_STATE_OVERRIDES = pytest.mark.skip(
 NO_BLOCK_OVERRIDES = pytest.mark.skip(
     reason="mantra's debug_traceCall ignores blockOverrides"
 )
+# geth's built-in JS tracers, and two custom ones.
+JS_TRACERS = [
+    "bigramTracer",
+    "evmdisTracer",
+    "opcountTracer",
+    "trigramTracer",
+    "unigramTracer",
+    """{
+        data: [],
+        fault: function(log) {},
+        step: function(log) {
+            if (log.op.toString() == "POP") this.data.push(log.stack.peek(0));
+        },
+        result: function() { return this.data; }
+    }""",
+    """{
+        retVal: [],
+        step: function(log, db) {
+            this.retVal.push(log.getPC() + ":" + log.op.toString());
+        },
+        fault: function(log, db) { this.retVal.push("FAULT: " + JSON.stringify(log)); },
+        result: function(ctx, db) { return this.retVal; }
+    }""",
+]
 
 
 @pytest.fixture
@@ -504,3 +528,22 @@ class TestTraceCall:
         assert receipt["status"] == 0, receipt
         paid = before - await w3.eth.get_balance(sender.address)
         assert traced == paid == receipt["gasUsed"] * price < gas * price
+
+
+class TestJsTracer:
+    """geth's JS tracers, on mantra and on geth."""
+
+    async def test_a_call_traces_as_on_geth(self, on_both, sender):
+        """Each JS tracer gives geth's result for a Greeter call."""
+
+        async def trace(w3):
+            greeter = await build_and_deploy_contract_async(
+                w3, "Greeter", key=sender.key
+            )
+            data = greeter.encode_abi("setGreeting", ["world"])
+            call = {"from": sender.address, "to": greeter.address, "data": data}
+            return await asyncio.gather(
+                *(_trace_call_async(w3, call, {"tracer": t}) for t in JS_TRACERS)
+            )
+
+        await on_both(trace)
