@@ -41,13 +41,22 @@ def propose(mantra, tmp_path, kind, **fields):
     submit_gov_proposal(mantra, tmp_path, [msg], gas=300_000)
 
 
+def full_sanctioner(address):
+    return {"address": address, "role": "SANCTIONER_ROLE_FULL"}
+
+
+def new_user(cli, name):
+    user = cli.create_account(name)["address"]
+    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
+    assert_transfer(cli, cli.address("community"), user, amt=amt)
+    return user
+
+
 def test_blacklist(mantra, tmp_path):
     cli = mantra.cosmos_cli()
     require_sanction(cli)
     community = cli.address("community")
-    user = cli.create_account("user")["address"]
-    amt = 9_000_000_000_000_000 // WEI_PER_DENOM
-    assert_transfer(cli, community, user, amt=amt)
+    user = new_user(cli, "user")
     # upper-case bech32 used to be stored as typed and never matched
     fields = {"signer": GOV, "addresses": [user.upper()], "reason": "e2e"}
     propose(mantra, tmp_path, "SanctionAddresses", **fields)
@@ -127,7 +136,7 @@ def sanction(mantra, tmp_path_factory):
     cli = mantra.cosmos_cli()
     require_sanction(cli)
     tmp_path = tmp_path_factory.mktemp("sanctioner")
-    sanctioner = {"address": cli.address("signer1"), "role": "SANCTIONER_ROLE_FULL"}
+    sanctioner = full_sanctioner(cli.address("signer1"))
     propose(
         mantra, tmp_path, "UpdateSanctioners", authority=GOV, sanctioners=[sanctioner]
     )
@@ -138,6 +147,24 @@ def sanction(mantra, tmp_path_factory):
 
     yield sanction
     propose(mantra, tmp_path, "UpdateSanctioners", authority=GOV, sanctioners=[])
+
+
+def test_appointment_unsanctions(mantra, tmp_path, sanction):
+    "A sanction placed while an address's appointment votes can't lock it out."
+    cli = mantra.cosmos_cli()
+    community = cli.address("community")
+    candidate = new_user(cli, "candidate")
+    # not a sanctioner yet, so not protected
+    sanction(bech32_to_eth(candidate))
+    rsp = cli.transfer(candidate, community, f"1{DEFAULT_DENOM}")
+    assert rsp["code"] != 0 and "is blacklisted" in rsp["raw_log"], rsp
+
+    sanctioners = [full_sanctioner(cli.address("signer1")), full_sanctioner(candidate)]
+    propose(
+        mantra, tmp_path, "UpdateSanctioners", authority=GOV, sanctioners=sanctioners
+    )
+    assert candidate not in cli.query_blacklist()
+    assert_transfer(cli, candidate, community)
 
 
 def test_eip7702_delegation_cleared(mantra, sanction):
