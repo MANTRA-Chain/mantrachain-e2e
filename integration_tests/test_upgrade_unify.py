@@ -278,6 +278,11 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra, tmp_path):
     cli = do_upgrade(c, "v8.8.0", cli.block_height() + WAIT_HEIGHT)
     verify_contract_pair(cli, legacy_contracts, FIELD_IBC2_PORT_ID)
 
+    # v8.9.0 migrates x/sanction to v2
+    cli = do_upgrade(c, "v8.9.0", cli.block_height() + WAIT_HEIGHT)
+    blacklist = cli.query_blacklist()
+    assert V8_4_EXPLOITER in blacklist, f"blacklist fail in v8.9.0: {blacklist}"
+
     # grpc-only historical queries via the frozen node2 archive (backend for node0)
     grpc_node = 2
     api_port = ports.api_port(c.base_port(grpc_node))

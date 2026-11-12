@@ -290,3 +290,13 @@ class CosmosCLI(PystarportCosmosCLI):
         return self._query("sanction", "blacklist", **kwargs).get(
             "blacklisted_accounts", []
         )
+
+    def sanction_addresses(self, addresses, reason, **kwargs):
+        "Sent by `from_`, which must be on the sanctioner list."
+        return self._tx(
+            "sanction",
+            "sanction-addresses",
+            ",".join(addresses),
+            reason=reason,
+            **kwargs,
+        )

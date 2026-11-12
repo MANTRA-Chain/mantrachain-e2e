@@ -52,3 +52,4 @@ async def test_cosmovisor_upgrade(custom_mantra: Mantra):
     upgrade("v8.5.0-pre.1")
     upgrade("v8.7.0-pre.1")
     upgrade("v8.8.0")
+    upgrade("v8.9.0")
